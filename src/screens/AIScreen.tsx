@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { AppState } from '../types';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { answerAiQuestion } from '../services/aiService';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { t } from '../i18n/i18n';
 
 interface Props {
   appState: AppState;
@@ -27,6 +28,7 @@ export const AIScreen: React.FC<Props> = ({
   initialQuestion,
   initialExerciseId,
 }) => {
+  const language = appState.language ?? 'en';
   const [question, setQuestion] = useState(initialQuestion ?? '');
   const [answer, setAnswer] = useState<string | null>(null);
   const [ctxExerciseId] = useState<string | null>(initialExerciseId ?? null);
@@ -41,20 +43,37 @@ export const AIScreen: React.FC<Props> = ({
   const handleAsk = (q?: string) => {
     const query = (q ?? question).trim();
     if (!query) {
-      setAnswer('Lokalt svar: Skriv inn et sok forst.');
+      setAnswer(t(language, 'aiEmptyQuery'));
       return;
     }
     const res = answerAiQuestion(appState, query, ctxExerciseId);
     setAnswer(res);
   };
 
-  const suggestions = [
-    'Hva tok jeg sist i benk?',
-    'Hvor mange brystokter i desember?',
-    'Hva gjorde jeg pa siste okt?',
-    'Hvor mange reps pa 100 kg i benkpress de siste 30 dagene?',
-    'Hva er beste sett i markloft?',
-  ];
+  const suggestions =
+    language === 'es'
+      ? [
+          '¿Qué hice la última vez en banca?',
+          '¿Cuántos entrenos de pecho en diciembre?',
+          '¿Qué hice en la última sesión?',
+          '¿Cuántas reps a 100 kg en banca en los últimos 30 días?',
+          '¿Cuál es mi mejor serie en peso muerto?',
+        ]
+      : language === 'en'
+        ? [
+            'What did I do last on bench?',
+            'How many chest sessions in December?',
+            'What did I do in my last session?',
+            'How many reps at 100 kg on bench in the last 30 days?',
+            'What is my best set in deadlift?',
+          ]
+        : [
+            'Hva tok jeg sist i benk?',
+            'Hvor mange brystøkter i desember?',
+            'Hva gjorde jeg på siste økt?',
+            'Hvor mange reps på 100 kg i benkpress de siste 30 dagene?',
+            'Hva er beste sett i markløft?',
+          ];
 
   return (
     <KeyboardAvoidingView
@@ -62,20 +81,18 @@ export const AIScreen: React.FC<Props> = ({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.inner}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.back}>{'< Tilbake'}</Text>
+        <TouchableOpacity onPress={onBack} hitSlop={8}>
+          <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Treasy sok</Text>
-        <Text style={styles.subtitle}>
-          Smart sok i loggen din. Alt svares lokalt pa denne enheten.
-        </Text>
+        <Text style={styles.title}>{t(language, 'aiSearchTitle')}</Text>
+        <Text style={styles.subtitle}>{t(language, 'aiSubtitle')}</Text>
 
         <View style={styles.inputCard}>
-          <Text style={styles.label}>Sok i loggen</Text>
+          <Text style={styles.label}>{t(language, 'aiSearchLabel')}</Text>
           <TextInput
             style={styles.input}
-            placeholder='F.eks: "Hva tok jeg sist i benk?"'
+            placeholder={t(language, 'aiPlaceholder')}
             placeholderTextColor="#4B5563"
             value={question}
             onChangeText={setQuestion}
@@ -83,22 +100,19 @@ export const AIScreen: React.FC<Props> = ({
             returnKeyType="send"
             onSubmitEditing={() => handleAsk()}
           />
-          <PrimaryButton title="Sok" onPress={() => handleAsk()} />
+          <PrimaryButton title={t(language, 'search')} onPress={() => handleAsk()} />
         </View>
 
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: SPACING.xxxl }}
-        >
+        <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: SPACING.xxxl }}>
           {answer && (
             <View style={styles.answerCard}>
-              <Text style={styles.answerTitle}>Svar</Text>
+              <Text style={styles.answerTitle}>{t(language, 'answer')}</Text>
               <Text style={styles.answerText}>{answer}</Text>
             </View>
           )}
 
           <View style={styles.suggestionsCard}>
-            <Text style={styles.suggestionsTitle}>Eksempler</Text>
+            <Text style={styles.suggestionsTitle}>{t(language, 'examples')}</Text>
             {suggestions.map((s) => (
               <TouchableOpacity
                 key={s}
@@ -131,6 +145,8 @@ const styles = StyleSheet.create({
   back: {
     color: '#93C5FD',
     marginBottom: SPACING.md,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   title: {
     fontSize: TEXT.xl,
@@ -154,6 +170,8 @@ const styles = StyleSheet.create({
   label: {
     color: '#E5E7EB',
     marginBottom: SPACING.sm,
+    fontWeight: '600',
+    fontSize: TEXT.sm,
   },
   input: {
     minHeight: 60,
@@ -164,6 +182,7 @@ const styles = StyleSheet.create({
     padding: SPACING.sm,
     color: '#F9FAFB',
     marginBottom: SPACING.sm,
+    backgroundColor: '#0B1220',
   },
   scroll: {
     flex: 1,
@@ -206,3 +225,4 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
 });
+

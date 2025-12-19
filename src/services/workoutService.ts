@@ -1,7 +1,23 @@
-﻿import { AppState, Exercise, SetEntry } from '../types';
+import { AppState, Exercise, LogEntry, SetEntry } from '../types';
 
 function generateId(prefix: string = 'id'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
+}
+
+export function addLogEntry(state: AppState, text: string): AppState {
+  const trimmed = text.trim();
+  if (!trimmed) return state;
+
+  const entry: LogEntry = {
+    id: generateId('log'),
+    text: trimmed,
+    createdAt: new Date().toISOString(),
+  };
+
+  return {
+    ...state,
+    logs: [...(state.logs ?? []), entry],
+  };
 }
 
 export function addExercise(state: AppState, blockId: string, name: string): AppState {
@@ -26,8 +42,18 @@ export function addExerciseWithSets(
   name: string,
   sets: Array<{ weight: number; reps: number }>
 ): AppState {
+  const res = addExerciseWithSetsResult(state, blockId, name, sets);
+  return res ? res.nextState : state;
+}
+
+export function addExerciseWithSetsResult(
+  state: AppState,
+  blockId: string,
+  name: string,
+  sets: Array<{ weight: number; reps: number }>
+): { nextState: AppState; exerciseId: string } | null {
   const trimmed = name.trim();
-  if (!trimmed) return state;
+  if (!trimmed) return null;
   const validSets = sets.filter(
     (s) =>
       Number.isFinite(s.weight) &&
@@ -35,7 +61,7 @@ export function addExerciseWithSets(
       s.weight >= 0 &&
       s.reps > 0
   );
-  if (validSets.length === 0) return state;
+  if (validSets.length === 0) return null;
 
   const exercise: Exercise = {
     id: generateId('ex'),
@@ -52,9 +78,12 @@ export function addExerciseWithSets(
   }));
 
   return {
-    ...state,
-    exercises: [...state.exercises, exercise],
-    sets: [...state.sets, ...newSets],
+    nextState: {
+      ...state,
+      exercises: [...state.exercises, exercise],
+      sets: [...state.sets, ...newSets],
+    },
+    exerciseId: exercise.id,
   };
 }
 
@@ -74,6 +103,15 @@ export function deleteExercise(state: AppState, exerciseId: string): AppState {
     ...state,
     exercises: state.exercises.filter((ex) => ex.id !== exerciseId),
     sets: state.sets.filter((s) => s.exerciseId !== exerciseId),
+  };
+}
+
+export function setExerciseBlockId(state: AppState, exerciseId: string, blockId: string): AppState {
+  return {
+    ...state,
+    exercises: state.exercises.map((ex) =>
+      ex.id === exerciseId ? { ...ex, blockId } : ex
+    ),
   };
 }
 
@@ -192,7 +230,7 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
 
     results.push({
       id: s.id,
-      exerciseName: exercise ? exercise.name : 'Ukjent ovelse',
+      exerciseName: exercise ? exercise.name : 'Ukjent øvelse',
       blockName: block?.name,
       blockId: block?.id,
       weight: s.weight,
@@ -239,3 +277,4 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
 
   return Array.from(map.values());
 }
+

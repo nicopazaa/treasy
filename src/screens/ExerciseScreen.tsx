@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,18 +10,16 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { Exercise, SetEntry } from '../types';
+import { Exercise, SetEntry, AppLanguage } from '../types';
 import { LabeledInput } from '../components/LabeledInput';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { getBlockTone } from '../utils/blockTone';
-import {
-  formatRelativeDateTime,
-  formatRelativeDayLabel,
-  formatShortDate,
-} from '../utils/dateLabels';
+import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../utils/dateLabels';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { t } from '../i18n/i18n';
 
 interface Props {
+  language: AppLanguage;
   exercise: Exercise;
   sets: SetEntry[];
   onBack: () => void;
@@ -34,6 +32,7 @@ interface Props {
 const STICKY_HEIGHT = 88;
 
 export const ExerciseScreen: React.FC<Props> = ({
+  language,
   exercise,
   sets,
   onBack,
@@ -49,22 +48,23 @@ export const ExerciseScreen: React.FC<Props> = ({
   const [editReps, setEditReps] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const tone = getBlockTone(exercise.blockId);
+
   const lastSet = sets[0] ?? null;
-  const lastSetLabel = lastSet
-    ? formatRelativeDayLabel(new Date(lastSet.createdAt)) ?? formatShortDate(new Date(lastSet.createdAt))
-    : null;
+  const lastSetLabel = useMemo(() => {
+    if (!lastSet) return null;
+    const dt = new Date(lastSet.createdAt);
+    return formatRelativeDayLabel(dt, new Date(), language) ?? formatShortDate(dt);
+  }, [language, lastSet]);
 
   const handleAdd = () => {
     const weightText = weight.trim();
     const repsText = reps.trim();
-    if (!weightText || !repsText) {
-      return;
-    }
+    if (!weightText || !repsText) return;
+
     const w = Number(weightText.replace(',', '.'));
     const r = Number(repsText);
-    if (!Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) {
-      return;
-    }
+    if (!Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) return;
+
     onAddSet(w, r);
     setWeight('');
     setReps('');
@@ -84,31 +84,38 @@ export const ExerciseScreen: React.FC<Props> = ({
 
   const handleUpdateSet = () => {
     if (!editingSet) return;
+
     const weightText = editWeight.trim();
     const repsText = editReps.trim();
-    if (!weightText || !repsText) {
-      setEditError('Skriv inn vekt og reps.');
-      return;
-    }
     const w = Number(weightText.replace(',', '.'));
     const r = Number(repsText);
-    if (!Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) {
-      setEditError('Ugyldig vekt eller reps.');
+
+    if (!weightText || !repsText || !Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) {
+      setEditError(t(language, 'invalidWeightReps'));
       return;
     }
+
     onUpdateSet(editingSet.id, w, r);
     closeEditSet();
   };
 
   const confirmDeleteSet = (set: SetEntry) => {
     Alert.alert(
-      'Slett sett?',
-      `Vil du slette ${set.weight} kg x ${set.reps} reps?`,
+      t(language, 'deleteSetTitle'),
+      t(language, 'deleteSetBody', { weight: set.weight, reps: set.reps }),
       [
-        { text: 'Avbryt', style: 'cancel' },
-        { text: 'Slett', style: 'destructive', onPress: () => onDeleteSet(set.id) },
+        { text: t(language, 'cancel'), style: 'cancel' },
+        { text: t(language, 'delete'), style: 'destructive', onPress: () => onDeleteSet(set.id) },
       ]
     );
+  };
+
+  const openSetActions = (set: SetEntry) => {
+    Alert.alert(`${set.weight} kg x ${set.reps}`, '', [
+      { text: t(language, 'edit'), onPress: () => openEditSet(set) },
+      { text: t(language, 'delete'), style: 'destructive', onPress: () => confirmDeleteSet(set) },
+      { text: t(language, 'cancel'), style: 'cancel' },
+    ]);
   };
 
   const handleCopyLastSet = () => {
@@ -123,23 +130,23 @@ export const ExerciseScreen: React.FC<Props> = ({
         {lastSet ? (
           <View style={styles.lastSetRow}>
             <Text style={styles.lastSetText}>
-              Sist: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
+              {t(language, 'last')}: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
             </Text>
             <TouchableOpacity onPress={handleCopyLastSet} hitSlop={8}>
-              <Text style={styles.copyLink}>Kopier forrige sett</Text>
+              <Text style={styles.copyLink}>{t(language, 'copyPreviousSet')}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
         <LabeledInput
-          label="Vekt (kg)"
-          placeholder="F.eks. 80"
+          label={t(language, 'weightKg')}
+          placeholder="0"
           keyboardType="numeric"
           value={weight}
           onChangeText={setWeight}
         />
         <LabeledInput
-          label="Reps"
-          placeholder="F.eks. 5"
+          label={t(language, 'reps')}
+          placeholder="1"
           keyboardType="numeric"
           value={reps}
           onChangeText={setReps}
@@ -147,86 +154,61 @@ export const ExerciseScreen: React.FC<Props> = ({
       </View>
 
       <View style={[styles.aiBox, { borderColor: tone.accent }]}>
-        <Text style={styles.aiTitle}>Treasy AI for {exercise.name}</Text>
-        <Text style={styles.aiText}>FA raskt svar pA hva du tok sist i denne A,velsen.</Text>
-        <PrimaryButton title="SpA,r AI for denne A,velsen" onPress={onAskAIForExercise} />
+        <Text style={styles.aiTitle}>{t(language, 'aiSearchTitle')}</Text>
+        <Text style={styles.aiText}>{t(language, 'aiSearchHint')}</Text>
+        <PrimaryButton title={t(language, 'search')} onPress={onAskAIForExercise} />
       </View>
 
-      <Text style={styles.historyTitle}>Historikk</Text>
+      <Text style={styles.historyTitle}>{t(language, 'history')}</Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={onBack}>
-        <Text style={styles.back}>{'< Tilbake'}</Text>
+      <TouchableOpacity onPress={onBack} hitSlop={8}>
+        <Text style={styles.back}>{t(language, 'back')}</Text>
       </TouchableOpacity>
+
       <Text style={[styles.title, { color: tone.accent }]}>{exercise.name}</Text>
-      <Text style={styles.subtitle}>Logg sett og se historikk for denne A,velsen.</Text>
 
       <FlatList
         data={sets}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.setRow}>
-            <View style={styles.setInfo}>
-              <Text style={styles.setText}>
-                {item.weight} kg x {item.reps} reps
-              </Text>
-              <Text style={styles.setDate}>
-                {formatRelativeDateTime(new Date(item.createdAt))}
-              </Text>
-            </View>
-            <View style={styles.setActions}>
-              <TouchableOpacity onPress={() => openEditSet(item)} hitSlop={8}>
-                <Text style={styles.setActionText}>Endre</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => confirmDeleteSet(item)} hitSlop={8}>
-                <Text style={[styles.setActionText, styles.setDeleteText]}>Slett</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.listContent}
-        keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={
-          <Text style={styles.empty}>Ingen sett logget enda. Legg til ditt fA,rste sett.</Text>
-        }
+        renderItem={({ item }) => (
+          <TouchableOpacity style={styles.setRow} onLongPress={() => openSetActions(item)} activeOpacity={0.9}>
+            <View style={styles.setInfo}>
+              <Text style={styles.setText}>
+                {item.weight} kg x {item.reps} {t(language, 'reps').toLowerCase()}
+              </Text>
+              <Text style={styles.setDate}>{formatRelativeDateTime(new Date(item.createdAt), new Date(), language)}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>{t(language, 'noSetsYet')}</Text>}
       />
 
       <View style={styles.stickyBar}>
-        <PrimaryButton
-          title="Logg sett"
-          onPress={handleAdd}
-          style={styles.stickyButton}
-        />
+        <PrimaryButton title={t(language, 'logSet')} onPress={handleAdd} style={styles.stickyButton} />
       </View>
 
-      <Modal
-        visible={editingSet !== null}
-        animationType="fade"
-        transparent
-        onRequestClose={closeEditSet}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+      <Modal visible={Boolean(editingSet)} animationType="fade" transparent onRequestClose={closeEditSet}>
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Endre sett</Text>
-            <Text style={styles.modalSubtitle}>Juster vekt og reps for settet.</Text>
+            <Text style={styles.modalTitle}>{t(language, 'editSetTitle')}</Text>
+            <Text style={styles.modalSubtitle}>{t(language, 'editSetSubtitle')}</Text>
 
             <LabeledInput
-              label="Vekt (kg)"
-              placeholder="F.eks. 80"
+              label={t(language, 'weightKg')}
+              placeholder="0"
               keyboardType="numeric"
               value={editWeight}
               onChangeText={setEditWeight}
             />
             <LabeledInput
-              label="Reps"
-              placeholder="F.eks. 5"
+              label={t(language, 'reps')}
+              placeholder="1"
               keyboardType="numeric"
               value={editReps}
               onChangeText={setEditReps}
@@ -236,10 +218,10 @@ export const ExerciseScreen: React.FC<Props> = ({
 
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.secondaryButton} onPress={closeEditSet}>
-                <Text style={styles.secondaryButtonText}>Avbryt</Text>
+                <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.primarySmallButton} onPress={handleUpdateSet}>
-                <Text style={styles.primarySmallButtonText}>Lagre</Text>
+                <Text style={styles.primarySmallButtonText}>{t(language, 'save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -260,15 +242,13 @@ const styles = StyleSheet.create({
   back: {
     color: '#93C5FD',
     marginBottom: SPACING.md,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   title: {
     fontSize: TEXT.xl,
     fontWeight: '700',
     color: '#F9FAFB',
-  },
-  subtitle: {
-    marginTop: SPACING.xs,
-    color: '#9CA3AF',
   },
   inputCard: {
     marginTop: SPACING.lg,
@@ -289,7 +269,7 @@ const styles = StyleSheet.create({
   copyLink: {
     color: '#60A5FA',
     fontSize: TEXT.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   aiBox: {
     marginTop: SPACING.lg,
@@ -297,30 +277,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#1F2937',
   },
   aiTitle: {
     color: '#F9FAFB',
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: SPACING.xs,
   },
   aiText: {
     color: '#9CA3AF',
     marginBottom: SPACING.sm,
+    fontSize: TEXT.sm,
   },
   historyTitle: {
     marginTop: SPACING.xl,
     marginBottom: SPACING.sm,
     color: '#E5E7EB',
     fontSize: TEXT.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   listContent: {
     paddingBottom: STICKY_HEIGHT + SPACING.lg,
   },
   setRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: '#111827',
@@ -331,27 +309,18 @@ const styles = StyleSheet.create({
   },
   setText: {
     color: '#E5E7EB',
-  },
-  setDate: {
-    color: '#6B7280',
-    fontSize: TEXT.xs,
-  },
-  setActions: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    alignItems: 'center',
-  },
-  setActionText: {
-    color: '#E5E7EB',
-    fontSize: TEXT.xs,
+    fontSize: TEXT.sm,
     fontWeight: '600',
   },
-  setDeleteText: {
-    color: '#F87171',
+  setDate: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    marginTop: 2,
   },
   empty: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     marginTop: SPACING.sm,
+    fontSize: TEXT.sm,
   },
   stickyBar: {
     position: 'absolute',
@@ -390,7 +359,7 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     color: '#9CA3AF',
-    fontSize: TEXT.xs,
+    fontSize: TEXT.sm,
     marginTop: SPACING.xs,
     marginBottom: SPACING.sm,
   },
@@ -413,6 +382,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#9CA3AF',
     fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   primarySmallButton: {
     paddingHorizontal: SPACING.lg,
@@ -423,6 +393,7 @@ const styles = StyleSheet.create({
   primarySmallButtonText: {
     color: '#F9FAFB',
     fontSize: TEXT.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
+

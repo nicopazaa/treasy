@@ -1,23 +1,11 @@
-// src/screens/HomeScreen.tsx
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Platform,
-} from 'react-native';
-import { AppState, TrainingBlock, TrainingBlockId } from '../types';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { AppState, TrainingBlock, TrainingBlockId, Exercise, SetEntry } from '../types';
 import { getBlockTone } from '../utils/blockTone';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import {
-  getWorkoutDates,
-  getDailyWorkout,
-  groupDailySets,
-  GroupedDailySetView,
-} from '../services/workoutService';
-import { formatDate, formatRelativeDayLabel } from '../utils/dateLabels';
+import { formatDate, formatRelativeDayLabel, formatWeekday } from '../utils/dateLabels';
+import { getDailyWorkout, getWorkoutDates, groupDailySets } from '../services/workoutService';
+import { blockLabel, greeting, t } from '../i18n/i18n';
 
 type Props = {
   appState: AppState;
@@ -28,11 +16,6 @@ type Props = {
   onOpenProgress: () => void;
   onOpenRepMax: () => void;
   onOpenProfile: () => void;
-};
-
-type LastWorkoutSummary = {
-  dateLabel: string;
-  groups: GroupedDailySetView[];
 };
 
 const ORDER: TrainingBlockId[] = [
@@ -57,6 +40,12 @@ function parseDateKey(dateKey: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
+function estimateOneRm(weight: number, reps: number): number {
+  if (reps <= 1) return weight;
+  const est = weight * (1 + reps / 30);
+  return Math.round(est * 10) / 10;
+}
+
 export const HomeScreen: React.FC<Props> = ({
   appState,
   onSelectBlock,
@@ -67,6 +56,7 @@ export const HomeScreen: React.FC<Props> = ({
   onOpenRepMax,
   onOpenProfile,
 }) => {
+  const language = appState.language ?? 'en';
   const [analysisOpen, setAnalysisOpen] = useState(true);
 
   const blocks = useMemo(() => {
@@ -79,112 +69,187 @@ export const HomeScreen: React.FC<Props> = ({
       if (block) ordered.push(block);
     }
 
-    // eventuelle custom-blokker (om du legger til senere)
-    const rest = appState.blocks.filter(
-      (b) => !ORDER.includes(b.id as TrainingBlockId),
-    );
-
+    const rest = appState.blocks.filter((b) => !ORDER.includes(b.id as TrainingBlockId));
     return [...ordered, ...rest];
   }, [appState.blocks]);
 
-  const lastWorkout = useMemo<LastWorkoutSummary | null>(() => {
+  const greetingText = greeting(language, appState.nickname);
+
+  const labelForBlock = (block: TrainingBlock): string => {
+    const id = block.id as TrainingBlockId;
+    return ORDER.includes(id) ? blockLabel(id, language) : block.name;
+  };
+
+  const lastWorkoutInsight = useMemo(() => {
     const dates = getWorkoutDates(appState);
-    if (dates.length === 0) return null;
+    if (dates.length === 0) {
+      return { title: t(language, 'lastWorkoutNoneTitle'), subtitle: t(language, 'lastWorkoutNoneSubtitle') };
+    }
 
     const dateKey = dates[0];
-    const daySets = getDailyWorkout(appState, dateKey);
-    const grouped = groupDailySets(daySets);
-    if (grouped.length === 0) return null;
-
     const dt = parseDateKey(dateKey);
-    const dateLabel = dt ? (formatRelativeDayLabel(dt) ?? formatDate(dt)) : dateKey;
+    const dayLabel = dt ? formatRelativeDayLabel(dt, new Date(), language) ?? formatWeekday(dt, language) : null;
+    const dateLabel = dt ? formatDate(dt) : dateKey;
 
+    const daySets = getDailyWorkout(appState, dateKey);
+    const groups = groupDailySets(daySets);
+    const setCount = daySets.length;
+
+    const blockCounts = new Map<string, { id: string; count: number }>();
+    for (const g of groups) {
+      const blockId = g.blockId ?? '';
+      if (!blockId) continue;
+      const prev = blockCounts.get(blockId);
+      blockCounts.set(blockId, { id: blockId, count: (prev?.count ?? 0) + g.sets.length });
+    }
+
+    const dominantBlockId = Array.from(blockCounts.values()).sort((a, b) => b.count - a.count)[0]?.id;
+    const dominantLabel =
+      dominantBlockId && ORDER.includes(dominantBlockId as TrainingBlockId)
+        ? blockLabel(dominantBlockId as TrainingBlockId, language)
+        : null;
+
+    const title = dominantLabel
+      ? t(language, 'lastWorkoutTitle', { block: dominantLabel })
+      : t(language, 'lastWorkoutFallbackTitle');
+    const subtitle = t(language, 'lastWorkoutSubtitle', {
+      day: dayLabel ?? dateLabel,
+      count: setCount,
+    });
+    return { title, subtitle };
+  }, [appState]);
+
+  const progressInsight = useMemo(() => {
+    if (appState.sets.length === 0) {
+      return { title: t(language, 'progressNoneTitle'), subtitle: t(language, 'progressNoneSubtitle') };
+    }
+
+    const now = Date.now();
+    const dayMs = 86400000;
+    const recentStart = now - 30 * dayMs;
+    const prevStart = now - 60 * dayMs;
+
+    const byExercise = new Map<
+      string,
+      { recentMax?: number; prevMax?: number; recentCount: number }
+    >();
+
+    for (const s of appState.sets) {
+      const ts = new Date(s.createdAt).getTime();
+      const item = byExercise.get(s.exerciseId) ?? { recentCount: 0 };
+
+      if (ts >= recentStart) {
+        item.recentCount += 1;
+        item.recentMax = Math.max(item.recentMax ?? 0, s.weight);
+      } else if (ts >= prevStart) {
+        item.prevMax = Math.max(item.prevMax ?? 0, s.weight);
+      }
+
+      byExercise.set(s.exerciseId, item);
+    }
+
+    let best:
+      | { exercise: Exercise; recentMax: number; prevMax?: number; recentCount: number }
+      | null = null;
+
+    for (const ex of appState.exercises) {
+      const data = byExercise.get(ex.id);
+      if (!data || data.recentMax == null) continue;
+      const candidate = { exercise: ex, recentMax: data.recentMax, prevMax: data.prevMax, recentCount: data.recentCount };
+
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+
+      const candDelta = candidate.prevMax != null ? candidate.recentMax - candidate.prevMax : null;
+      const bestDelta = best.prevMax != null ? best.recentMax - best.prevMax : null;
+
+      if (candDelta != null && bestDelta == null) {
+        best = candidate;
+        continue;
+      }
+      if (candDelta != null && bestDelta != null) {
+        if (candDelta > bestDelta) {
+          best = candidate;
+          continue;
+        }
+        if (candDelta < bestDelta) continue;
+      }
+
+      if (candidate.recentCount > best.recentCount) {
+        best = candidate;
+        continue;
+      }
+      if (candidate.recentCount < best.recentCount) continue;
+
+      if (candidate.recentMax > best.recentMax) {
+        best = candidate;
+      }
+    }
+
+    if (!best) {
+      return { title: t(language, 'progressNoRecentTitle'), subtitle: t(language, 'progressNoRecentSubtitle') };
+    }
+
+    const delta = best.prevMax != null ? best.recentMax - best.prevMax : null;
+    const deltaText =
+      delta == null
+        ? `${best.recentMax} kg`
+        : `${delta >= 0 ? '+' : ''}${Math.round(delta * 10) / 10} kg`;
     return {
-      dateLabel,
-      groups: grouped,
+      title: t(language, 'progressTitle', { exercise: best.exercise.name, delta: deltaText }),
+      subtitle: t(language, 'tapForDetails'),
     };
   }, [appState]);
 
-  const greeting =
-    appState.nickname && appState.nickname.trim().length > 0
-      ? `Hei, ${appState.nickname}`
-      : 'Hei';
+  const repMaxInsight = useMemo(() => {
+    if (appState.sets.length === 0) {
+      return { title: t(language, 'repMaxNoneTitle'), subtitle: t(language, 'repMaxNoneSubtitle') };
+    }
 
-  const previewGroups = lastWorkout ? lastWorkout.groups.slice(0, 2) : [];
-  const extraGroups =
-    lastWorkout && lastWorkout.groups.length > 2
-      ? lastWorkout.groups.length - 2
-      : 0;
+    let best: { set: SetEntry; exercise: Exercise } | null = null;
+    let bestOneRm = 0;
+
+    for (const s of appState.sets) {
+      const ex = appState.exercises.find((e) => e.id === s.exerciseId);
+      if (!ex) continue;
+      const oneRm = estimateOneRm(s.weight, s.reps);
+      if (oneRm > bestOneRm) {
+        bestOneRm = oneRm;
+        best = { set: s, exercise: ex };
+      }
+    }
+
+    if (!best) {
+      return { title: t(language, 'repMaxNoneTitle'), subtitle: t(language, 'repMaxNoneSubtitle') };
+    }
+
+    return {
+      title: t(language, 'repMaxTitle', { exercise: best.exercise.name, oneRm: bestOneRm }),
+      subtitle: t(language, 'repMaxSubtitle', { weight: best.set.weight, reps: best.set.reps }),
+    };
+  }, [appState]);
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        bounces
-      >
-        {/* Header */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} bounces>
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrapper}>
-            <Text style={styles.greeting}>{greeting}</Text>
-            <Text style={styles.subtitle}>
-              Velg muskelgruppe for a se ovelser og logge okter.
-            </Text>
+            <Text style={styles.greeting}>{greetingText}</Text>
+            <Text style={styles.subtitle}>{t(language, 'homeSubtitle')}</Text>
           </View>
           <TouchableOpacity onPress={onOpenProfile} hitSlop={8}>
-            <Text style={styles.profileLink}>Profil</Text>
+            <Text style={styles.profileLink}>{t(language, 'profile')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Hurtig logg */}
-        <Text style={styles.sectionTitle}>Hurtig logg</Text>
-        <TouchableOpacity
-          style={[styles.analysisCard, styles.actionCard]}
-          onPress={onOpenQuickLog}
-          activeOpacity={0.9}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Hurtig logg</Text>
-            <Text style={styles.cardChevron}>&gt;</Text>
-          </View>
-          <Text style={styles.cardText}>
-            Skriv for eksempel: Benk 80x2, 70x5, 60x8
-          </Text>
+        <TouchableOpacity style={styles.quickLogCard} onPress={onOpenQuickLog} activeOpacity={0.9}>
+          <Text style={styles.quickLogTitle}>{t(language, 'quickLogTitle')}</Text>
+          <Text style={styles.quickLogText}>{t(language, 'quickLogExample')}</Text>
         </TouchableOpacity>
 
-        {/* Sist okt */}
-        <Text style={styles.sectionTitle}>Sist okt</Text>
-        <TouchableOpacity
-          style={[styles.analysisCard, styles.actionCard]}
-          onPress={onOpenHistory}
-          activeOpacity={0.9}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Sist okt</Text>
-            <Text style={styles.cardChevron}>&gt;</Text>
-          </View>
-          {lastWorkout ? (
-            <View style={styles.cardBody}>
-              <Text style={styles.cardMeta}>{lastWorkout.dateLabel}</Text>
-              {previewGroups.map((group) => (
-                <Text key={group.id} style={styles.cardText}>
-                  {group.exerciseName}
-                  {group.blockName ? ` (${group.blockName})` : ''} - {group.sets.length} sett
-                </Text>
-              ))}
-              {extraGroups > 0 ? (
-                <Text style={styles.cardText}>+ {extraGroups} til</Text>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={styles.cardText}>
-              Ingen okter enda. Logg en okt for a se den her.
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Ovelser */}
-        <Text style={styles.sectionTitle}>Ovelser</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'muscleGroups')}</Text>
         <View style={styles.section}>
           {blocks.map((block) => {
             const tone = getBlockTone(block.id);
@@ -198,87 +263,47 @@ export const HomeScreen: React.FC<Props> = ({
                 onPress={() => onSelectBlock(block.id)}
                 activeOpacity={0.9}
               >
-                <Text style={[styles.blockLabel, { color: tone.accent }]}>
-                  {block.name}
-                </Text>
+                <Text style={[styles.blockLabel, { color: tone.accent }]}>{labelForBlock(block)}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* Analyse */}
         <View style={styles.analysisWrapper}>
           <TouchableOpacity
             style={styles.analysisHeaderRow}
             onPress={() => setAnalysisOpen((v) => !v)}
             activeOpacity={0.8}
           >
-            <Text style={styles.analysisTitle}>Analyse</Text>
+            <Text style={styles.analysisTitle}>{t(language, 'analysis')}</Text>
             <Text style={styles.chevron}>{analysisOpen ? 'v' : '>'}</Text>
           </TouchableOpacity>
 
           {analysisOpen && (
             <View style={styles.analysisCards}>
-              <TouchableOpacity
-                style={styles.analysisCard}
-                onPress={onOpenHistory}
-                activeOpacity={0.9}
-              >
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Tidligere okter</Text>
-                  <Text style={styles.cardChevron}>&gt;</Text>
-                </View>
-                <Text style={styles.cardText}>
-                  Se komplette okter per dag - alle ovelser, uansett muskelgruppe.
-                </Text>
+              <TouchableOpacity style={styles.analysisCard} onPress={onOpenHistory} activeOpacity={0.9}>
+                <Text style={styles.cardTitle}>{lastWorkoutInsight.title}</Text>
+                <Text style={styles.cardText}>{lastWorkoutInsight.subtitle}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.analysisCard}
-                onPress={onOpenProgress}
-                activeOpacity={0.9}
-              >
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Progressive overload</Text>
-                  <Text style={styles.cardChevron}>&gt;</Text>
-                </View>
-                <Text style={styles.cardText}>
-                  Velg muskelgruppe og ovelse for a se utviklingen din over tid.
-                </Text>
+              <TouchableOpacity style={styles.analysisCard} onPress={onOpenProgress} activeOpacity={0.9}>
+                <Text style={styles.cardTitle}>{progressInsight.title}</Text>
+                <Text style={styles.cardText}>{progressInsight.subtitle}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.analysisCard}
-                onPress={onOpenRepMax}
-                activeOpacity={0.9}
-              >
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Rep for max</Text>
-                  <Text style={styles.cardChevron}>&gt;</Text>
-                </View>
-                <Text style={styles.cardText}>
-                  Se hoyeste vekt og antall reps du har tatt for hver ovelse.
-                </Text>
+              <TouchableOpacity style={styles.analysisCard} onPress={onOpenRepMax} activeOpacity={0.9}>
+                <Text style={styles.cardTitle}>{repMaxInsight.title}</Text>
+                <Text style={styles.cardText}>{repMaxInsight.subtitle}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.analysisCard}
-                onPress={onOpenAI}
-                activeOpacity={0.9}
-              >
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Treasy sok</Text>
-                  <Text style={styles.cardChevron}>&gt;</Text>
-                </View>
-                <Text style={styles.cardText}>
-                  Spor for eksempel "Hva tok jeg sist i benkpress?" og fa svar fra loggen.
-                </Text>
+              <TouchableOpacity style={styles.analysisCard} onPress={onOpenAI} activeOpacity={0.9}>
+                <Text style={styles.cardTitle}>{t(language, 'aiSearchTitle')}</Text>
+                <Text style={styles.cardText}>{t(language, 'aiSearchHint')}</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* Litt ekstra luft nederst pa mobil */}
         <View style={{ height: Platform.OS === 'web' ? 32 : 48 }} />
       </ScrollView>
     </View>
@@ -301,7 +326,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: SPACING.xxl,
+    marginBottom: SPACING.xl,
   },
   headerTextWrapper: {
     flex: 1,
@@ -320,39 +345,49 @@ const styles = StyleSheet.create({
   profileLink: {
     fontSize: TEXT.sm,
     color: '#60A5FA',
-    fontWeight: '500',
+    fontWeight: '600',
     paddingTop: SPACING.xs,
   },
   sectionTitle: {
     color: '#E5E7EB',
     fontSize: TEXT.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    fontWeight: '700',
     marginBottom: SPACING.sm,
   },
   section: {
     gap: SPACING.md,
     marginBottom: SPACING.xxl,
   },
-  blockButton: {
+  quickLogCard: {
     backgroundColor: '#0B1220',
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    marginBottom: SPACING.xxl,
+  },
+  quickLogTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.lg,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  quickLogText: {
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+  },
+  blockButton: {
     borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#1F2937',
     minHeight: 52,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 3,
   },
   blockLabel: {
     fontSize: TEXT.lg,
-    fontWeight: '500',
-    color: '#F9FAFB',
+    fontWeight: '600',
   },
   analysisWrapper: {
     marginTop: SPACING.sm,
@@ -369,12 +404,13 @@ const styles = StyleSheet.create({
   },
   analysisTitle: {
     fontSize: TEXT.lg,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#F9FAFB',
   },
   chevron: {
     fontSize: TEXT.md,
     color: '#9CA3AF',
+    fontWeight: '700',
   },
   analysisCards: {
     gap: SPACING.md,
@@ -386,33 +422,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     borderWidth: 1,
     borderColor: '#1F2937',
-    minHeight: 70,
-  },
-  actionCard: {
-    marginBottom: SPACING.lg,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.xs,
-  },
-  cardChevron: {
-    color: '#94A3B8',
-    fontSize: TEXT.md,
+    minHeight: 72,
   },
   cardTitle: {
     fontSize: TEXT.md,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#F9FAFB',
-  },
-  cardMeta: {
-    fontSize: TEXT.xs,
-    color: '#94A3B8',
     marginBottom: SPACING.xs,
-  },
-  cardBody: {
-    marginTop: SPACING.xs,
   },
   cardText: {
     fontSize: TEXT.xs,

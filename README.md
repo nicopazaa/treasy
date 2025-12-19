@@ -1,57 +1,68 @@
-﻿# Treasy
+# Treasy
 
-Treasy is a local-first training log built with Expo / React Native.
+Treasy is a local-first training log built with Expo / React Native (web + mobile).
 
-## Features
+## Core idea
 
-- Email-only onboarding (no password). Data stays on the device.
-- Muscle blocks: Bryst, Skuldre, Rygg, Armer, Core, Cardio, Bein.
-- Exercises per block, and set logging (weight + reps).
-- Quick Log for fast text input (see examples below).
-- Progress and rep max views.
-- Treasy search: local log search, no online AI.
+Log training like Notes:
 
-## Quick Log
+- Write freely
+- Treasy always saves the text
+- Treasy extracts structure when possible (exercise + sets + timestamp)
 
-Write a single line with exercise + sets, and Treasy will parse it:
+## Onboarding
+
+- **Continue without login (default):** data stays on the device (can be lost if the device is lost)
+- **Log in (optional):**
+  - GitHub (web) via Netlify Function OAuth
+  - Email (local-only identity in this version)
+
+## Quick log examples
 
 - Benk 80x2, 70x5, 60x8
 - Benkpress 80 x 2, 70 x 5
-- Markloft 120kgx3
+- Markløft 120kgx3
 
-If the exercise does not exist, the app suggests creating it with one tap.
+If Treasy finds a new exercise name, it saves first, then asks for a muscle group (optional). If you dismiss it, the exercise stays uncategorized.
 
-## Data Storage
+## Data storage
 
-All data is stored locally in AsyncStorage under the key `treasy_app_state_v2`.
-There is no backend or cloud sync in this version.
+All data is stored locally in AsyncStorage under the key `treasy_app_state_v2`:
 
-## Getting Started
+- Blocks, exercises, sets
+- Free-text logs
+- Profile settings + language
 
-1. Install dependencies:
+There is no cloud sync of workouts in this version.
 
-   ```bash
-   npm install
-   ```
+## Run locally
 
-2. Start the app:
+1. Install deps: `npm install`
+2. Start: `npm start`
 
-   ```bash
-   npm start
-   ```
+If PowerShell blocks `npm`, use: `npm.cmd start`
 
-3. Scan the QR code with Expo Go (iOS/Android).
+Useful scripts:
 
-## Project Structure
+- `npm run web`
+- `npm run ios`
+- `npm run android`
+- `npm run build:web` (exports to `dist`)
 
-- `App.tsx`: root component with simple navigation and state.
-- `src/types`: TypeScript types for blocks, exercises, sets.
-- `src/storage`: AsyncStorage load/save for app state.
-- `src/services`: workout logic, quick log parsing, local search.
-- `src/components`: shared UI components.
-- `src/screens`: app screens (Home, Block, Exercise, Quick Log, AI, etc).
-
-## Netlify Deployment
+## Netlify
 
 - Build command: `npm run build:web`
 - Publish directory: `dist`
+- Functions directory: `netlify/functions`
+
+### GitHub login env vars (Netlify)
+
+Set these environment variables:
+
+- `EXPO_PUBLIC_GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+
+Callback URL to add in your GitHub OAuth App:
+
+- `https://<your-site>.netlify.app/auth/github`

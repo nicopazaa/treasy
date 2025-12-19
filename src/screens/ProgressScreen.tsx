@@ -1,15 +1,10 @@
-﻿import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { AppState, TrainingBlock, Exercise, SetEntry } from '../types';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId, AppLanguage } from '../types';
 import { getBlockTone } from '../utils/blockTone';
 import { formatRelativeDateTime } from '../utils/dateLabels';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { blockLabel, t } from '../i18n/i18n';
 
 interface Props {
   appState: AppState;
@@ -27,25 +22,28 @@ interface ProgressRow {
 function estimateOneRm(weight: number, reps: number): number {
   if (reps <= 1) return weight;
   const est = weight * (1 + reps / 30);
-  return Math.round(est * 10) / 10; // Acn desimal
+  return Math.round(est * 10) / 10;
+}
+
+function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
+  const id = block.id as TrainingBlockId;
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'].includes(id)) {
+    return blockLabel(id, language);
+  }
+  return block.name;
 }
 
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(
-    appState.blocks[0]?.id ?? null
-  );
-  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
-    null
-  );
+  const language = appState.language ?? 'en';
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(appState.blocks[0]?.id ?? null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
   const blocks = appState.blocks as TrainingBlock[];
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
 
   const exercises = useMemo(() => {
     if (!selectedBlockId) return [] as Exercise[];
-    return appState.exercises.filter(
-      (e) => e.blockId === selectedBlockId
-    ) as Exercise[];
+    return appState.exercises.filter((e) => e.blockId === selectedBlockId) as Exercise[];
   }, [appState.exercises, selectedBlockId]);
 
   const progressRows: ProgressRow[] = useMemo(() => {
@@ -56,7 +54,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
       .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)) as SetEntry[];
 
     return setsForExercise.map((s) => {
-      const dateLabel = formatRelativeDateTime(new Date(s.createdAt));
+      const dateLabel = formatRelativeDateTime(new Date(s.createdAt), new Date(), language);
       return {
         id: s.id,
         dateLabel,
@@ -65,29 +63,23 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         oneRm: estimateOneRm(s.weight, s.reps),
       };
     });
-  }, [appState.sets, selectedExerciseId]);
+  }, [appState.sets, language, selectedExerciseId]);
+
   const chartMax = progressRows.reduce((max, row) => Math.max(max, row.weight), 0);
 
   const selectedExercise =
-    selectedExerciseId &&
-    appState.exercises.find((e) => e.id === selectedExerciseId);
+    selectedExerciseId && appState.exercises.find((e) => e.id === selectedExerciseId);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-    >
-      <TouchableOpacity onPress={onBack}>
-        <Text style={styles.back}>{'< Tilbake'}</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <TouchableOpacity onPress={onBack} hitSlop={8}>
+        <Text style={styles.back}>{t(language, 'back')}</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Progressive overload</Text>
-      <Text style={styles.subtitle}>
-        Velg muskelgruppe og A,velse for A se utviklingen din over tid.
-      </Text>
+      <Text style={styles.title}>{t(language, 'progressScreenTitle')}</Text>
+      <Text style={styles.subtitle}>{t(language, 'progressScreenSubtitle')}</Text>
 
-      {/* Muskelgrupper */}
-      <Text style={styles.sectionLabel}>Muskelgrupper</Text>
+      <Text style={styles.sectionLabel}>{t(language, 'muscleGroups')}</Text>
       <View style={styles.pillRow}>
         {blocks.map((block) => {
           const selected = block.id === selectedBlockId;
@@ -106,6 +98,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 setSelectedBlockId(block.id);
                 setSelectedExerciseId(null);
               }}
+              activeOpacity={0.9}
             >
               <Text
                 style={[
@@ -113,19 +106,16 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                   selected ? styles.pillTextSelected : { color: tone.accent },
                 ]}
               >
-                {block.name}
+                {labelForBlock(block, language)}
               </Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* A~velser */}
-      <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>A~velser</Text>
+      <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>{t(language, 'exercises')}</Text>
       {exercises.length === 0 ? (
-        <Text style={styles.emptyText}>
-          Ingen A,velser i denne blokken enda. Legg til A,velser fA,rst.
-        </Text>
+        <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
       ) : (
         <View style={styles.pillRow}>
           {exercises.map((ex) => {
@@ -136,20 +126,17 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 style={[
                   styles.pill,
                   {
-                    backgroundColor: selected
-                      ? selectedBlockTone.accent
-                      : selectedBlockTone.soft,
+                    backgroundColor: selected ? selectedBlockTone.accent : selectedBlockTone.soft,
                     borderColor: selectedBlockTone.accent,
                   },
                 ]}
                 onPress={() => setSelectedExerciseId(ex.id)}
+                activeOpacity={0.9}
               >
                 <Text
                   style={[
                     styles.pillText,
-                    selected
-                      ? styles.pillTextSelected
-                      : { color: selectedBlockTone.accent },
+                    selected ? styles.pillTextSelected : { color: selectedBlockTone.accent },
                   ]}
                 >
                   {ex.name}
@@ -160,19 +147,17 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         </View>
       )}
 
-      {/* Utvikling / tabell */}
       <View style={styles.progressCard}>
-        <Text style={styles.progressTitle}>Utvikling</Text>
+        <Text style={styles.progressTitle}>{t(language, 'development')}</Text>
         {selectedExercise && progressRows.length > 0 ? (
           <>
             <Text style={[styles.progressSubtitle, { color: selectedBlockTone.accent }]}>
               {selectedExercise.name}
             </Text>
-            <Text style={styles.chartCaption}>Vekt over tid</Text>
+            <Text style={styles.chartCaption}>{t(language, 'weightOverTime')}</Text>
             <View style={styles.chart}>
               {progressRows.map((r, index) => {
-                const height =
-                  chartMax > 0 ? Math.max(6, (r.weight / chartMax) * 120) : 0;
+                const height = chartMax > 0 ? Math.max(6, (r.weight / chartMax) * 120) : 0;
                 return (
                   <View
                     key={`${r.id}-bar`}
@@ -190,10 +175,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
             </View>
             <View style={styles.table}>
               <View style={[styles.row, styles.headerRow]}>
-                <Text style={[styles.cell, styles.cellDate]}>Dato</Text>
-                <Text style={[styles.cell, styles.cellWeight]}>Vekt</Text>
-                <Text style={[styles.cell, styles.cellReps]}>Reps</Text>
-                <Text style={[styles.cell, styles.cellOneRm]}>1RM (est)</Text>
+                <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
+                <Text style={[styles.cell, styles.cellWeight]}>{t(language, 'weight')}</Text>
+                <Text style={[styles.cell, styles.cellReps]}>{t(language, 'reps')}</Text>
+                <Text style={[styles.cell, styles.cellOneRm]}>{t(language, 'oneRmEst')}</Text>
               </View>
               {progressRows.map((r) => (
                 <View key={r.id} style={styles.row}>
@@ -206,10 +191,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
             </View>
           </>
         ) : (
-          <Text style={styles.emptyText}>
-            Velg en A,velse for A se loggen din. NAr du har logget sett, vil
-            utviklingen vises her.
-          </Text>
+          <Text style={styles.emptyText}>{t(language, 'chooseExerciseToSee')}</Text>
         )}
       </View>
     </ScrollView>
@@ -229,6 +211,8 @@ const styles = StyleSheet.create({
   back: {
     color: '#93C5FD',
     marginBottom: SPACING.md,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   title: {
     fontSize: TEXT.xl,
@@ -238,13 +222,14 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: SPACING.xs,
     color: '#9CA3AF',
+    fontSize: TEXT.sm,
   },
   sectionLabel: {
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
     color: '#F9FAFB',
     fontSize: TEXT.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   pillRow: {
     flexDirection: 'row',
@@ -266,14 +251,16 @@ const styles = StyleSheet.create({
   pillText: {
     color: '#E5E7EB',
     fontSize: TEXT.sm,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   pillTextSelected: {
     color: '#F9FAFB',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   emptyText: {
-    color: '#6B7280',
-    fontSize: TEXT.xs,
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
   },
   progressCard: {
     marginTop: SPACING.xxl,
@@ -292,6 +279,8 @@ const styles = StyleSheet.create({
   progressSubtitle: {
     color: '#9CA3AF',
     marginBottom: SPACING.sm,
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
   chartCaption: {
     color: '#9CA3AF',

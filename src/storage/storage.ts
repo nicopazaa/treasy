@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, TrainingBlock } from '../types';
+import { AppState, TrainingBlock, AuthProvider, AppLanguage } from '../types';
 
 const STORAGE_KEY = 'treasy_app_state_v2';
 
@@ -14,16 +14,55 @@ const DEFAULT_BLOCKS: TrainingBlock[] = [
   { id: 'legs',      name: 'Bein' },
 ];
 
-export function createInitialState(email: string): AppState {
+function generateUserId(): string {
+  return `user_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+}
+
+function guessDeviceLanguage(): AppLanguage {
+  try {
+    const locale =
+      (typeof navigator !== 'undefined' && navigator.language) ||
+      Intl.DateTimeFormat().resolvedOptions().locale ||
+      'en';
+
+    const lower = locale.toLowerCase();
+    if (lower.startsWith('nb') || lower.startsWith('no') || lower.startsWith('nn')) {
+      return 'nb';
+    }
+    if (lower.startsWith('es')) {
+      return 'es';
+    }
+    return 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+export function createInitialState(options?: {
+  userEmail?: string | null;
+  onboarded?: boolean;
+  authProvider?: AuthProvider;
+  language?: AppLanguage;
+}): AppState {
+  const userEmail = options?.userEmail ?? null;
+  const onboarded = options?.onboarded ?? false;
+  const authProvider: AuthProvider = options?.authProvider ?? (userEmail ? 'email' : 'guest');
+  const language = options?.language ?? guessDeviceLanguage();
+
   return {
-    userEmail: email,
+    userId: generateUserId(),
+    onboarded,
+    authProvider,
+    userEmail,
     nickname: null,
     heightCm: null,
     weightKg: null,
     theme: 'dark',
+    language,
     blocks: DEFAULT_BLOCKS,
     exercises: [],
     sets: [],
+    logs: [],
   };
 }
 
@@ -45,7 +84,15 @@ export async function loadAppState(): Promise<AppState | null> {
 
     return {
       ...parsed,
+      userId: parsed.userId ?? generateUserId(),
+      onboarded:
+        parsed.onboarded ??
+        Boolean(parsed.userEmail || parsed.exercises?.length || parsed.sets?.length),
+      authProvider: parsed.authProvider ?? (parsed.userEmail ? 'email' : 'guest'),
+      language: parsed.language ?? guessDeviceLanguage(),
       blocks: mergedBlocks,
+      logs: parsed.logs ?? [],
+      theme: parsed.theme ?? 'dark',
     };
   } catch (e) {
     console.warn('Failed to load app state', e);

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet, StatusBar, Platform } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { AppState } from './src/types';
 import {
@@ -10,15 +10,19 @@ import {
 import {
   addExercise,
   addExerciseWithSets,
+  addExerciseWithSetsResult,
+  addLogEntry,
   addSet,
   addSetsForExercise,
   renameExercise,
   deleteExercise,
+  setExerciseBlockId,
   updateSet,
   deleteSet,
 } from './src/services/workoutService';
 
 import { LandingScreen } from './src/screens/LandingScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BlockScreen } from './src/screens/BlockScreen';
@@ -29,9 +33,12 @@ import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
+import { findExerciseFuzzy, parseQuickLog } from './src/services/quickLogService';
+import { t } from './src/i18n/i18n';
 
 type ScreenName =
   | 'landing'
+  | 'login'
   | 'welcome'
   | 'home'
   | 'block'
@@ -48,30 +55,85 @@ interface NavState {
   selectedBlockId?: string | null;
   selectedExerciseId?: string | null;
   aiInitialQuestion?: string | null;
+  showLocalOnlyNotice?: boolean;
 }
 
 export default function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
   const [nav, setNav] = useState<NavState>({ screen: 'landing' });
   const [loading, setLoading] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const githubHandledRef = useRef(false);
 
   useEffect(() => {
     const init = async () => {
       const stored = await loadAppState();
-      if (stored) {
-        setAppState(stored);
-      } else {
-        setAppState({
-          userEmail: null,
-          blocks: [],
-          exercises: [],
-          sets: [],
-        });
-      }
+      const next = stored ?? createInitialState();
+      setAppState(next);
+      setNav({ screen: next.onboarded ? 'home' : 'landing' });
       setLoading(false);
     };
     init();
   }, []);
+
+  useEffect(() => {
+    if (loading || !appState) return;
+    if (githubHandledRef.current) return;
+    if (Platform.OS !== 'web') return;
+    if (typeof window === 'undefined') return;
+
+    const url = new URL(window.location.href);
+    if (url.pathname !== '/auth/github') return;
+
+    const code = url.searchParams.get('code');
+    const returnedState = url.searchParams.get('state');
+    if (!code) return;
+
+    githubHandledRef.current = true;
+    setAuthBusy(true);
+
+    const storedState = window.sessionStorage?.getItem('treasy_github_oauth_state') ?? null;
+    if (!returnedState || !storedState || returnedState !== storedState) {
+      setLoginError(t(appState.language ?? 'en', 'githubFailed'));
+      window.history.replaceState({}, '', '/');
+      setAuthBusy(false);
+      setNav({ screen: 'login' });
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(`/.netlify/functions/github-oauth?code=${encodeURIComponent(code)}`);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error ?? 'GitHub OAuth failed');
+        }
+
+        setAppState((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            onboarded: true,
+            authProvider: 'github',
+            userEmail: data?.email ?? prev.userEmail,
+            nickname: prev.nickname ?? data?.login ?? prev.nickname,
+          };
+        });
+
+        setLoginError(null);
+        setNav({ screen: 'quickLog' });
+      } catch (e) {
+        console.warn('GitHub auth failed', e);
+        setLoginError(t(appState.language ?? 'en', 'githubFailed'));
+        setNav({ screen: 'login' });
+      } finally {
+        window.sessionStorage?.removeItem('treasy_github_oauth_state');
+        window.history.replaceState({}, '', '/');
+        setAuthBusy(false);
+      }
+    })();
+  }, [appState, loading]);
 
   useEffect(() => {
     if (appState && !loading) {
@@ -83,21 +145,100 @@ export default function App() {
     setNav({ screen, ...params });
   };
 
-  const handleLandingContinue = () => {
-    if (appState && appState.userEmail) {
-      navigate('home');
-    } else {
-      navigate('welcome');
-    }
+  const handleContinueWithoutLogin = () => {
+    setLoginError(null);
+    setAppState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        onboarded: true,
+        authProvider: prev.authProvider ?? 'guest',
+      };
+    });
+    navigate('quickLog', { showLocalOnlyNotice: true });
   };
 
   const handleWelcomeComplete = (email: string) => {
-    const initial = createInitialState(email);
-    setAppState(initial);
-    setNav({ screen: 'home' });
+    const trimmed = email.trim().toLowerCase();
+    setLoginError(null);
+    setAppState((prev) => {
+      const current = prev ?? createInitialState();
+      const derivedNickname =
+        current.nickname && current.nickname.trim()
+          ? current.nickname
+          : trimmed.includes('@')
+            ? trimmed.split('@')[0]
+            : null;
+      return {
+        ...current,
+        onboarded: true,
+        authProvider: 'email',
+        userEmail: trimmed,
+        nickname: derivedNickname,
+      };
+    });
+    setNav({ screen: 'quickLog' });
   };
 
-  if (loading || !appState) {
+  const startGithubLogin = () => {
+    setLoginError(null);
+
+    if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      setLoginError(t(appState?.language ?? 'en', 'githubWebOnly'));
+      return;
+    }
+
+    const clientId = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
+    if (!clientId) {
+      setLoginError(t(appState?.language ?? 'en', 'githubNotConfigured'));
+      return;
+    }
+
+    const state = `st_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+    window.sessionStorage?.setItem('treasy_github_oauth_state', state);
+
+    const redirectUri = `${window.location.origin}/auth/github`;
+    const params = new URLSearchParams();
+    params.set('client_id', clientId);
+    params.set('redirect_uri', redirectUri);
+    params.set('scope', 'read:user user:email');
+    params.set('state', state);
+
+    window.location.assign(`https://github.com/login/oauth/authorize?${params.toString()}`);
+  };
+
+  const handleQuickLogSave = (
+    text: string
+  ): { newExerciseId?: string; newExerciseName?: string } => {
+    if (!appState) return {};
+
+    let next = addLogEntry(appState, text);
+    const parsed = parseQuickLog(text);
+
+    if (parsed) {
+      const existing = findExerciseFuzzy(next, parsed.exerciseName);
+      if (existing) {
+        next = addSetsForExercise(next, existing.id, parsed.sets);
+      } else {
+        const created = addExerciseWithSetsResult(
+          next,
+          'uncategorized',
+          parsed.exerciseName,
+          parsed.sets
+        );
+        if (created) {
+          next = created.nextState;
+          setAppState(next);
+          return { newExerciseId: created.exerciseId, newExerciseName: parsed.exerciseName };
+        }
+      }
+    }
+
+    setAppState(next);
+    return {};
+  };
+
+  if (loading || !appState || authBusy) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
@@ -120,11 +261,34 @@ export default function App() {
       <ExpoStatusBar style="light" />
 
       {nav.screen === 'landing' && (
-        <LandingScreen onContinue={handleLandingContinue} />
+        <LandingScreen
+          language={appState.language ?? 'en'}
+          onContinueWithoutLogin={handleContinueWithoutLogin}
+          onLogin={() => navigate('login')}
+        />
+      )}
+
+      {nav.screen === 'login' && (
+        <LoginScreen
+          language={appState.language ?? 'en'}
+          onBack={() => navigate(appState.onboarded ? 'profile' : 'landing')}
+          onContinueWithGithub={() => {
+            startGithubLogin();
+          }}
+          onContinueWithEmail={() => {
+            setLoginError(null);
+            navigate('welcome');
+          }}
+          error={loginError}
+        />
       )}
 
       {nav.screen === 'welcome' && (
-        <WelcomeScreen onComplete={handleWelcomeComplete} />
+        <WelcomeScreen
+          language={appState.language ?? 'en'}
+          onBack={() => navigate('login')}
+          onComplete={handleWelcomeComplete}
+        />
       )}
 
       {nav.screen === 'home' && (
@@ -144,6 +308,7 @@ export default function App() {
 
       {nav.screen === 'block' && currentBlock && (
         <BlockScreen
+          language={appState.language ?? 'en'}
           block={currentBlock}
           exercises={appState.exercises.filter(
             (ex) => ex.blockId === currentBlock.id
@@ -175,6 +340,7 @@ export default function App() {
 
       {nav.screen === 'exercise' && currentExercise && (
         <ExerciseScreen
+          language={appState.language ?? 'en'}
           exercise={currentExercise}
           sets={appState.sets
             .filter((s) => s.exerciseId === currentExercise.id)
@@ -232,16 +398,13 @@ export default function App() {
         <QuickLogScreen
           appState={appState}
           onBack={() => navigate('home')}
-          onLogExisting={(exerciseId, sets) => {
+          onSave={handleQuickLogSave}
+          onCategorizeExercise={(exerciseId, blockId) => {
             setAppState((prev) =>
-              prev ? addSetsForExercise(prev, exerciseId, sets) : prev
+              prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
             );
           }}
-          onLogNew={(blockId, name, sets) => {
-            setAppState((prev) =>
-              prev ? addExerciseWithSets(prev, blockId, name, sets) : prev
-            );
-          }}
+          showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
         />
       )}
 
@@ -250,6 +413,7 @@ export default function App() {
           appState={appState}
           onBack={() => navigate('home')}
           onUpdate={(next: AppState) => setAppState(next)}
+          onOpenLogin={() => navigate('login')}
         />
       )}
     </View>

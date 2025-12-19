@@ -11,25 +11,26 @@ import {
 } from 'react-native';
 import { AppState } from '../types';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { LANGUAGE_OPTIONS, t } from '../i18n/i18n';
 
 interface Props {
   appState: AppState;
   onBack: () => void;
   onUpdate: (next: AppState) => void;
+  onOpenLogin: () => void;
 }
 
 export const ProfileScreen: React.FC<Props> = ({
   appState,
   onBack,
   onUpdate,
+  onOpenLogin,
 }) => {
+  const language = appState.language ?? 'en';
   const [nickname, setNickname] = useState(appState.nickname ?? '');
-  const [height, setHeight] = useState(
-    appState.heightCm != null ? String(appState.heightCm) : ''
-  );
-  const [weight, setWeight] = useState(
-    appState.weightKg != null ? String(appState.weightKg) : ''
-  );
+  const [height, setHeight] = useState(appState.heightCm != null ? String(appState.heightCm) : '');
+  const [weight, setWeight] = useState(appState.weightKg != null ? String(appState.weightKg) : '');
 
   const handleSave = () => {
     const trimmedNickname = nickname.trim();
@@ -45,65 +46,93 @@ export const ProfileScreen: React.FC<Props> = ({
     onBack();
   };
 
+  const authLine =
+    appState.authProvider === 'github'
+      ? t(language, 'loggedInWithGithub')
+      : appState.authProvider === 'email'
+        ? t(language, 'loggedInWithEmail')
+        : t(language, 'continuingWithoutLogin');
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.back}>{'< Tilbake'}</Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity onPress={onBack} hitSlop={8}>
+          <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Profil</Text>
-        <Text style={styles.subtitle}>
-          Tilpass hvordan Treasy ser ut og hva vi viser på startsiden.
-        </Text>
+        <Text style={styles.title}>{t(language, 'profileTitle')}</Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Kallenavn</Text>
+          <Text style={styles.label}>{authLine}</Text>
+          {appState.userEmail ? (
+            <Text style={styles.helper}>{appState.userEmail}</Text>
+          ) : null}
+          {appState.authProvider === 'guest' ? (
+            <TouchableOpacity style={styles.secondaryButton} onPress={onOpenLogin} activeOpacity={0.9}>
+              <Text style={styles.secondaryButtonText}>{t(language, 'login')}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>{t(language, 'language')}</Text>
+          <View style={styles.languageRow}>
+            {LANGUAGE_OPTIONS.map((opt) => {
+              const selected = opt.id === language;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[styles.languageButton, selected && styles.languageButtonSelected]}
+                  onPress={() => onUpdate({ ...appState, language: opt.id })}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.languageText, selected && styles.languageTextSelected]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>{t(language, 'nickname')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="F.eks. Ninja"
+            placeholder={t(language, 'nicknamePlaceholder')}
             placeholderTextColor="#4B5563"
             value={nickname}
             onChangeText={setNickname}
           />
-          <Text style={styles.helper}>
-            Vises på hjemskjermen i stedet for e-post.
-          </Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Høyde (cm)</Text>
+          <Text style={styles.label}>{t(language, 'heightCm')}</Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"
-            placeholder="F.eks. 180"
+            placeholder={t(language, 'heightPlaceholder')}
             placeholderTextColor="#4B5563"
             value={height}
             onChangeText={setHeight}
           />
 
-          <Text style={[styles.label, { marginTop: 12 }]}>Vekt (kg)</Text>
+          <Text style={[styles.label, { marginTop: SPACING.md }]}>{t(language, 'weightKg')}</Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"
-            placeholder="F.eks. 80"
+            placeholder={t(language, 'weightPlaceholder')}
             placeholderTextColor="#4B5563"
             value={weight}
             onChangeText={setWeight}
           />
-          <Text style={styles.helper}>
-            Lagres lokalt – kan brukes senere til mer avansert analyse.
-          </Text>
         </View>
 
         <View style={styles.buttonWrap}>
-          <PrimaryButton title="Lagre" onPress={handleSave} />
+          <PrimaryButton title={t(language, 'save')} onPress={handleSave} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -116,52 +145,96 @@ const styles = StyleSheet.create({
     backgroundColor: '#020617',
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.xxxl,
+    paddingBottom: SPACING.xxl,
   },
   back: {
     color: '#93C5FD',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   title: {
-    fontSize: 24,
+    fontSize: TEXT.xl,
     fontWeight: '700',
     color: '#F9FAFB',
-  },
-  subtitle: {
-    marginTop: 4,
-    color: '#9CA3AF',
-    marginBottom: 20,
+    marginBottom: SPACING.lg,
   },
   card: {
     backgroundColor: '#020617',
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: '#1F2937',
-    padding: 14,
-    marginBottom: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
   },
   label: {
     color: '#E5E7EB',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  input: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: '#F9FAFB',
-    fontSize: 14,
+    marginBottom: SPACING.xs,
+    fontWeight: '600',
+    fontSize: TEXT.sm,
   },
   helper: {
-    marginTop: 6,
-    color: '#6B7280',
-    fontSize: 12,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    marginBottom: SPACING.sm,
+  },
+  input: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    backgroundColor: '#0B1220',
+  },
+  secondaryButton: {
+    marginTop: SPACING.sm,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  secondaryButtonText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.md,
+    fontWeight: '600',
+  },
+  languageRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  languageButton: {
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: '#0B1220',
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  languageButtonSelected: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+  },
+  languageText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  languageTextSelected: {
+    color: '#93C5FD',
   },
   buttonWrap: {
-    marginTop: 16,
+    marginTop: SPACING.md,
   },
 });

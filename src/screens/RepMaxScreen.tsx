@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   SectionListData,
 } from 'react-native';
-import { AppState, TrainingBlock, Exercise } from '../types';
+import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../types';
 import { getSetsForExercise } from '../services/workoutService';
-import { SetEntry } from '../types';
 import { getBlockTone } from '../utils/blockTone';
 import { SPACING, TEXT } from '../theme/tokens';
+import { blockLabel, t } from '../i18n/i18n';
 
 interface Props {
   appState: AppState;
@@ -21,7 +21,7 @@ interface Props {
 interface RepMaxItem {
   id: string; // exercise id
   exerciseName: string;
-  blockName?: string;
+  blockId: string;
   weight: number;
   reps: number;
   oneRm: number;
@@ -30,7 +30,7 @@ interface RepMaxItem {
 }
 
 interface RepMaxSection {
-  title: string; // block name
+  title: string;
   blockId: string;
   data: RepMaxItem[];
 }
@@ -43,7 +43,6 @@ function pickBestSet(sets: SetEntry[]): SetEntry | null {
     if (current.weight < best.weight) return best;
     if (current.reps > best.reps) return current;
     if (current.reps < best.reps) return best;
-    // samme vekt og reps -> velg nyeste
     return current.createdAt > best.createdAt ? current : best;
   }, null);
 }
@@ -54,15 +53,23 @@ function estimateOneRm(weight: number, reps: number): number {
   return Math.round(est * 10) / 10;
 }
 
+function labelForBlock(block: TrainingBlock, language: AppState['language']): string {
+  const lang = language ?? 'en';
+  const id = block.id as TrainingBlockId;
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'].includes(id)) {
+    return blockLabel(id, lang);
+  }
+  return block.name;
+}
+
 export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
+  const language = appState.language ?? 'en';
+
   const sections: RepMaxSection[] = useMemo(() => {
     const res: RepMaxSection[] = [];
 
     for (const block of appState.blocks as TrainingBlock[]) {
-      const exercisesForBlock = appState.exercises.filter(
-        (ex) => ex.blockId === block.id
-      );
-
+      const exercisesForBlock = appState.exercises.filter((ex) => ex.blockId === block.id);
       const items: RepMaxItem[] = [];
 
       for (const ex of exercisesForBlock as Exercise[]) {
@@ -84,7 +91,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
         items.push({
           id: ex.id,
           exerciseName: ex.name,
-          blockName: block.name,
+          blockId: block.id,
           weight: best.weight,
           reps: best.reps,
           oneRm: estimateOneRm(best.weight, best.reps),
@@ -94,7 +101,6 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
       }
 
       if (items.length > 0) {
-        // sortAcr innen blokken: tyngst fA,rst, sAť flest reps
         items.sort((a, b) => {
           if (a.weight !== b.weight) return b.weight - a.weight;
           if (a.reps !== b.reps) return b.reps - a.reps;
@@ -102,7 +108,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
         });
 
         res.push({
-          title: block.name,
+          title: labelForBlock(block, language),
           blockId: block.id,
           data: items,
         });
@@ -110,23 +116,19 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
     }
 
     return res;
-  }, [appState]);
+  }, [appState, language]);
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={onBack}>
-        <Text style={styles.back}>{'< Tilbake'}</Text>
+      <TouchableOpacity onPress={onBack} hitSlop={8}>
+        <Text style={styles.back}>{t(language, 'back')}</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Rep for max</Text>
-      <Text style={styles.subtitle}>
-        For hver A,velse ser du hA,yeste vekt du har logget, og hvor mange reps du tok.
-      </Text>
+      <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
+      <Text style={styles.subtitle}>{t(language, 'repMaxSubtitleScreen')}</Text>
 
       {sections.length === 0 ? (
-        <Text style={styles.emptyText}>
-          Du har ikke logget noen sett enda. Logg A,kter fA,rst, sAť dukker max-lA,ftene dine opp her.
-        </Text>
+        <Text style={styles.emptyText}>{t(language, 'noRepMaxYet')}</Text>
       ) : (
         <SectionList
           sections={sections}
@@ -149,9 +151,11 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
               <View style={{ flex: 1 }}>
                 <Text style={styles.exercise}>{item.exerciseName}</Text>
                 <Text style={styles.detail}>
-                  {item.weight} kg x {item.reps} reps
+                  {item.weight} kg x {item.reps} {t(language, 'reps').toLowerCase()}
                 </Text>
-                <Text style={styles.estimate}>1RM est: {item.oneRm} kg</Text>
+                <Text style={styles.estimate}>
+                  {t(language, 'oneRmEst')}: {item.oneRm} kg
+                </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.date}>{item.date}</Text>
@@ -170,12 +174,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.xxxl,
   },
   back: {
     color: '#93C5FD',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
   title: {
     fontSize: TEXT.xl,
@@ -185,10 +191,12 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: SPACING.xs,
     color: '#9CA3AF',
+    fontSize: TEXT.sm,
   },
   emptyText: {
     marginTop: SPACING.lg,
-    color: '#6B7280',
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
   },
   listContent: {
     paddingTop: SPACING.lg,
@@ -201,7 +209,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   row: {
     flexDirection: 'row',
@@ -211,7 +219,7 @@ const styles = StyleSheet.create({
   exercise: {
     color: '#E5E7EB',
     fontSize: TEXT.md,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   detail: {
     color: '#9CA3AF',
@@ -235,3 +243,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
 });
+

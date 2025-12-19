@@ -1,21 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { AppState } from '../types';
-import {
-  getWorkoutDates,
-  getDailyWorkout,
-  groupDailySets,
-  GroupedDailySetView,
-} from '../services/workoutService';
+import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../services/workoutService';
 import { getBlockTone } from '../utils/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../utils/dateLabels';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { t } from '../i18n/i18n';
 
 type Props = {
   appState: AppState;
@@ -42,36 +32,30 @@ function parseDateKey(dateKey: string): Date | null {
 }
 
 function formatSetSummary(sets: Array<{ weight: number; reps: number }>): string {
-  return sets.map((set) => `${set.weight} kg x ${set.reps}`).join(', ');
+  return sets.map((s) => `${s.weight} kg x ${s.reps}`).join(', ');
 }
 
-function buildDayNodes(appState: AppState): DayNode[] {
-  const keys = getWorkoutDates(appState); // forventes sortert nyeste forst
+function buildDayNodes(appState: AppState, language: AppState['language']): DayNode[] {
+  const keys = getWorkoutDates(appState);
   return keys.map((key) => {
     const dt = parseDateKey(key);
     let dateLabel = key;
     let dayLabel = '';
 
     if (dt) {
-      const relative = formatRelativeDayLabel(dt);
+      const relative = formatRelativeDayLabel(dt, new Date(), language ?? 'en');
       dateLabel = formatDate(dt);
-      dayLabel = relative ?? formatWeekday(dt);
+      dayLabel = relative ?? formatWeekday(dt, language ?? 'en');
     }
 
-    const sets = getDailyWorkout(appState, key);
-    const groups = groupDailySets(sets);
-
-    return {
-      dateKey: key,
-      dateLabel,
-      dayLabel,
-      groups,
-    };
+    const groups = groupDailySets(getDailyWorkout(appState, key));
+    return { dateKey: key, dateLabel, dayLabel, groups };
   });
 }
 
 export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
-  const days = useMemo(() => buildDayNodes(appState), [appState]);
+  const language = appState.language ?? 'en';
+  const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
   const [expandedKey, setExpandedKey] = useState<string | null>(
     days.length > 0 ? days[0].dateKey : null
   );
@@ -83,22 +67,18 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={styles.backText}>{'< Tilbake'}</Text>
+        <TouchableOpacity onPress={onBack} hitSlop={8}>
+          <Text style={styles.backText}>{t(language, 'back')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tidligere okter</Text>
+        <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
       </View>
 
-      <Text style={styles.headerSubtitle}>
-        Bla i treningsdagboken din. Hver dato viser alle ovelser og sett du logget den dagen.
-      </Text>
+      <Text style={styles.headerSubtitle}>{t(language, 'historySubtitle')}</Text>
 
       {days.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>Ingen okter enda</Text>
-          <Text style={styles.emptyText}>
-            Logg noen okter forst, sa dukker de opp her pa tidslinjen.
-          </Text>
+          <Text style={styles.emptyTitle}>{t(language, 'historyEmptyTitle')}</Text>
+          <Text style={styles.emptyText}>{t(language, 'historyEmptyText')}</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -108,15 +88,13 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
 
             return (
               <View key={day.dateKey} style={styles.row}>
-                {/* Tidslinje-kolonne */}
                 <View style={styles.timelineColumn}>
                   <View style={styles.timelineDot} />
                   {!isLast && <View style={styles.timelineLine} />}
                 </View>
 
-                {/* Kort for selve dagen */}
                 <TouchableOpacity
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                   onPress={() => toggle(day.dateKey)}
                   style={[styles.card, isExpanded && styles.cardExpanded]}
                 >
@@ -129,22 +107,24 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
                   </View>
 
                   {isExpanded && (
-                    <View style={styles.setList}>
+                    <View style={styles.groupList}>
                       {day.groups.map((group) => {
                         const tone = getBlockTone(group.blockId ?? group.blockName ?? '');
-                        const setSummary = formatSetSummary(group.sets);
                         return (
-                          <View key={group.id} style={styles.setRow}>
-                            <View style={styles.setTextColumn}>
-                              <Text style={styles.setTitle}>
+                          <View key={group.id} style={styles.groupRow}>
+                            <View style={styles.groupTextColumn}>
+                              <Text style={styles.groupTitle}>
                                 <Text style={styles.exerciseName}>{group.exerciseName}</Text>
                                 {group.blockName ? (
-                                  <Text style={[styles.blockName, { color: tone.accent }]}> ({group.blockName})</Text>
+                                  <Text style={[styles.blockName, { color: tone.accent }]}>
+                                    {' '}
+                                    ({group.blockName})
+                                  </Text>
                                 ) : null}
                               </Text>
-                              <Text style={styles.setDetail}>{setSummary}</Text>
+                              <Text style={styles.groupDetail}>{formatSetSummary(group.sets)}</Text>
                             </View>
-                            <Text style={styles.setTime}>{group.time}</Text>
+                            <Text style={styles.groupTime}>{group.time}</Text>
                           </View>
                         );
                       })}
@@ -176,6 +156,7 @@ const styles = StyleSheet.create({
     color: '#60A5FA',
     fontSize: TEXT.sm,
     marginRight: SPACING.lg,
+    fontWeight: '600',
   },
   headerTitle: {
     color: '#F9FAFB',
@@ -193,7 +174,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.md,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: SPACING.xs,
   },
   emptyText: {
@@ -234,7 +215,6 @@ const styles = StyleSheet.create({
   },
   cardExpanded: {
     borderColor: '#3B82F6',
-    backgroundColor: '#020617',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -249,40 +229,41 @@ const styles = StyleSheet.create({
   dateLabel: {
     color: '#F9FAFB',
     fontSize: TEXT.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   chevron: {
     color: '#9CA3AF',
     fontSize: TEXT.sm,
+    fontWeight: '700',
   },
-  setList: {
+  groupList: {
     marginTop: SPACING.sm,
   },
-  setRow: {
+  groupRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: SPACING.xs,
   },
-  setTextColumn: {
+  groupTextColumn: {
     flexShrink: 1,
     paddingRight: SPACING.sm,
   },
-  setTitle: {
+  groupTitle: {
     fontSize: TEXT.sm,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   exerciseName: {
     color: '#F9FAFB',
   },
   blockName: {
-    color: '#93C5FD',
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  setDetail: {
+  groupDetail: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
+    marginTop: 2,
   },
-  setTime: {
+  groupTime: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
   },

@@ -1,13 +1,12 @@
-﻿# Changelog
+# Changelog
 
-- Added Quick Log screen with parsing, exercise suggestion, and one-tap create + log.
-- Added batch set logging helpers and exercise+sets creation in the workout service.
-- Added last-set summary and copy-last-set on Exercise screen.
-- Added simple progress chart and relative date labels.
-- Added 1RM estimate to Rep Max view.
-- Tightened AI scope to local log search with preset questions and local-answer prefix.
-- Added design tokens and consistent spacing across key screens.
-- Added cardio block and block color tones across UI.
-- Added typecheck script.
-- Updated npm scripts to invoke the local Expo CLI directly.
-- Added Netlify config and Node version file.
+- Guest-first onboarding: “Continue without login” is the default path.
+- Optional login entrypoint: GitHub (web) + Email (local identity).
+- GitHub OAuth exchange via Netlify Function (`netlify/functions/github-oauth.js`).
+- Language setting: English / Norwegian / Spanish (stored in app state).
+- Quick Log always saves free text; parses sets when possible.
+- New exercise flow: saves first, then optional muscle-group picker (bottom sheet).
+- Home screen reworked: Quick Log first, then muscle groups, then insight cards.
+- History groups repeated sets by exercise (no repeated exercise names).
+- Removed visible edit/delete actions; long-press opens actions for exercises and sets.
+- Updated Netlify config to include functions directory.

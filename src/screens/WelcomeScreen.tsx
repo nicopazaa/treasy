@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { LabeledInput } from '../components/LabeledInput';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { SPACING, TEXT } from '../theme/tokens';
+import { AppLanguage } from '../types';
+import { t } from '../i18n/i18n';
 
 interface Props {
+  language: AppLanguage;
+  onBack: () => void;
   onComplete: (email: string) => void;
 }
 
-export const WelcomeScreen: React.FC<Props> = ({ onComplete }) => {
+export const WelcomeScreen: React.FC<Props> = ({ language, onBack, onComplete }) => {
   const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  const handleStart = () => {
+  const handleContinue = () => {
     const trimmed = email.trim();
     if (!trimmed || !trimmed.includes('@')) {
-      setError('Skriv inn en gyldig e-post.');
+      setError(t(language, 'invalidEmail'));
       return;
     }
-    setError('');
-    onComplete(trimmed.toLowerCase());
+    setError(null);
+    onComplete(trimmed);
   };
 
   return (
@@ -27,23 +32,25 @@ export const WelcomeScreen: React.FC<Props> = ({ onComplete }) => {
       behavior={Platform.select({ ios: 'padding', android: undefined })}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Treasy</Text>
-        <Text style={styles.subtitle}>Training made easy. Logg styrketrening og progresjon enkelt.</Text>
-        <View style={{ height: 24 }} />
-        <LabeledInput
-          label="E-post"
-          placeholder="din@mail.no"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={email}
-          onChangeText={setEmail}
-        />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <PrimaryButton title="Start Treasy" onPress={handleStart} />
-        <Text style={styles.info}>
-          Ingen passord, ingen PIN. Alt lagres lokalt på denne enheten og knyttes til din e-post.
-        </Text>
+        <TouchableOpacity onPress={onBack} hitSlop={8}>
+          <Text style={styles.back}>{t(language, 'back')}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.form}>
+          <LabeledInput
+            label={t(language, 'email')}
+            placeholder={t(language, 'emailPlaceholder')}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+            returnKeyType="done"
+            onSubmitEditing={handleContinue}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <PrimaryButton title={t(language, 'continue')} onPress={handleContinue} />
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -56,26 +63,22 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 80,
+    paddingHorizontal: SPACING.xxl,
+    justifyContent: 'center',
   },
-  title: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#F9FAFB',
+  back: {
+    position: 'absolute',
+    top: 56,
+    left: SPACING.xxl,
+    color: '#93C5FD',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
-  subtitle: {
-    marginTop: 8,
-    color: '#9CA3AF',
-    fontSize: 14,
+  form: {
+    marginTop: SPACING.xxl,
   },
   error: {
     color: '#F97373',
-    marginTop: 4,
-  },
-  info: {
-    marginTop: 12,
-    color: '#6B7280',
-    fontSize: 12,
+    marginTop: 6,
   },
 });

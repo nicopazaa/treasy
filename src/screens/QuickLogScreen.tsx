@@ -1,138 +1,148 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
+  Modal,
+  Pressable,
 } from 'react-native';
-import { AppState } from '../types';
+import { AppState, TrainingBlockId } from '../types';
 import { PrimaryButton } from '../components/PrimaryButton';
-import {
-  parseQuickLog,
-  findExerciseByName,
-  inferBlockIdFromExercise,
-  ParsedSet,
-} from '../services/quickLogService';
 import { getBlockTone } from '../utils/blockTone';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import { blockLabel, t } from '../i18n/i18n';
 
 type Props = {
   appState: AppState;
   onBack: () => void;
-  onLogExisting: (exerciseId: string, sets: ParsedSet[]) => void;
-  onLogNew: (blockId: string, exerciseName: string, sets: ParsedSet[]) => void;
+  onSave: (text: string) => { newExerciseId?: string; newExerciseName?: string };
+  onCategorizeExercise: (exerciseId: string, blockId: TrainingBlockId) => void;
+  showLocalOnlyNotice?: boolean;
 };
+
+const MUSCLE_GROUPS: TrainingBlockId[] = [
+  'chest',
+  'shoulders',
+  'back',
+  'arms',
+  'core',
+  'legs',
+  'cardio',
+];
 
 export const QuickLogScreen: React.FC<Props> = ({
   appState,
   onBack,
-  onLogExisting,
-  onLogNew,
+  onSave,
+  onCategorizeExercise,
+  showLocalOnlyNotice = false,
 }) => {
+  const language = appState.language ?? 'en';
   const [input, setInput] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [pendingExercise, setPendingExercise] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const inputRef = useRef<TextInput | null>(null);
 
-  const parsed = useMemo(() => parseQuickLog(input), [input]);
-  const existingExercise = parsed
-    ? findExerciseByName(appState, parsed.exerciseName)
-    : null;
-  const inferredBlockId = parsed ? inferBlockIdFromExercise(parsed.exerciseName) : null;
-  const fallbackBlockId = inferredBlockId ?? appState.blocks[0]?.id ?? null;
-  const fallbackBlockName = fallbackBlockId
-    ? appState.blocks.find((b) => b.id === fallbackBlockId)?.name ?? 'Ukjent'
-    : 'Ukjent';
-  const tone = getBlockTone(existingExercise?.blockId ?? fallbackBlockId ?? '');
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, []);
 
-  const handleLogExisting = () => {
-    if (!parsed || !existingExercise) return;
-    onLogExisting(existingExercise.id, parsed.sets);
-    setNotice(`Logget ${parsed.sets.length} sett i ${existingExercise.name}.`);
+  const handleSave = () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const res = onSave(trimmed);
     setInput('');
+    setSavedNotice(t(language, 'quickLogSaved'));
+
+    if (res.newExerciseId && res.newExerciseName) {
+      setPendingExercise({ id: res.newExerciseId, name: res.newExerciseName });
+    }
+
+    setTimeout(() => setSavedNotice(null), 1600);
+    setTimeout(() => inputRef.current?.focus(), 120);
   };
 
-  const handleCreateAndLog = () => {
-    if (!parsed || existingExercise || !fallbackBlockId) return;
-    onLogNew(fallbackBlockId, parsed.exerciseName, parsed.sets);
-    setNotice(`Opprettet ${parsed.exerciseName} og logget ${parsed.sets.length} sett.`);
-    setInput('');
-  };
-
-  const hasInput = input.trim().length > 0;
-  const canLogExisting = Boolean(parsed && existingExercise);
-  const canCreate = Boolean(parsed && !existingExercise && fallbackBlockId);
+  const showLocalNoticeLine = showLocalOnlyNotice && appState.authProvider === 'guest';
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={onBack}>
+      <TouchableOpacity onPress={onBack} hitSlop={8}>
         <Text style={styles.back}>{'< Tilbake'}</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Hurtiglogg</Text>
-      <Text style={styles.subtitle}>
-        Skriv en ovelse og settene dine. Eksempel: Benk 80x2, 70x5, 60x8
-      </Text>
+      {showLocalNoticeLine ? (
+        <Text style={styles.localOnlyNotice}>
+          {t(language, 'localOnlyNotice')}
+        </Text>
+      ) : null}
 
       <View style={styles.inputCard}>
-        <Text style={styles.inputLabel}>Logg</Text>
         <TextInput
+          ref={inputRef}
           style={styles.input}
-          placeholder="Benk 80x2, 70x5, 60x8"
+          placeholder={t(language, 'quickLogPlaceholder')}
           placeholderTextColor="#6B7280"
           value={input}
           onChangeText={setInput}
           autoCapitalize="sentences"
           multiline
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={handleSave}
+          blurOnSubmit={false}
         />
       </View>
 
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-
-      {!parsed && hasInput ? (
-        <Text style={styles.error}>
-          Finner ikke ovelse og sett. Skriv for eksempel: Benk 80x2, 70x5
-        </Text>
-      ) : null}
-
-      {parsed ? (
-        <View style={[styles.previewCard, { borderColor: tone.accent }]}>
-          <Text style={styles.previewTitle}>Forhandsvisning</Text>
-          <Text style={[styles.previewExercise, { color: tone.accent }]}>
-            {parsed.exerciseName}
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.previewSetsRow}>
-              {parsed.sets.map((set, index) => (
-                <View key={`${set.weight}-${set.reps}-${index}`} style={styles.setPill}>
-                  <Text style={styles.setPillText}>
-                    {set.weight} kg x {set.reps}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-
-          {!existingExercise ? (
-            <Text style={styles.previewHint}>
-              Forslag til blokk: {fallbackBlockName}
-            </Text>
-          ) : (
-            <Text style={styles.previewHint}>
-              Bruker eksisterende ovelse i loggen din.
-            </Text>
-          )}
-        </View>
-      ) : null}
+      {savedNotice ? <Text style={styles.savedNotice}>{savedNotice}</Text> : null}
 
       <View style={styles.actionBar}>
-        {canLogExisting ? (
-          <PrimaryButton title="Logg sett" onPress={handleLogExisting} />
-        ) : null}
-        {canCreate ? (
-          <PrimaryButton title="Opprett ovelse og logg" onPress={handleCreateAndLog} />
-        ) : null}
+        <PrimaryButton title={t(language, 'quickLogButton')} onPress={handleSave} />
       </View>
+
+      <Modal visible={pendingExercise !== null} transparent animationType="fade">
+        <Pressable style={styles.sheetBackdrop} onPress={() => setPendingExercise(null)}>
+          <Pressable style={styles.sheetCard} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>
+              {t(language, 'newExerciseFound', { name: pendingExercise?.name ?? '' })}
+            </Text>
+            <Text style={styles.sheetSubtitle}>{t(language, 'chooseMuscleGroup')}</Text>
+
+            <View style={styles.groupGrid}>
+              {MUSCLE_GROUPS.map((groupId) => {
+                const tone = getBlockTone(groupId);
+                return (
+                  <TouchableOpacity
+                    key={groupId}
+                    style={[
+                      styles.groupButton,
+                      { borderColor: tone.accent, backgroundColor: tone.soft },
+                    ]}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      if (pendingExercise) {
+                        onCategorizeExercise(pendingExercise.id, groupId);
+                      }
+                      setPendingExercise(null);
+                      setTimeout(() => inputRef.current?.focus(), 120);
+                    }}
+                  >
+                    <Text style={[styles.groupText, { color: tone.accent }]}>
+                      {blockLabel(groupId, language)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -146,33 +156,24 @@ const styles = StyleSheet.create({
   },
   back: {
     color: '#93C5FD',
+    marginBottom: SPACING.sm,
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  localOnlyNotice: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
     marginBottom: SPACING.md,
   },
-  title: {
-    fontSize: TEXT.xl,
-    fontWeight: '700',
-    color: '#F9FAFB',
-  },
-  subtitle: {
-    marginTop: SPACING.xs,
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
-  },
   inputCard: {
-    marginTop: SPACING.lg,
     backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
-    padding: SPACING.md,
     borderWidth: 1,
     borderColor: '#1F2937',
-  },
-  inputLabel: {
-    color: '#E5E7EB',
-    fontSize: TEXT.xs,
-    marginBottom: SPACING.xs,
+    padding: SPACING.md,
   },
   input: {
-    minHeight: 96,
+    minHeight: 140,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: '#111827',
@@ -182,54 +183,56 @@ const styles = StyleSheet.create({
     fontSize: TEXT.md,
     backgroundColor: '#020617',
   },
-  notice: {
+  savedNotice: {
+    marginTop: SPACING.sm,
     color: '#86EFAC',
-    marginTop: SPACING.sm,
     fontSize: TEXT.sm,
-  },
-  error: {
-    color: '#FCA5A5',
-    marginTop: SPACING.sm,
-    fontSize: TEXT.sm,
-  },
-  previewCard: {
-    marginTop: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
-    backgroundColor: '#0B1220',
-  },
-  previewTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-    marginBottom: SPACING.xs,
-  },
-  previewExercise: {
-    fontSize: TEXT.lg,
-    fontWeight: '700',
-  },
-  previewSetsRow: {
-    flexDirection: 'row',
-    marginTop: SPACING.sm,
-  },
-  setPill: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.pill,
-    backgroundColor: '#111827',
-    marginRight: SPACING.sm,
-  },
-  setPillText: {
-    color: '#E5E7EB',
-    fontSize: TEXT.xs,
-  },
-  previewHint: {
-    marginTop: SPACING.sm,
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
   },
   actionBar: {
-    marginTop: SPACING.lg,
+    marginTop: SPACING.md,
+  },
+
+  // Bottom sheet
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: '#020617',
+    borderTopLeftRadius: RADIUS.lg,
+    borderTopRightRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    padding: SPACING.xl,
+  },
+  sheetTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  sheetSubtitle: {
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+    marginBottom: SPACING.md,
+  },
+  groupGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  groupButton: {
+    flexBasis: '48%',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  groupText: {
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
 });

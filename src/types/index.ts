@@ -9,6 +9,16 @@ export type TrainingBlockId =
 
 export type ThemeMode = 'light' | 'dark';
 
+export type AuthProvider = 'guest' | 'email' | 'github';
+
+export type AppLanguage = 'en' | 'nb' | 'es';
+
+export interface LogEntry {
+  id: string;
+  text: string;
+  createdAt: string; // ISO string
+}
+
 export interface TrainingBlock {
   id: TrainingBlockId | string;
   name: string;
@@ -29,6 +39,11 @@ export interface SetEntry {
 }
 
 export interface AppState {
+  // Intern identitet (alltid lokalt tilgjengelig)
+  userId?: string;
+  onboarded?: boolean;
+  authProvider?: AuthProvider;
+
   // "Identitet" for denne enheten
   userEmail: string | null;
 
@@ -37,9 +52,11 @@ export interface AppState {
   heightCm?: number | null;
   weightKg?: number | null;
   theme?: ThemeMode; // lagres, kan brukes til theming senere
+  language?: AppLanguage;
 
   // Treningsdata
   blocks: TrainingBlock[];
   exercises: Exercise[];
   sets: SetEntry[];
+  logs?: LogEntry[];
 }
