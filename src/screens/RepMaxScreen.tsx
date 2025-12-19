@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   SectionListData,
 } from 'react-native';
-import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../types';
-import { getSetsForExercise } from '../services/workoutService';
-import { getBlockTone } from '../utils/blockTone';
-import { SPACING, TEXT } from '../theme/tokens';
-import { blockLabel, t } from '../i18n/i18n';
+import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
+import { getSetsForExercise } from '../features/workouts/model/workoutService';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { SPACING, TEXT } from '../shared/theme/tokens';
+import { blockLabel, t } from '../shared/i18n/i18n';
 
 interface Props {
   appState: AppState;

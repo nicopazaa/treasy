@@ -1,4 +1,4 @@
-import { AppState, Exercise, LogEntry, SetEntry } from '../types';
+import { AppState, Exercise, LogEntry, SetEntry } from './types';
 
 function generateId(prefix: string = 'id'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
@@ -104,6 +104,54 @@ export function deleteExercise(state: AppState, exerciseId: string): AppState {
     exercises: state.exercises.filter((ex) => ex.id !== exerciseId),
     sets: state.sets.filter((s) => s.exerciseId !== exerciseId),
   };
+}
+
+export function reorderExercisesInBlock(
+  state: AppState,
+  blockId: string,
+  orderedExerciseIds: string[]
+): AppState {
+  const blockExercises = state.exercises.filter((ex) => ex.blockId === blockId);
+  if (blockExercises.length === 0) return state;
+
+  const byId = new Map(blockExercises.map((ex) => [ex.id, ex] as const));
+  const seen = new Set<string>();
+
+  const normalizedIds: string[] = [];
+  for (const id of orderedExerciseIds) {
+    if (!byId.has(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    normalizedIds.push(id);
+  }
+
+  // Ensure we keep any missing exercises (e.g. stale UI list) in their current order.
+  for (const ex of blockExercises) {
+    if (!seen.has(ex.id)) normalizedIds.push(ex.id);
+  }
+
+  const orderedBlock = normalizedIds.map((id) => byId.get(id)).filter((v): v is Exercise => Boolean(v));
+  if (orderedBlock.length !== blockExercises.length) return state;
+
+  let inserted = false;
+  const nextExercises: Exercise[] = [];
+  for (const ex of state.exercises) {
+    if (ex.blockId !== blockId) {
+      nextExercises.push(ex);
+      continue;
+    }
+
+    if (!inserted) {
+      nextExercises.push(...orderedBlock);
+      inserted = true;
+    }
+  }
+
+  if (!inserted) {
+    nextExercises.push(...orderedBlock);
+  }
+
+  return { ...state, exercises: nextExercises };
 }
 
 export function setExerciseBlockId(state: AppState, exerciseId: string, blockId: string): AppState {
@@ -277,4 +325,3 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
 
   return Array.from(map.values());
 }
-

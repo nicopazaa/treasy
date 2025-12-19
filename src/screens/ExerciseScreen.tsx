@@ -10,13 +10,14 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { Exercise, SetEntry, AppLanguage } from '../types';
-import { LabeledInput } from '../components/LabeledInput';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { getBlockTone } from '../utils/blockTone';
-import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { t } from '../i18n/i18n';
+import { AppLanguage } from '../shared/types';
+import { Exercise, SetEntry } from '../features/workouts/model/types';
+import { LabeledInput } from '../shared/ui/LabeledInput';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../shared/utils/dateLabels';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { t } from '../shared/i18n/i18n';
 
 interface Props {
   language: AppLanguage;
@@ -124,43 +125,19 @@ export const ExerciseScreen: React.FC<Props> = ({
     setReps(String(lastSet.reps));
   };
 
-  const renderHeader = () => (
-    <View>
-      <View style={styles.inputCard}>
-        {lastSet ? (
-          <View style={styles.lastSetRow}>
-            <Text style={styles.lastSetText}>
-              {t(language, 'last')}: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
-            </Text>
-            <TouchableOpacity onPress={handleCopyLastSet} hitSlop={8}>
-              <Text style={styles.copyLink}>{t(language, 'copyPreviousSet')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-        <LabeledInput
-          label={t(language, 'weightKg')}
-          placeholder="0"
-          keyboardType="numeric"
-          value={weight}
-          onChangeText={setWeight}
-        />
-        <LabeledInput
-          label={t(language, 'reps')}
-          placeholder="1"
-          keyboardType="numeric"
-          value={reps}
-          onChangeText={setReps}
-        />
-      </View>
-
-      <View style={[styles.aiBox, { borderColor: tone.accent }]}>
-        <Text style={styles.aiTitle}>{t(language, 'aiSearchTitle')}</Text>
-        <Text style={styles.aiText}>{t(language, 'aiSearchHint')}</Text>
-        <PrimaryButton title={t(language, 'search')} onPress={onAskAIForExercise} />
-      </View>
-
-      <Text style={styles.historyTitle}>{t(language, 'history')}</Text>
-    </View>
+  const header = (
+    <ExerciseListHeader
+      language={language}
+      toneAccent={tone.accent}
+      lastSet={lastSet}
+      lastSetLabel={lastSetLabel}
+      weight={weight}
+      reps={reps}
+      onChangeWeight={setWeight}
+      onChangeReps={setReps}
+      onCopyLastSet={handleCopyLastSet}
+      onAskAIForExercise={onAskAIForExercise}
+    />
   );
 
   return (
@@ -174,8 +151,9 @@ export const ExerciseScreen: React.FC<Props> = ({
       <FlatList
         data={sets}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={header}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.setRow} onLongPress={() => openSetActions(item)} activeOpacity={0.9}>
             <View style={styles.setInfo}>
@@ -397,3 +375,68 @@ const styles = StyleSheet.create({
   },
 });
 
+type ExerciseListHeaderProps = {
+  language: AppLanguage;
+  toneAccent: string;
+  lastSet: SetEntry | null;
+  lastSetLabel: string | null;
+  weight: string;
+  reps: string;
+  onChangeWeight: (value: string) => void;
+  onChangeReps: (value: string) => void;
+  onCopyLastSet: () => void;
+  onAskAIForExercise: () => void;
+};
+
+const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
+  language,
+  toneAccent,
+  lastSet,
+  lastSetLabel,
+  weight,
+  reps,
+  onChangeWeight,
+  onChangeReps,
+  onCopyLastSet,
+  onAskAIForExercise,
+}) => {
+  return (
+    <View>
+      <View style={styles.inputCard}>
+        {lastSet ? (
+          <View style={styles.lastSetRow}>
+            <Text style={styles.lastSetText}>
+              {t(language, 'last')}: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
+            </Text>
+            <TouchableOpacity onPress={onCopyLastSet} hitSlop={8}>
+              <Text style={styles.copyLink}>{t(language, 'copyPreviousSet')}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <LabeledInput
+          label={t(language, 'weightKg')}
+          placeholder="0"
+          keyboardType="numeric"
+          value={weight}
+          onChangeText={onChangeWeight}
+        />
+        <LabeledInput
+          label={t(language, 'reps')}
+          placeholder="1"
+          keyboardType="numeric"
+          value={reps}
+          onChangeText={onChangeReps}
+        />
+      </View>
+
+      <View style={[styles.aiBox, { borderColor: toneAccent }]}>
+        <Text style={styles.aiTitle}>{t(language, 'aiSearchTitle')}</Text>
+        <Text style={styles.aiText}>{t(language, 'aiSearchHint')}</Text>
+        <PrimaryButton title={t(language, 'search')} onPress={onAskAIForExercise} />
+      </View>
+
+      <Text style={styles.historyTitle}>{t(language, 'history')}</Text>
+    </View>
+  );
+};

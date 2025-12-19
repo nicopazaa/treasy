@@ -9,10 +9,10 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { AppState } from '../types';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { LANGUAGE_OPTIONS, t } from '../i18n/i18n';
+import { AppState } from '../features/workouts/model/types';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { LANGUAGE_OPTIONS, t } from '../shared/i18n/i18n';
 
 interface Props {
   appState: AppState;

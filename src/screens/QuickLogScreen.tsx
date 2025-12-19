@@ -9,12 +9,13 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
-import { AppState, Exercise, TrainingBlock, TrainingBlockId } from '../types';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { QuickKeypad } from '../components/QuickKeypad';
-import { getBlockTone } from '../utils/blockTone';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { blockLabel, t } from '../i18n/i18n';
+import { AppLanguage } from '../shared/types';
+import { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { QuickKeypad } from '../shared/ui/QuickKeypad';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { blockLabel, t } from '../shared/i18n/i18n';
 
 type Props = {
   appState: AppState;
@@ -100,6 +101,23 @@ export const QuickLogScreen: React.FC<Props> = ({
   const selectedExercise = selectedExerciseId
     ? appState.exercises.find((ex) => ex.id === selectedExerciseId) ?? null
     : null;
+
+  const todayLogs: LogEntry[] = useMemo(() => {
+    const logs = appState.logs ?? [];
+    const todayKey = new Date().toISOString().slice(0, 10);
+    return logs
+      .filter((l) => (l.createdAt ?? '').slice(0, 10) === todayKey)
+      .slice(-30)
+      .slice()
+      .reverse();
+  }, [appState.logs]);
+
+  const formatTime = (iso: string, lang: AppLanguage): string => {
+    const locale = lang === 'nb' ? 'nb-NO' : lang === 'es' ? 'es-ES' : 'en-US';
+    const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  };
 
   const blockTitle = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
@@ -266,6 +284,22 @@ export const QuickLogScreen: React.FC<Props> = ({
 
         <View style={styles.actionBar}>
           <PrimaryButton title={t(language, 'quickLogButton')} onPress={handleSave} />
+        </View>
+
+        <View style={styles.liveLogCard}>
+          <Text style={styles.liveLogTitle}>{t(language, 'liveLogTitle')}</Text>
+          {todayLogs.length === 0 ? (
+            <Text style={styles.liveLogEmpty}>{t(language, 'liveLogEmpty')}</Text>
+          ) : (
+            <View style={styles.liveLogList}>
+              {todayLogs.map((entry) => (
+                <View key={entry.id} style={styles.liveLogRow}>
+                  <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
+                  <Text style={styles.liveLogText}>{entry.text}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -445,6 +479,46 @@ const styles = StyleSheet.create({
   },
   actionBar: {
     marginTop: SPACING.md,
+  },
+  liveLogCard: {
+    marginTop: SPACING.xl,
+    backgroundColor: '#020617',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    padding: SPACING.md,
+  },
+  liveLogTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '800',
+    marginBottom: SPACING.xs,
+  },
+  liveLogEmpty: {
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+  },
+  liveLogList: {
+    marginTop: SPACING.xs,
+    gap: SPACING.xs,
+  },
+  liveLogRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    paddingVertical: 2,
+  },
+  liveLogTime: {
+    width: 52,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontVariant: ['tabular-nums'],
+  },
+  liveLogText: {
+    flex: 1,
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
   },
 
   guidedCard: {

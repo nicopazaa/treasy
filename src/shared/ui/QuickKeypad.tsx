@@ -14,7 +14,7 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
   const press = (key: string) => {
     if (disabled) return;
 
-    if (key === '⌫') {
+    if (key === 'ƒO®') {
       onChange(value.slice(0, -1));
       return;
     }
@@ -34,7 +34,7 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
           {row.map((key) => (
             <TouchableOpacity
               key={key}
-              style={[styles.key, (key === '⌫' || key === 'C') && styles.keySecondary]}
+              style={[styles.key, (key === 'ƒO®' || key === 'C') && styles.keySecondary]}
               onPress={() => press(key)}
               activeOpacity={0.8}
             >

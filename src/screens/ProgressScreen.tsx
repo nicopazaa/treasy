@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId, AppLanguage } from '../types';
-import { getBlockTone } from '../utils/blockTone';
-import { formatRelativeDateTime } from '../utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { blockLabel, t } from '../i18n/i18n';
+import { AppLanguage } from '../shared/types';
+import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { formatRelativeDateTime } from '../shared/utils/dateLabels';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { blockLabel, t } from '../shared/i18n/i18n';
 
 interface Props {
   appState: AppState;
@@ -91,8 +92,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
               style={[
                 styles.pill,
                 {
-                  backgroundColor: selected ? tone.accent : tone.soft,
-                  borderColor: tone.accent,
+                  borderColor: selected ? tone.accent : '#1F2937',
+                  backgroundColor: selected ? tone.soft : '#0B1220',
                 },
               ]}
               onPress={() => {
@@ -101,12 +102,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
               }}
               activeOpacity={0.9}
             >
-              <Text
-                style={[
-                  styles.pillText,
-                  selected ? styles.pillTextSelected : { color: tone.accent },
-                ]}
-              >
+              <View style={[styles.pillDot, { backgroundColor: tone.accent }]} />
+              <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
                 {labelForBlock(block, language)}
               </Text>
             </TouchableOpacity>
@@ -127,19 +124,15 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 style={[
                   styles.pill,
                   {
-                    backgroundColor: selected ? selectedBlockTone.accent : selectedBlockTone.soft,
-                    borderColor: selectedBlockTone.accent,
+                    borderColor: selected ? selectedBlockTone.accent : '#1F2937',
+                    backgroundColor: selected ? selectedBlockTone.soft : '#0B1220',
                   },
                 ]}
                 onPress={() => setSelectedExerciseId(ex.id)}
                 activeOpacity={0.9}
               >
-                <Text
-                  style={[
-                    styles.pillText,
-                    selected ? styles.pillTextSelected : { color: selectedBlockTone.accent },
-                  ]}
-                >
+                <View style={[styles.pillDot, { backgroundColor: selectedBlockTone.accent }]} />
+                <Text style={[styles.pillText, selected && styles.pillTextSelected]} numberOfLines={1}>
                   {ex.name}
                 </Text>
               </TouchableOpacity>
@@ -238,26 +231,33 @@ const styles = StyleSheet.create({
     marginHorizontal: -SPACING.xs,
   },
   pill: {
-    flexBasis: '30%',
+    flexBasis: '48%',
     flexGrow: 1,
     margin: SPACING.xs,
-    minHeight: 110,
-    borderRadius: RADIUS.pill,
+    minHeight: 54,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.md,
+  },
+  pillDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
   },
   pillText: {
     color: '#E5E7EB',
     fontSize: TEXT.sm,
-    textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '700',
+    flex: 1,
   },
   pillTextSelected: {
     color: '#F9FAFB',
-    fontWeight: '700',
   },
   emptyText: {
     color: '#9CA3AF',

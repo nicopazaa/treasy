@@ -11,11 +11,12 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { TrainingBlock, Exercise, AppLanguage, TrainingBlockId } from '../types';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { getBlockTone } from '../utils/blockTone';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { blockLabel, t } from '../i18n/i18n';
+import { AppLanguage } from '../shared/types';
+import { TrainingBlock, Exercise, TrainingBlockId } from '../features/workouts/model/types';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { blockLabel, t } from '../shared/i18n/i18n';
 
 interface Props {
   language: AppLanguage;
@@ -26,6 +27,7 @@ interface Props {
   onAddExercise: (name: string) => void;
   onRenameExercise: (exerciseId: string, name: string) => void;
   onDeleteExercise: (exerciseId: string) => void;
+  onReorderExercises: (orderedExerciseIds: string[]) => void;
 }
 
 const STICKY_HEIGHT = 88;
@@ -39,11 +41,13 @@ export const BlockScreen: React.FC<Props> = ({
   onAddExercise,
   onRenameExercise,
   onDeleteExercise,
+  onReorderExercises,
 }) => {
   const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
   const [exerciseName, setExerciseName] = useState('');
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [movingExerciseId, setMovingExerciseId] = useState<string | null>(null);
 
   const tone = getBlockTone(block.id);
   const blockTitle = useMemo(() => {
@@ -112,14 +116,58 @@ export const BlockScreen: React.FC<Props> = ({
     ]);
   };
 
+  const movingExercise = movingExerciseId ? exercises.find((e) => e.id === movingExerciseId) ?? null : null;
+
+  const reorderTo = (targetExerciseId: string) => {
+    if (!movingExerciseId) return;
+    if (movingExerciseId === targetExerciseId) {
+      setMovingExerciseId(null);
+      return;
+    }
+    const fromIndex = exercises.findIndex((e) => e.id === movingExerciseId);
+    const toIndex = exercises.findIndex((e) => e.id === targetExerciseId);
+    if (fromIndex < 0 || toIndex < 0) {
+      setMovingExerciseId(null);
+      return;
+    }
+
+    const next = exercises.slice();
+    const [moved] = next.splice(fromIndex, 1);
+    const insertIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    next.splice(insertIndex, 0, moved);
+    onReorderExercises(next.map((e) => e.id));
+    setMovingExerciseId(null);
+  };
+
   const renderExercise = ({ item }: { item: Exercise }) => (
     <TouchableOpacity
-      style={[styles.exerciseCard, { borderColor: tone.accent, backgroundColor: tone.soft }]}
-      onPress={() => onSelectExercise(item.id)}
-      onLongPress={() => openExerciseActions(item)}
+      style={[
+        styles.exerciseCard,
+        { borderColor: tone.accent, backgroundColor: tone.soft },
+        movingExerciseId === item.id && styles.exerciseCardMoving,
+      ]}
+      onPress={() => {
+        if (movingExerciseId) {
+          reorderTo(item.id);
+          return;
+        }
+        onSelectExercise(item.id);
+      }}
+      onLongPress={() => setMovingExerciseId(item.id)}
+      delayLongPress={240}
       activeOpacity={0.9}
     >
-      <Text style={styles.exerciseTitle}>{item.name}</Text>
+      <Text style={styles.exerciseTitle} numberOfLines={1}>
+        {item.name}
+      </Text>
+      <TouchableOpacity
+        style={styles.kebabButton}
+        onPress={() => openExerciseActions(item)}
+        hitSlop={10}
+        activeOpacity={0.8}
+      >
+        <Text style={[styles.kebabText, { color: tone.accent }]}>{'⋯'}</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 
@@ -131,6 +179,17 @@ export const BlockScreen: React.FC<Props> = ({
 
       <Text style={[styles.title, { color: tone.accent }]}>{blockTitle}</Text>
       <Text style={styles.subtitle}>{t(language, 'exercisesInBlock')}</Text>
+
+      {movingExercise ? (
+        <View style={[styles.moveBanner, { borderColor: tone.accent }]}>
+          <Text style={styles.moveBannerText}>
+            {t(language, 'moveExerciseHint', { name: movingExercise.name })}
+          </Text>
+          <TouchableOpacity onPress={() => setMovingExerciseId(null)} hitSlop={8}>
+            <Text style={[styles.moveCancelText, { color: tone.accent }]}>{t(language, 'cancel')}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <FlatList
         data={exercises}
@@ -225,11 +284,50 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     marginVertical: SPACING.sm,
     borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  exerciseCardMoving: {
+    borderWidth: 2,
+    backgroundColor: '#0B1220',
   },
   exerciseTitle: {
     color: '#E5E7EB',
     fontSize: TEXT.md,
     fontWeight: '700',
+    flex: 1,
+    paddingRight: SPACING.md,
+  },
+  kebabButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kebabText: {
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 22,
+    marginTop: -2,
+  },
+  moveBanner: {
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    padding: SPACING.md,
+  },
+  moveBannerText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  moveCancelText: {
+    fontSize: TEXT.sm,
+    fontWeight: '800',
   },
   emptyText: {
     color: '#9CA3AF',

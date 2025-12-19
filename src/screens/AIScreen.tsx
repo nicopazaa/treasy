@@ -9,11 +9,11 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { AppState } from '../types';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { answerAiQuestion } from '../services/aiService';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { t } from '../i18n/i18n';
+import { AppState } from '../features/workouts/model/types';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { answerAiQuestion } from '../features/analytics/model/aiService';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { t } from '../shared/i18n/i18n';
 
 interface Props {
   appState: AppState;
@@ -225,4 +225,3 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
 });
-

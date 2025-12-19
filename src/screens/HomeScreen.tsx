@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { AppState, TrainingBlock, TrainingBlockId, Exercise, SetEntry } from '../types';
-import { getBlockTone } from '../utils/blockTone';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { formatDate, formatRelativeDayLabel, formatWeekday } from '../utils/dateLabels';
-import { getDailyWorkout, getWorkoutDates, groupDailySets } from '../services/workoutService';
-import { blockLabel, greeting, t } from '../i18n/i18n';
+import { AppState, TrainingBlock, TrainingBlockId, Exercise, SetEntry } from '../features/workouts/model/types';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { formatDate, formatRelativeDayLabel, formatWeekday } from '../shared/utils/dateLabels';
+import { getDailyWorkout, getWorkoutDates, groupDailySets } from '../features/workouts/model/workoutService';
+import { blockLabel, greeting, t } from '../shared/i18n/i18n';
 
 type Props = {
   appState: AppState;

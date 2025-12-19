@@ -1,3 +1,5 @@
+import type { AppLanguage, AuthProvider, ThemeMode } from '../../../shared/types';
+
 export type TrainingBlockId =
   | 'chest'
   | 'shoulders'
@@ -6,12 +8,6 @@ export type TrainingBlockId =
   | 'core'
   | 'legs'
   | 'cardio';
-
-export type ThemeMode = 'light' | 'dark';
-
-export type AuthProvider = 'guest' | 'email' | 'github';
-
-export type AppLanguage = 'en' | 'nb' | 'es';
 
 export interface LogEntry {
   id: string;
@@ -60,3 +56,4 @@ export interface AppState {
   sets: SetEntry[];
   logs?: LogEntry[];
 }
+

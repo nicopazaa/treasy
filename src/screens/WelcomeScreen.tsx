@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
-import { LabeledInput } from '../components/LabeledInput';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { SPACING, TEXT } from '../theme/tokens';
-import { AppLanguage } from '../types';
-import { t } from '../i18n/i18n';
+import { LabeledInput } from '../shared/ui/LabeledInput';
+import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { SPACING, TEXT } from '../shared/theme/tokens';
+import { AppLanguage } from '../shared/types';
+import { t } from '../shared/i18n/i18n';
 
 interface Props {
   language: AppLanguage;

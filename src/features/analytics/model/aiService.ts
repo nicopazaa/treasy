@@ -1,12 +1,14 @@
-import { AppState, Exercise, SetEntry } from '../types';
+import { AppState, Exercise, SetEntry, TrainingBlockId } from '../../workouts/model/types';
 import {
   getLastSetForExercise,
   getWorkoutDates,
   getDailyWorkout,
   groupDailySets,
-} from './workoutService';
-import { formatRelativeDayLabel, formatShortDate } from '../utils/dateLabels';
-import { inferBlockIdFromExercise } from './quickLogService';
+} from '../../workouts/model/workoutService';
+import { formatRelativeDayLabel, formatShortDate } from '../../../shared/utils/dateLabels';
+import { inferBlockIdFromExercise } from '../../quicklog/model/quickLogService';
+
+type DailyGroup = ReturnType<typeof groupDailySets>[number];
 
 function normalize(text: string): string {
   return text
@@ -134,7 +136,7 @@ function pickBestSet(sets: SetEntry[]): SetEntry | null {
 
 function countWorkoutsForBlock(
   appState: AppState,
-  blockId: string,
+  blockId: TrainingBlockId | string,
   monthInfo?: { month: number; year: number } | null
 ): number {
   const dates = new Set<string>();
@@ -185,10 +187,10 @@ export function answerAiQuestion(
     }
 
     const headerDate = formatDayLabel(new Date(lastDate));
-    const lines = grouped.map((group) => {
+    const lines = (grouped as DailyGroup[]).map((group) => {
       const blockLabel = group.blockName ? ` (${group.blockName})` : '';
       const setSummary = group.sets
-        .map((set) => `${set.weight} kg x ${set.reps}`)
+        .map((set: { weight: number; reps: number }) => `${set.weight} kg x ${set.reps}`)
         .join(', ');
       return `- ${group.exerciseName}${blockLabel}: ${setSummary} kl. ${group.time}`;
     });

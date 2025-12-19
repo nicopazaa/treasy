@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { AppState } from '../types';
-import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../services/workoutService';
-import { getBlockTone } from '../utils/blockTone';
-import { formatRelativeDayLabel, formatWeekday, formatDate } from '../utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../theme/tokens';
-import { t } from '../i18n/i18n';
+import { AppState } from '../features/workouts/model/types';
+import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
+import { getBlockTone } from '../shared/theme/blockTone';
+import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
+import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { t } from '../shared/i18n/i18n';
 
 type Props = {
   appState: AppState;
@@ -113,15 +113,12 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
                         return (
                           <View key={group.id} style={styles.groupRow}>
                             <View style={styles.groupTextColumn}>
-                              <Text style={styles.groupTitle}>
-                                <Text style={styles.exerciseName}>{group.exerciseName}</Text>
-                                {group.blockName ? (
-                                  <Text style={[styles.blockName, { color: tone.accent }]}>
-                                    {' '}
-                                    ({group.blockName})
-                                  </Text>
-                                ) : null}
-                              </Text>
+                              {group.blockName ? (
+                                <Text style={[styles.blockLabel, { color: tone.accent }]}>
+                                  {group.blockName}
+                                </Text>
+                              ) : null}
+                              <Text style={styles.exerciseName}>{group.exerciseName}</Text>
                               <Text style={styles.groupDetail}>{formatSetSummary(group.sets)}</Text>
                             </View>
                             <Text style={styles.groupTime}>{group.time}</Text>
@@ -248,14 +245,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     paddingRight: SPACING.sm,
   },
-  groupTitle: {
-    fontSize: TEXT.sm,
-    fontWeight: '600',
+  blockLabel: {
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    marginBottom: 2,
   },
   exerciseName: {
     color: '#F9FAFB',
-  },
-  blockName: {
+    fontSize: TEXT.sm,
     fontWeight: '700',
   },
   groupDetail: {

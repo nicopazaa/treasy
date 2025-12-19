@@ -1,12 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Platform } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
-import { AppState } from './src/types';
-import {
-  loadAppState,
-  saveAppState,
-  createInitialState,
-} from './src/storage/storage';
+import { AppState, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
 import {
   addExercise,
   addExerciseWithSets,
@@ -14,12 +9,13 @@ import {
   addLogEntry,
   addSet,
   addSetsForExercise,
+  reorderExercisesInBlock,
   renameExercise,
   deleteExercise,
   setExerciseBlockId,
   updateSet,
   deleteSet,
-} from './src/services/workoutService';
+} from './src/features/workouts';
 
 import { LandingScreen } from './src/screens/LandingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -33,30 +29,9 @@ import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
-import { findExerciseFuzzy, parseQuickLog } from './src/services/quickLogService';
-import { t } from './src/i18n/i18n';
-
-type ScreenName =
-  | 'landing'
-  | 'login'
-  | 'welcome'
-  | 'home'
-  | 'block'
-  | 'exercise'
-  | 'ai'
-  | 'history'
-  | 'progress'
-  | 'repMax'
-  | 'profile'
-  | 'quickLog';
-
-interface NavState {
-  screen: ScreenName;
-  selectedBlockId?: string | null;
-  selectedExerciseId?: string | null;
-  aiInitialQuestion?: string | null;
-  showLocalOnlyNotice?: boolean;
-}
+import { parseQuickLog, findExerciseFuzzy } from './src/features/quicklog';
+import { t } from './src/shared/i18n/i18n';
+import type { NavState, ScreenName } from './src/app/navigation/types';
 
 export default function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
@@ -335,6 +310,11 @@ export default function App() {
               selectedExerciseId: exerciseId,
             })
           }
+          onReorderExercises={(orderedExerciseIds) => {
+            setAppState((prev) =>
+              prev ? reorderExercisesInBlock(prev, currentBlock.id, orderedExerciseIds) : prev
+            );
+          }}
           onAddExercise={(name) => {
             setAppState((prev) =>
               prev ? addExercise(prev, currentBlock.id, name) : prev

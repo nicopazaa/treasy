@@ -1,4 +1,4 @@
-import { AppLanguage, TrainingBlockId } from '../types';
+import { AppLanguage } from '../types';
 
 export const LANGUAGE_OPTIONS: Array<{ id: AppLanguage; label: string }> = [
   { id: 'en', label: 'English' },
@@ -6,7 +6,7 @@ export const LANGUAGE_OPTIONS: Array<{ id: AppLanguage; label: string }> = [
   { id: 'es', label: 'Español' },
 ];
 
-const BLOCK_LABELS: Record<TrainingBlockId, Record<AppLanguage, string>> = {
+const BLOCK_LABELS = {
   chest: { nb: 'Bryst', en: 'Chest', es: 'Pecho' },
   shoulders: { nb: 'Skuldre', en: 'Shoulders', es: 'Hombros' },
   back: { nb: 'Rygg', en: 'Back', es: 'Espalda' },
@@ -14,9 +14,11 @@ const BLOCK_LABELS: Record<TrainingBlockId, Record<AppLanguage, string>> = {
   core: { nb: 'Core', en: 'Core', es: 'Core' },
   legs: { nb: 'Bein', en: 'Legs', es: 'Piernas' },
   cardio: { nb: 'Cardio', en: 'Cardio', es: 'Cardio' },
-};
+} as const satisfies Record<string, Record<AppLanguage, string>>;
 
-export function blockLabel(blockId: TrainingBlockId, language: AppLanguage): string {
+type BlockId = keyof typeof BLOCK_LABELS;
+
+export function blockLabel(blockId: BlockId, language: AppLanguage): string {
   return BLOCK_LABELS[blockId][language];
 }
 
@@ -81,6 +83,8 @@ const STRINGS = {
     quickLogPlaceholder: 'Write: Bench 80x2, 70x5, 60x8',
     quickLogSaved: 'Saved.',
     quickLogButton: 'Log',
+    liveLogTitle: 'Log (today)',
+    liveLogEmpty: 'No logs today yet.',
     localOnlyNotice: 'Data is stored locally. It can be lost if the device is lost.',
     newExerciseFound: 'New exercise found: "{name}"',
     chooseMuscleGroup: 'Choose muscle group:',
@@ -110,6 +114,7 @@ const STRINGS = {
     exerciseName: 'Exercise name',
     deleteExerciseTitle: 'Delete exercise?',
     deleteExerciseBody: 'Delete {name}? This also removes all sets.',
+    moveExerciseHint: 'Moving "{name}". Tap another exercise to place it.',
 
     logSet: 'Log set',
     history: 'History',
@@ -201,6 +206,8 @@ const STRINGS = {
     quickLogPlaceholder: 'Skriv: Benk 80x2, 70x5, 60x8',
     quickLogSaved: 'Lagret.',
     quickLogButton: 'Logg',
+    liveLogTitle: 'Logg (i dag)',
+    liveLogEmpty: 'Ingen logg i dag ennå.',
     localOnlyNotice: 'Data lagres lokalt. Kan gå tapt hvis enheten mistes.',
     newExerciseFound: 'Ny øvelse funnet: "{name}"',
     chooseMuscleGroup: 'Velg muskelgruppe:',
@@ -230,6 +237,7 @@ const STRINGS = {
     exerciseName: 'Navn på øvelse',
     deleteExerciseTitle: 'Slett øvelse?',
     deleteExerciseBody: 'Vil du slette {name}? Dette fjerner også alle sett.',
+    moveExerciseHint: 'Flytter "{name}". Trykk på en annen øvelse for å plassere.',
 
     logSet: 'Logg sett',
     history: 'Historikk',
@@ -321,6 +329,8 @@ const STRINGS = {
     quickLogPlaceholder: 'Escribe: Press banca 80x2, 70x5, 60x8',
     quickLogSaved: 'Guardado.',
     quickLogButton: 'Registrar',
+    liveLogTitle: 'Registro (hoy)',
+    liveLogEmpty: 'Aún no hay registros hoy.',
     localOnlyNotice: 'Los datos se guardan localmente. Se pueden perder si se pierde el dispositivo.',
     newExerciseFound: 'Nuevo ejercicio: "{name}"',
     chooseMuscleGroup: 'Elige grupo muscular:',
@@ -350,6 +360,7 @@ const STRINGS = {
     exerciseName: 'Nombre del ejercicio',
     deleteExerciseTitle: '¿Eliminar ejercicio?',
     deleteExerciseBody: '¿Eliminar {name}? Esto también elimina todas las series.',
+    moveExerciseHint: 'Moviendo "{name}". Toca otro ejercicio para colocarlo.',
 
     logSet: 'Registrar serie',
     history: 'Historial',
