@@ -1,0 +1,343 @@
+﻿import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
+import { AppState, TrainingBlock, Exercise, SetEntry } from '../types';
+import { getBlockTone } from '../utils/blockTone';
+import { formatRelativeDateTime } from '../utils/dateLabels';
+import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+
+interface Props {
+  appState: AppState;
+  onBack: () => void;
+}
+
+interface ProgressRow {
+  id: string;
+  dateLabel: string;
+  weight: number;
+  reps: number;
+  oneRm: number;
+}
+
+function estimateOneRm(weight: number, reps: number): number {
+  if (reps <= 1) return weight;
+  const est = weight * (1 + reps / 30);
+  return Math.round(est * 10) / 10; // Acn desimal
+}
+
+export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(
+    appState.blocks[0]?.id ?? null
+  );
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
+    null
+  );
+
+  const blocks = appState.blocks as TrainingBlock[];
+  const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
+
+  const exercises = useMemo(() => {
+    if (!selectedBlockId) return [] as Exercise[];
+    return appState.exercises.filter(
+      (e) => e.blockId === selectedBlockId
+    ) as Exercise[];
+  }, [appState.exercises, selectedBlockId]);
+
+  const progressRows: ProgressRow[] = useMemo(() => {
+    if (!selectedExerciseId) return [];
+
+    const setsForExercise = appState.sets
+      .filter((s) => s.exerciseId === selectedExerciseId)
+      .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)) as SetEntry[];
+
+    return setsForExercise.map((s) => {
+      const dateLabel = formatRelativeDateTime(new Date(s.createdAt));
+      return {
+        id: s.id,
+        dateLabel,
+        weight: s.weight,
+        reps: s.reps,
+        oneRm: estimateOneRm(s.weight, s.reps),
+      };
+    });
+  }, [appState.sets, selectedExerciseId]);
+  const chartMax = progressRows.reduce((max, row) => Math.max(max, row.weight), 0);
+
+  const selectedExercise =
+    selectedExerciseId &&
+    appState.exercises.find((e) => e.id === selectedExerciseId);
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <TouchableOpacity onPress={onBack}>
+        <Text style={styles.back}>{'< Tilbake'}</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.title}>Progressive overload</Text>
+      <Text style={styles.subtitle}>
+        Velg muskelgruppe og A,velse for A se utviklingen din over tid.
+      </Text>
+
+      {/* Muskelgrupper */}
+      <Text style={styles.sectionLabel}>Muskelgrupper</Text>
+      <View style={styles.pillRow}>
+        {blocks.map((block) => {
+          const selected = block.id === selectedBlockId;
+          const tone = getBlockTone(block.id);
+          return (
+            <TouchableOpacity
+              key={block.id}
+              style={[
+                styles.pill,
+                {
+                  backgroundColor: selected ? tone.accent : tone.soft,
+                  borderColor: tone.accent,
+                },
+              ]}
+              onPress={() => {
+                setSelectedBlockId(block.id);
+                setSelectedExerciseId(null);
+              }}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  selected ? styles.pillTextSelected : { color: tone.accent },
+                ]}
+              >
+                {block.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* A~velser */}
+      <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>A~velser</Text>
+      {exercises.length === 0 ? (
+        <Text style={styles.emptyText}>
+          Ingen A,velser i denne blokken enda. Legg til A,velser fA,rst.
+        </Text>
+      ) : (
+        <View style={styles.pillRow}>
+          {exercises.map((ex) => {
+            const selected = ex.id === selectedExerciseId;
+            return (
+              <TouchableOpacity
+                key={ex.id}
+                style={[
+                  styles.pill,
+                  {
+                    backgroundColor: selected
+                      ? selectedBlockTone.accent
+                      : selectedBlockTone.soft,
+                    borderColor: selectedBlockTone.accent,
+                  },
+                ]}
+                onPress={() => setSelectedExerciseId(ex.id)}
+              >
+                <Text
+                  style={[
+                    styles.pillText,
+                    selected
+                      ? styles.pillTextSelected
+                      : { color: selectedBlockTone.accent },
+                  ]}
+                >
+                  {ex.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Utvikling / tabell */}
+      <View style={styles.progressCard}>
+        <Text style={styles.progressTitle}>Utvikling</Text>
+        {selectedExercise && progressRows.length > 0 ? (
+          <>
+            <Text style={[styles.progressSubtitle, { color: selectedBlockTone.accent }]}>
+              {selectedExercise.name}
+            </Text>
+            <Text style={styles.chartCaption}>Vekt over tid</Text>
+            <View style={styles.chart}>
+              {progressRows.map((r, index) => {
+                const height =
+                  chartMax > 0 ? Math.max(6, (r.weight / chartMax) * 120) : 0;
+                return (
+                  <View
+                    key={`${r.id}-bar`}
+                    style={[
+                      styles.chartBar,
+                      {
+                        height,
+                        backgroundColor: selectedBlockTone.accent,
+                        opacity: index === progressRows.length - 1 ? 1 : 0.7,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+            <View style={styles.table}>
+              <View style={[styles.row, styles.headerRow]}>
+                <Text style={[styles.cell, styles.cellDate]}>Dato</Text>
+                <Text style={[styles.cell, styles.cellWeight]}>Vekt</Text>
+                <Text style={[styles.cell, styles.cellReps]}>Reps</Text>
+                <Text style={[styles.cell, styles.cellOneRm]}>1RM (est)</Text>
+              </View>
+              {progressRows.map((r) => (
+                <View key={r.id} style={styles.row}>
+                  <Text style={[styles.cell, styles.cellDate]}>{r.dateLabel}</Text>
+                  <Text style={[styles.cell, styles.cellWeight]}>{r.weight} kg</Text>
+                  <Text style={[styles.cell, styles.cellReps]}>{r.reps}</Text>
+                  <Text style={[styles.cell, styles.cellOneRm]}>{r.oneRm} kg</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Text style={styles.emptyText}>
+            Velg en A,velse for A se loggen din. NAr du har logget sett, vil
+            utviklingen vises her.
+          </Text>
+        )}
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
+  scrollContent: {
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.xxxl,
+    paddingBottom: SPACING.xxl,
+  },
+  back: {
+    color: '#93C5FD',
+    marginBottom: SPACING.md,
+  },
+  title: {
+    fontSize: TEXT.xl,
+    fontWeight: '700',
+    color: '#F9FAFB',
+  },
+  subtitle: {
+    marginTop: SPACING.xs,
+    color: '#9CA3AF',
+  },
+  sectionLabel: {
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.sm,
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -SPACING.xs,
+  },
+  pill: {
+    flexBasis: '30%',
+    flexGrow: 1,
+    margin: SPACING.xs,
+    minHeight: 110,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.sm,
+  },
+  pillText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+  },
+  pillTextSelected: {
+    color: '#F9FAFB',
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: '#6B7280',
+    fontSize: TEXT.xs,
+  },
+  progressCard: {
+    marginTop: SPACING.xxl,
+    backgroundColor: '#020617',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    padding: SPACING.md,
+  },
+  progressTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.lg,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  progressSubtitle: {
+    color: '#9CA3AF',
+    marginBottom: SPACING.sm,
+  },
+  chartCaption: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    marginBottom: SPACING.xs,
+  },
+  chart: {
+    height: 120,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: SPACING.md,
+    gap: SPACING.xs,
+  },
+  chartBar: {
+    width: 10,
+    borderRadius: RADIUS.md,
+  },
+  table: {
+    marginTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: '#1F2937',
+  },
+  row: {
+    flexDirection: 'row',
+    paddingVertical: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111827',
+  },
+  headerRow: {
+    backgroundColor: '#020617',
+  },
+  cell: {
+    fontSize: TEXT.xs,
+    color: '#E5E7EB',
+  },
+  cellDate: {
+    flex: 2.6,
+  },
+  cellWeight: {
+    flex: 1.2,
+  },
+  cellReps: {
+    flex: 0.9,
+  },
+  cellOneRm: {
+    flex: 1.4,
+    textAlign: 'right',
+  },
+});
