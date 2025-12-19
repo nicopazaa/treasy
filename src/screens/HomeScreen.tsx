@@ -1,4 +1,4 @@
-﻿// src/screens/HomeScreen.tsx
+// src/screens/HomeScreen.tsx
 import React, { useMemo, useState } from 'react';
 import {
   View,
@@ -11,6 +11,13 @@ import {
 import { AppState, TrainingBlock, TrainingBlockId } from '../types';
 import { getBlockTone } from '../utils/blockTone';
 import { SPACING, TEXT, RADIUS } from '../theme/tokens';
+import {
+  getWorkoutDates,
+  getDailyWorkout,
+  groupDailySets,
+  GroupedDailySetView,
+} from '../services/workoutService';
+import { formatDate, formatRelativeDayLabel } from '../utils/dateLabels';
 
 type Props = {
   appState: AppState;
@@ -23,6 +30,11 @@ type Props = {
   onOpenProfile: () => void;
 };
 
+type LastWorkoutSummary = {
+  dateLabel: string;
+  groups: GroupedDailySetView[];
+};
+
 const ORDER: TrainingBlockId[] = [
   'chest',
   'shoulders',
@@ -32,6 +44,18 @@ const ORDER: TrainingBlockId[] = [
   'cardio',
   'legs',
 ];
+
+function parseDateKey(dateKey: string): Date | null {
+  const parts = dateKey.split('-');
+  if (parts.length !== 3) return null;
+
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
 
 export const HomeScreen: React.FC<Props> = ({
   appState,
@@ -63,9 +87,34 @@ export const HomeScreen: React.FC<Props> = ({
     return [...ordered, ...rest];
   }, [appState.blocks]);
 
-  const greeting = appState.nickname && appState.nickname.trim().length > 0
-    ? `Hei, ${appState.nickname}`
-    : 'Hei';
+  const lastWorkout = useMemo<LastWorkoutSummary | null>(() => {
+    const dates = getWorkoutDates(appState);
+    if (dates.length === 0) return null;
+
+    const dateKey = dates[0];
+    const daySets = getDailyWorkout(appState, dateKey);
+    const grouped = groupDailySets(daySets);
+    if (grouped.length === 0) return null;
+
+    const dt = parseDateKey(dateKey);
+    const dateLabel = dt ? (formatRelativeDayLabel(dt) ?? formatDate(dt)) : dateKey;
+
+    return {
+      dateLabel,
+      groups: grouped,
+    };
+  }, [appState]);
+
+  const greeting =
+    appState.nickname && appState.nickname.trim().length > 0
+      ? `Hei, ${appState.nickname}`
+      : 'Hei';
+
+  const previewGroups = lastWorkout ? lastWorkout.groups.slice(0, 2) : [];
+  const extraGroups =
+    lastWorkout && lastWorkout.groups.length > 2
+      ? lastWorkout.groups.length - 2
+      : 0;
 
   return (
     <View style={styles.root}>
@@ -79,7 +128,7 @@ export const HomeScreen: React.FC<Props> = ({
           <View style={styles.headerTextWrapper}>
             <Text style={styles.greeting}>{greeting}</Text>
             <Text style={styles.subtitle}>
-              Velg muskelgruppe for A se A,velser og logge A,kter.
+              Velg muskelgruppe for a se ovelser og logge okter.
             </Text>
           </View>
           <TouchableOpacity onPress={onOpenProfile} hitSlop={8}>
@@ -87,8 +136,55 @@ export const HomeScreen: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Muskelgrupper */}
-        <Text style={styles.sectionTitle}>Velg muskelgruppe</Text>
+        {/* Hurtig logg */}
+        <Text style={styles.sectionTitle}>Hurtig logg</Text>
+        <TouchableOpacity
+          style={[styles.analysisCard, styles.actionCard]}
+          onPress={onOpenQuickLog}
+          activeOpacity={0.9}
+        >
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Hurtig logg</Text>
+            <Text style={styles.cardChevron}>&gt;</Text>
+          </View>
+          <Text style={styles.cardText}>
+            Skriv for eksempel: Benk 80x2, 70x5, 60x8
+          </Text>
+        </TouchableOpacity>
+
+        {/* Sist okt */}
+        <Text style={styles.sectionTitle}>Sist okt</Text>
+        <TouchableOpacity
+          style={[styles.analysisCard, styles.actionCard]}
+          onPress={onOpenHistory}
+          activeOpacity={0.9}
+        >
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Sist okt</Text>
+            <Text style={styles.cardChevron}>&gt;</Text>
+          </View>
+          {lastWorkout ? (
+            <View style={styles.cardBody}>
+              <Text style={styles.cardMeta}>{lastWorkout.dateLabel}</Text>
+              {previewGroups.map((group) => (
+                <Text key={group.id} style={styles.cardText}>
+                  {group.exerciseName}
+                  {group.blockName ? ` (${group.blockName})` : ''} - {group.sets.length} sett
+                </Text>
+              ))}
+              {extraGroups > 0 ? (
+                <Text style={styles.cardText}>+ {extraGroups} til</Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.cardText}>
+              Ingen okter enda. Logg en okt for a se den her.
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Ovelser */}
+        <Text style={styles.sectionTitle}>Ovelser</Text>
         <View style={styles.section}>
           {blocks.map((block) => {
             const tone = getBlockTone(block.id);
@@ -110,23 +206,7 @@ export const HomeScreen: React.FC<Props> = ({
           })}
         </View>
 
-        {/* Handlinger */}
-        <Text style={styles.sectionTitle}>Handlinger</Text>
-
-        <TouchableOpacity
-          style={[styles.analysisCard, styles.quickLogCard]}
-          onPress={onOpenQuickLog}
-          activeOpacity={0.9}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Hurtiglogg</Text>
-            <Text style={styles.cardChevron}>&gt;</Text>
-          </View>
-          <Text style={styles.cardText}>
-            Skriv for eksempel: Benk 80x2, 70x5, 60x8
-          </Text>
-        </TouchableOpacity>
-
+        {/* Analyse */}
         <View style={styles.analysisWrapper}>
           <TouchableOpacity
             style={styles.analysisHeaderRow}
@@ -134,7 +214,7 @@ export const HomeScreen: React.FC<Props> = ({
             activeOpacity={0.8}
           >
             <Text style={styles.analysisTitle}>Analyse</Text>
-            <Text style={styles.chevron}>{analysisOpen ? 'ƒ-ý' : 'ƒ-¬'}</Text>
+            <Text style={styles.chevron}>{analysisOpen ? 'v' : '>'}</Text>
           </TouchableOpacity>
 
           {analysisOpen && (
@@ -145,11 +225,11 @@ export const HomeScreen: React.FC<Props> = ({
                 activeOpacity={0.9}
               >
                 <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Tidligere A,kter</Text>
+                  <Text style={styles.cardTitle}>Tidligere okter</Text>
                   <Text style={styles.cardChevron}>&gt;</Text>
                 </View>
                 <Text style={styles.cardText}>
-                  Se komplette A,kter per dag ƒ?" alle A,velser, uansett muskelgruppe.
+                  Se komplette okter per dag - alle ovelser, uansett muskelgruppe.
                 </Text>
               </TouchableOpacity>
 
@@ -163,7 +243,7 @@ export const HomeScreen: React.FC<Props> = ({
                   <Text style={styles.cardChevron}>&gt;</Text>
                 </View>
                 <Text style={styles.cardText}>
-                  Velg muskelgruppe og A,velse for A se utviklingen din over tid.
+                  Velg muskelgruppe og ovelse for a se utviklingen din over tid.
                 </Text>
               </TouchableOpacity>
 
@@ -177,29 +257,28 @@ export const HomeScreen: React.FC<Props> = ({
                   <Text style={styles.cardChevron}>&gt;</Text>
                 </View>
                 <Text style={styles.cardText}>
-                  Se hA,yeste vekt og antall reps du har tatt for hver A,velse.
+                  Se hoyeste vekt og antall reps du har tatt for hver ovelse.
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.analysisCard}
+                onPress={onOpenAI}
+                activeOpacity={0.9}
+              >
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardTitle}>Treasy sok</Text>
+                  <Text style={styles.cardChevron}>&gt;</Text>
+                </View>
+                <Text style={styles.cardText}>
+                  Spor for eksempel "Hva tok jeg sist i benkpress?" og fa svar fra loggen.
                 </Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* Treasy AI */}
-        <View style={styles.aiCard}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.aiTitle}>Treasy AI</Text>
-            <Text style={styles.cardChevron}>&gt;</Text>
-          </View>
-          <Text style={styles.aiText}>
-            SpA,r f.eks: &quot;Hva tok jeg sist i benkpress?&quot; sA svarer Treasy
-            basert pA loggen din.
-          </Text>
-          <TouchableOpacity style={styles.aiButton} onPress={onOpenAI} activeOpacity={0.9}>
-            <Text style={styles.aiButtonLabel}>A.pne AI</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Litt ekstra luft nederst pA mobil */}
+        {/* Litt ekstra luft nederst pa mobil */}
         <View style={{ height: Platform.OS === 'web' ? 32 : 48 }} />
       </ScrollView>
     </View>
@@ -309,7 +388,7 @@ const styles = StyleSheet.create({
     borderColor: '#1F2937',
     minHeight: 70,
   },
-  quickLogCard: {
+  actionCard: {
     marginBottom: SPACING.lg,
   },
   cardHeaderRow: {
@@ -327,40 +406,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#F9FAFB',
   },
+  cardMeta: {
+    fontSize: TEXT.xs,
+    color: '#94A3B8',
+    marginBottom: SPACING.xs,
+  },
+  cardBody: {
+    marginTop: SPACING.xs,
+  },
   cardText: {
     fontSize: TEXT.xs,
     color: '#9CA3AF',
-  },
-  aiCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-  },
-  aiTitle: {
-    fontSize: TEXT.lg,
-    fontWeight: '700',
-    color: '#F9FAFB',
-  },
-  aiText: {
-    fontSize: TEXT.sm,
-    color: '#9CA3AF',
-    marginBottom: SPACING.lg,
-  },
-  aiButton: {
-    marginTop: SPACING.xs,
-    borderRadius: RADIUS.pill,
-    backgroundColor: '#3B82F6',
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-  },
-  aiButtonLabel: {
-    fontSize: TEXT.md,
-    fontWeight: '600',
-    color: '#F9FAFB',
   },
 });

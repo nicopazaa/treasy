@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "Treasy",
     "slug": "treasy",
@@ -24,7 +24,7 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./src/assets/treasy-logo.png"
+      "favicon": "./web/favicon.png"
     }
   }
 }

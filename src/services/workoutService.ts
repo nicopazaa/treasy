@@ -148,7 +148,7 @@ export function deleteSet(state: AppState, setId: string): AppState {
 export function getSetsForExercise(state: AppState, exerciseId: string): SetEntry[] {
   return state.sets
     .filter((s) => s.exerciseId === exerciseId)
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export function getLastSetForExercise(state: AppState, exerciseId: string): SetEntry | null {
@@ -156,22 +156,16 @@ export function getLastSetForExercise(state: AppState, exerciseId: string): SetE
   return sets.length > 0 ? sets[0] : null;
 }
 
-/**
- * ---- Daglig A,kt-oversikt ----
- */
-
 function toDateKey(iso: string): string {
-  // Bruk bare YYYY-MM-DD fra ISO-datoen
   return iso.slice(0, 10);
 }
 
-/** Liste over alle datoer der brukeren har logget noe (nyeste fA,rst) */
 export function getWorkoutDates(state: AppState): string[] {
   const keys = new Set<string>();
   for (const s of state.sets) {
     keys.add(toDateKey(s.createdAt));
   }
-  return Array.from(keys).sort((a, b) => (a < b ? 1 : -1)); // nyeste fA,rst
+  return Array.from(keys).sort((a, b) => (a < b ? 1 : -1));
 }
 
 export interface DailySetView {
@@ -181,10 +175,9 @@ export interface DailySetView {
   blockId?: string;
   weight: number;
   reps: number;
-  time: string; // f.eks. 21:20
+  time: string;
 }
 
-/** Alle sett som ble tatt pAť en gitt dag (uansett muskelgruppe) */
 export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[] {
   const results: DailySetView[] = [];
 
@@ -199,7 +192,7 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
 
     results.push({
       id: s.id,
-      exerciseName: exercise ? exercise.name : 'Ukjent A,velse',
+      exerciseName: exercise ? exercise.name : 'Ukjent ovelse',
       blockName: block?.name,
       blockId: block?.id,
       weight: s.weight,
@@ -208,7 +201,41 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
     });
   }
 
-  // sorter eldste fA,rst innen dagen (sAť du ser rekkefA,lgen pAť A,kta)
   results.sort((a, b) => (a.time > b.time ? 1 : -1));
   return results;
+}
+
+export interface GroupedDailySetView {
+  id: string;
+  exerciseName: string;
+  blockName?: string;
+  blockId?: string;
+  time: string;
+  sets: Array<{ weight: number; reps: number }>;
+}
+
+export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
+  const map = new Map<string, GroupedDailySetView>();
+
+  for (const set of sets) {
+    const key = `${set.exerciseName}__${set.blockId ?? set.blockName ?? ''}`;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, {
+        id: set.id,
+        exerciseName: set.exerciseName,
+        blockName: set.blockName,
+        blockId: set.blockId,
+        time: set.time,
+        sets: [{ weight: set.weight, reps: set.reps }],
+      });
+      continue;
+    }
+
+    existing.sets.push({ weight: set.weight, reps: set.reps });
+    existing.time = set.time;
+  }
+
+  return Array.from(map.values());
 }

@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import { AppState } from '../types';
 import {
   getWorkoutDates,
   getDailyWorkout,
-  DailySetView,
+  groupDailySets,
+  GroupedDailySetView,
 } from '../services/workoutService';
 import { getBlockTone } from '../utils/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../utils/dateLabels';
@@ -25,7 +26,7 @@ type DayNode = {
   dateKey: string;
   dateLabel: string;
   dayLabel: string;
-  sets: DailySetView[];
+  groups: GroupedDailySetView[];
 };
 
 function parseDateKey(dateKey: string): Date | null {
@@ -40,8 +41,12 @@ function parseDateKey(dateKey: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
+function formatSetSummary(sets: Array<{ weight: number; reps: number }>): string {
+  return sets.map((set) => `${set.weight} kg x ${set.reps}`).join(', ');
+}
+
 function buildDayNodes(appState: AppState): DayNode[] {
-  const keys = getWorkoutDates(appState); // forventes sortert nyeste fA,rst
+  const keys = getWorkoutDates(appState); // forventes sortert nyeste forst
   return keys.map((key) => {
     const dt = parseDateKey(key);
     let dateLabel = key;
@@ -54,11 +59,13 @@ function buildDayNodes(appState: AppState): DayNode[] {
     }
 
     const sets = getDailyWorkout(appState, key);
+    const groups = groupDailySets(sets);
+
     return {
       dateKey: key,
       dateLabel,
       dayLabel,
-      sets,
+      groups,
     };
   });
 }
@@ -79,18 +86,18 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={styles.backText}>{'< Tilbake'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tidligere A,kter</Text>
+        <Text style={styles.headerTitle}>Tidligere okter</Text>
       </View>
 
       <Text style={styles.headerSubtitle}>
-        Bla i treningsdagboken din. Hver dato viser alle A,velser og sett du logget den dagen.
+        Bla i treningsdagboken din. Hver dato viser alle ovelser og sett du logget den dagen.
       </Text>
 
       {days.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>Ingen A,kter enda</Text>
+          <Text style={styles.emptyTitle}>Ingen okter enda</Text>
           <Text style={styles.emptyText}>
-            Logg noen A,kter fA,rst, sA dukker de opp her pA tidslinjen.
+            Logg noen okter forst, sa dukker de opp her pa tidslinjen.
           </Text>
         </View>
       ) : (
@@ -118,27 +125,26 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
                       <Text style={styles.dayLabel}>{day.dayLabel}</Text>
                       <Text style={styles.dateLabel}>{day.dateLabel}</Text>
                     </View>
-                    <Text style={styles.chevron}>{isExpanded ? 'ƒ-ý' : 'ƒ-¬'}</Text>
+                    <Text style={styles.chevron}>{isExpanded ? 'v' : '>'}</Text>
                   </View>
 
                   {isExpanded && (
                     <View style={styles.setList}>
-                      {day.sets.map((set) => {
-                        const tone = getBlockTone(set.blockId ?? set.blockName ?? '');
+                      {day.groups.map((group) => {
+                        const tone = getBlockTone(group.blockId ?? group.blockName ?? '');
+                        const setSummary = formatSetSummary(group.sets);
                         return (
-                          <View key={set.id} style={styles.setRow}>
+                          <View key={group.id} style={styles.setRow}>
                             <View style={styles.setTextColumn}>
                               <Text style={styles.setTitle}>
-                                <Text style={styles.exerciseName}>{set.exerciseName}</Text>
-                                {set.blockName ? (
-                                  <Text style={[styles.blockName, { color: tone.accent }]}> ({set.blockName})</Text>
+                                <Text style={styles.exerciseName}>{group.exerciseName}</Text>
+                                {group.blockName ? (
+                                  <Text style={[styles.blockName, { color: tone.accent }]}> ({group.blockName})</Text>
                                 ) : null}
                               </Text>
-                              <Text style={styles.setDetail}>
-                                {set.weight} kg x {set.reps} reps
-                              </Text>
+                              <Text style={styles.setDetail}>{setSummary}</Text>
                             </View>
-                            <Text style={styles.setTime}>{set.time}</Text>
+                            <Text style={styles.setTime}>{group.time}</Text>
                           </View>
                         );
                       })}

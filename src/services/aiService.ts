@@ -1,8 +1,9 @@
-﻿import { AppState, Exercise, SetEntry } from '../types';
+import { AppState, Exercise, SetEntry } from '../types';
 import {
   getLastSetForExercise,
   getWorkoutDates,
   getDailyWorkout,
+  groupDailySets,
 } from './workoutService';
 import { formatRelativeDayLabel, formatShortDate } from '../utils/dateLabels';
 import { inferBlockIdFromExercise } from './quickLogService';
@@ -178,11 +179,19 @@ export function answerAiQuestion(
     }
     const lastDate = dates[0];
     const daySets = getDailyWorkout(appState, lastDate);
+    const grouped = groupDailySets(daySets);
+    if (grouped.length === 0) {
+      return 'Lokalt svar: Jeg fant ingen okter enda.';
+    }
+
     const headerDate = formatDayLabel(new Date(lastDate));
-    const lines = daySets.map(
-      (s) =>
-        `- ${s.exerciseName}${s.blockName ? ` (${s.blockName})` : ''}: ${s.weight} kg x ${s.reps} reps kl. ${s.time}`
-    );
+    const lines = grouped.map((group) => {
+      const blockLabel = group.blockName ? ` (${group.blockName})` : '';
+      const setSummary = group.sets
+        .map((set) => `${set.weight} kg x ${set.reps}`)
+        .join(', ');
+      return `- ${group.exerciseName}${blockLabel}: ${setSummary} kl. ${group.time}`;
+    });
     return `Lokalt svar: Siste loggede okt (${headerDate}):\n${lines.join('\n')}`;
   }
 
