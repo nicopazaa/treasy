@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,9 @@ import {
   Platform,
   ScrollView,
   TouchableOpacity,
+  SafeAreaView,
 } from 'react-native';
 import { AppState } from '../features/workouts/model/types';
-import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { answerAiQuestion } from '../features/analytics/model/aiService';
 import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
@@ -22,129 +22,151 @@ interface Props {
   initialExerciseId?: string | null;
 }
 
-export const AIScreen: React.FC<Props> = ({
-  appState,
-  onBack,
-  initialQuestion,
-  initialExerciseId,
-}) => {
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'appa';
+  text: string;
+};
+
+function makeId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, initialExerciseId }) => {
   const language = appState.language ?? 'en';
-  const [question, setQuestion] = useState(initialQuestion ?? '');
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [ctxExerciseId] = useState<string | null>(initialExerciseId ?? null);
+  const ctxExerciseId = initialExerciseId ?? null;
 
-  useEffect(() => {
-    if (initialQuestion) {
-      handleAsk(initialQuestion);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [draft, setDraft] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const initialHandledRef = useRef(false);
 
-  const handleAsk = (q?: string) => {
-    const query = (q ?? question).trim();
-    if (!query) {
-      setAnswer(t(language, 'aiEmptyQuery'));
-      return;
-    }
-    const res = answerAiQuestion(appState, query, ctxExerciseId);
-    setAnswer(res);
+  const scenarios = useMemo(
+    () => [
+      t(language, 'appa.scenario.lastWorkout'),
+      t(language, 'appa.scenario.workouts7d'),
+      t(language, 'appa.scenario.volume7d'),
+      t(language, 'appa.scenario.bestSet'),
+      t(language, 'appa.scenario.repsAtWeight'),
+      t(language, 'appa.scenario.blockInMonth'),
+    ],
+    [language]
+  );
+
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   };
 
-  const suggestions =
-    language === 'es'
-      ? [
-          '¿Qué hice la última vez en banca?',
-          '¿Cuántos entrenos de pecho en diciembre?',
-          '¿Qué hice en la última sesión?',
-          '¿Cuántas reps a 100 kg en banca en los últimos 30 días?',
-          '¿Cuál es mi mejor serie en peso muerto?',
-        ]
-      : language === 'en'
-        ? [
-            'What did I do last on bench?',
-            'How many chest sessions in December?',
-            'What did I do in my last session?',
-            'How many reps at 100 kg on bench in the last 30 days?',
-            'What is my best set in deadlift?',
-          ]
-        : [
-            'Hva tok jeg sist i benk?',
-            'Hvor mange brystøkter i desember?',
-            'Hva gjorde jeg på siste økt?',
-            'Hvor mange reps på 100 kg i benkpress de siste 30 dagene?',
-            'Hva er beste sett i markløft?',
-          ];
+  const send = (text?: string) => {
+    const query = (text ?? draft).trim();
+    if (!query) return;
+
+    const answer = answerAiQuestion(appState, query, ctxExerciseId);
+    setMessages((prev) => [
+      ...prev,
+      { id: makeId('u'), role: 'user', text: query },
+      { id: makeId('a'), role: 'appa', text: answer },
+    ]);
+    setDraft('');
+    scrollToBottom();
+  };
+
+  useEffect(() => {
+    if (!initialQuestion || initialHandledRef.current) return;
+    initialHandledRef.current = true;
+    send(initialQuestion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.inner}>
-        <TouchableOpacity onPress={onBack} hitSlop={8}>
-          <Text style={styles.back}>{t(language, 'back')}</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.inner}>
+          <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+            <Text style={styles.back}>{t(language, 'back')}</Text>
+          </TouchableOpacity>
 
-        <Text style={styles.title}>{t(language, 'aiSearchTitle')}</Text>
-        <Text style={styles.subtitle}>{t(language, 'aiSubtitle')}</Text>
+          <Text style={styles.title}>{t(language, 'aiSearchTitle')}</Text>
+          <Text style={styles.subtitle}>{t(language, 'aiSubtitle')}</Text>
 
-        <View style={styles.inputCard}>
-          <Text style={styles.label}>{t(language, 'aiSearchLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            placeholder={t(language, 'aiPlaceholder')}
-            placeholderTextColor="#4B5563"
-            value={question}
-            onChangeText={setQuestion}
-            multiline
-            returnKeyType="send"
-            onSubmitEditing={() => handleAsk()}
-          />
-          <PrimaryButton title={t(language, 'search')} onPress={() => handleAsk()} />
-        </View>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            onContentSizeChange={scrollToBottom}
+          >
+            {messages.length === 0 ? (
+              <View style={styles.scenariosCard}>
+                <Text style={styles.scenariosTitle}>{t(language, 'appa.scenariosTitle')}</Text>
+                {scenarios.map((s) => (
+                  <TouchableOpacity key={s} style={styles.scenarioRow} onPress={() => send(s)} activeOpacity={0.9}>
+                    <Text style={styles.scenarioText}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
 
-        <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: SPACING.xxxl }}>
-          {answer && (
-            <View style={styles.answerCard}>
-              <Text style={styles.answerTitle}>{t(language, 'answer')}</Text>
-              <Text style={styles.answerText}>{answer}</Text>
-            </View>
-          )}
-
-          <View style={styles.suggestionsCard}>
-            <Text style={styles.suggestionsTitle}>{t(language, 'examples')}</Text>
-            {suggestions.map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={styles.suggestionRow}
-                onPress={() => {
-                  setQuestion(s);
-                  handleAsk(s);
-                }}
-              >
-                <Text style={styles.suggestionText}>{s}</Text>
-              </TouchableOpacity>
+            {messages.map((m) => (
+              <View key={m.id} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAppa]}>
+                <Text style={styles.bubbleText}>{m.text}</Text>
+              </View>
             ))}
+          </ScrollView>
+
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.input}
+              placeholder={t(language, 'aiPlaceholder')}
+              placeholderTextColor="#4B5563"
+              value={draft}
+              onChangeText={setDraft}
+              multiline
+              returnKeyType="send"
+              onSubmitEditing={() => send()}
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, !draft.trim() && styles.sendButtonDisabled]}
+              onPress={() => send()}
+              activeOpacity={0.9}
+              hitSlop={6}
+              disabled={!draft.trim()}
+              accessibilityLabel={t(language, 'appa.send')}
+            >
+              <Text style={styles.sendText}>{t(language, 'appa.send')}</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
   container: {
     flex: 1,
     backgroundColor: '#020617',
   },
   inner: {
     flex: 1,
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xxxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
+  },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
   },
   back: {
     color: '#93C5FD',
-    marginBottom: SPACING.md,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
@@ -159,36 +181,14 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     fontSize: TEXT.sm,
   },
-  inputCard: {
-    backgroundColor: '#020617',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  label: {
-    color: '#E5E7EB',
-    marginBottom: SPACING.sm,
-    fontWeight: '600',
-    fontSize: TEXT.sm,
-  },
-  input: {
-    minHeight: 60,
-    maxHeight: 120,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.sm,
-    color: '#F9FAFB',
-    marginBottom: SPACING.sm,
-    backgroundColor: '#0B1220',
-  },
   scroll: {
     flex: 1,
     marginTop: SPACING.xs,
   },
-  answerCard: {
+  scrollContent: {
+    paddingBottom: SPACING.xxxl,
+  },
+  scenariosCard: {
     backgroundColor: '#020617',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
@@ -196,32 +196,82 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     marginBottom: SPACING.md,
   },
-  answerTitle: {
-    color: '#F9FAFB',
-    fontWeight: '700',
-    marginBottom: SPACING.xs,
-  },
-  answerText: {
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-  },
-  suggestionsCard: {
-    backgroundColor: '#020617',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
-  },
-  suggestionsTitle: {
+  scenariosTitle: {
     color: '#F9FAFB',
     fontWeight: '700',
     marginBottom: SPACING.sm,
   },
-  suggestionRow: {
+  scenarioRow: {
     paddingVertical: SPACING.xs,
+    minHeight: 44,
+    justifyContent: 'center',
   },
-  suggestionText: {
+  scenarioText: {
     color: '#93C5FD',
     fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  bubble: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    maxWidth: '92%',
+  },
+  bubbleUser: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#1D4ED8',
+  },
+  bubbleAppa: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+  },
+  bubbleText: {
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#111827',
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.sm,
+  },
+  input: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 120,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    color: '#F9FAFB',
+    backgroundColor: '#0B1220',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  sendButton: {
+    minWidth: 44,
+    height: 44,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.pill,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.55,
+  },
+  sendText: {
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
   },
 });
+

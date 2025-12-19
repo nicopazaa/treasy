@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, StatusBar, Platform } from 'react-native';
+import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, PanResponder, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { AppState, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
 import {
@@ -33,20 +33,62 @@ import { parseQuickLog, findExerciseFuzzy } from './src/features/quicklog';
 import { t } from './src/shared/i18n/i18n';
 import type { NavState, ScreenName } from './src/app/navigation/types';
 
+type NavHistoryState = {
+  stack: NavState[];
+  index: number;
+};
+
+type NavHistoryAction =
+  | { type: 'reset'; nav: NavState }
+  | { type: 'navigate'; nav: NavState }
+  | { type: 'back' }
+  | { type: 'forward' };
+
+function navHistoryReducer(state: NavHistoryState, action: NavHistoryAction): NavHistoryState {
+  switch (action.type) {
+    case 'reset': {
+      return { stack: [action.nav], index: 0 };
+    }
+    case 'navigate': {
+      const stack = state.stack.slice(0, state.index + 1);
+      stack.push(action.nav);
+      return { stack, index: stack.length - 1 };
+    }
+    case 'back': {
+      if (state.index <= 0) return state;
+      return { ...state, index: state.index - 1 };
+    }
+    case 'forward': {
+      if (state.index >= state.stack.length - 1) return state;
+      return { ...state, index: state.index + 1 };
+    }
+    default:
+      return state;
+  }
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
-  const [nav, setNav] = useState<NavState>({ screen: 'landing' });
+  const [navHistory, dispatchNav] = useReducer(navHistoryReducer, {
+    stack: [{ screen: 'landing' }],
+    index: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [authBusy, setAuthBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const githubHandledRef = useRef(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const [historyInitialDateKey, setHistoryInitialDateKey] = useState<string | null>(null);
+  const nav = navHistory.stack[navHistory.index] ?? { screen: 'landing' };
+  const canGoBack = navHistory.index > 0;
+  const canGoForward = navHistory.index < navHistory.stack.length - 1;
 
   useEffect(() => {
     const init = async () => {
       const stored = await loadAppState();
       const next = stored ?? createInitialState();
       setAppState(next);
-      setNav({ screen: next.onboarded ? 'home' : 'landing' });
+      dispatchNav({ type: 'reset', nav: { screen: next.onboarded ? 'home' : 'landing' } });
       setLoading(false);
     };
     init();
@@ -73,7 +115,7 @@ export default function App() {
       setLoginError(t(appState.language ?? 'en', 'githubFailed'));
       window.history.replaceState({}, '', '/');
       setAuthBusy(false);
-      setNav({ screen: 'login' });
+      dispatchNav({ type: 'navigate', nav: { screen: 'login' } });
       return;
     }
 
@@ -97,11 +139,11 @@ export default function App() {
         });
 
         setLoginError(null);
-        setNav({ screen: 'quickLog' });
+        dispatchNav({ type: 'navigate', nav: { screen: 'quickLog' } });
       } catch (e) {
         console.warn('GitHub auth failed', e);
         setLoginError(t(appState.language ?? 'en', 'githubFailed'));
-        setNav({ screen: 'login' });
+        dispatchNav({ type: 'navigate', nav: { screen: 'login' } });
       } finally {
         window.sessionStorage?.removeItem('treasy_github_oauth_state');
         window.history.replaceState({}, '', '/');
@@ -117,7 +159,7 @@ export default function App() {
   }, [appState, loading]);
 
   const navigate = (screen: ScreenName, params?: Partial<NavState>) => {
-    setNav({ screen, ...params });
+    dispatchNav({ type: 'navigate', nav: { screen, ...params } });
   };
 
   const handleContinueWithoutLogin = () => {
@@ -152,8 +194,46 @@ export default function App() {
         nickname: derivedNickname,
       };
     });
-    setNav({ screen: 'quickLog' });
+    navigate('quickLog');
   };
+
+  const panResponder = useMemo(() => {
+    const EDGE_W = 28;
+    const SWIPE_X = 80;
+    const MAX_Y = 80;
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gesture) => {
+        if (gesture.numberActiveTouches !== 1) return false;
+        if (!canGoBack && !canGoForward) return false;
+
+        const fromLeftEdge = gesture.x0 < EDGE_W;
+        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
+        if (!fromLeftEdge && !fromRightEdge) return false;
+
+        const dx = gesture.dx;
+        const dy = gesture.dy;
+        return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12;
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        const dx = gesture.dx;
+        const dy = gesture.dy;
+        if (Math.abs(dy) > MAX_Y) return;
+
+        const fromLeftEdge = gesture.x0 < EDGE_W;
+        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
+
+        if (fromLeftEdge && dx > SWIPE_X && canGoBack) {
+          dispatchNav({ type: 'back' });
+          return;
+        }
+
+        if (fromRightEdge && dx < -SWIPE_X && canGoForward) {
+          dispatchNav({ type: 'forward' });
+        }
+      },
+    });
+  }, [canGoBack, canGoForward, windowWidth]);
 
   const startGithubLogin = () => {
     setLoginError(null);
@@ -246,7 +326,7 @@ export default function App() {
     : null;
 
   return (
-    <View style={styles.appContainer}>
+    <View style={styles.appContainer} {...panResponder.panHandlers}>
       <StatusBar barStyle="light-content" />
       <ExpoStatusBar style="light" />
 
@@ -290,7 +370,14 @@ export default function App() {
           onOpenAI={() => navigate('ai')}
           onOpenQuickLog={() => navigate('quickLog')}
           onOpenProfile={() => navigate('profile')}
-          onOpenHistory={() => navigate('history')}
+          onOpenHistory={() => {
+            setHistoryInitialDateKey(null);
+            navigate('history');
+          }}
+          onOpenHistoryForDate={(dateKey) => {
+            setHistoryInitialDateKey(dateKey);
+            navigate('history');
+          }}
           onOpenProgress={() => navigate('progress')}
           onOpenRepMax={() => navigate('repMax')}
         />
@@ -362,7 +449,9 @@ export default function App() {
           onAskAIForExercise={() =>
             navigate('ai', {
               selectedExerciseId: currentExercise.id,
-              aiInitialQuestion: `Hva tok jeg sist i ${currentExercise.name}?`,
+              aiInitialQuestion: t(appState.language ?? 'en', 'appa.prompt.lastForExercise', {
+                exercise: currentExercise.name,
+              }),
             })
           }
         />
@@ -378,7 +467,11 @@ export default function App() {
       )}
 
       {nav.screen === 'history' && (
-        <HistoryScreen appState={appState} onBack={() => navigate('home')} />
+        <HistoryScreen
+          appState={appState}
+          onBack={() => navigate('home')}
+          initialExpandedDateKey={historyInitialDateKey}
+        />
       )}
 
       {nav.screen === 'progress' && (

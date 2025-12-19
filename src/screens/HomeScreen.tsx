@@ -1,11 +1,22 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { AppState, TrainingBlock, TrainingBlockId, Exercise, SetEntry } from '../features/workouts/model/types';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, SafeAreaView, Image } from 'react-native';
+import { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
-import { formatDate, formatRelativeDayLabel, formatWeekday } from '../shared/utils/dateLabels';
-import { getDailyWorkout, getWorkoutDates, groupDailySets } from '../features/workouts/model/workoutService';
-import { blockLabel, greeting, t } from '../shared/i18n/i18n';
+import { blockLabel, t } from '../shared/i18n/i18n';
+import {
+  buildWorkoutTimeline,
+  calcPctChange,
+  calcTotalVolume,
+  calcVolumeByMuscle,
+  countSessions,
+  getLastDaysRangesUtc,
+  getMomentumStatus,
+  getWorkoutsInRange,
+} from '../features/analytics/model/insights';
+import { MomentumCard } from '../features/analytics/ui/MomentumCard';
+import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorkoutsTimeline';
+import { VolumeCard, type VolumeByMuscleRow } from '../features/analytics/ui/VolumeCard';
 
 type Props = {
   appState: AppState;
@@ -13,6 +24,7 @@ type Props = {
   onOpenAI: () => void;
   onOpenQuickLog: () => void;
   onOpenHistory: () => void;
+  onOpenHistoryForDate?: (dateKey: string) => void;
   onOpenProgress: () => void;
   onOpenRepMax: () => void;
   onOpenProfile: () => void;
@@ -27,30 +39,13 @@ const ORDER: TrainingBlockId[] = [
   'legs',
 ];
 
-function parseDateKey(dateKey: string): Date | null {
-  const parts = dateKey.split('-');
-  if (parts.length !== 3) return null;
-
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  const day = Number(parts[2]);
-
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day);
-}
-
-function estimateOneRm(weight: number, reps: number): number {
-  if (reps <= 1) return weight;
-  const est = weight * (1 + reps / 30);
-  return Math.round(est * 10) / 10;
-}
-
 export const HomeScreen: React.FC<Props> = ({
   appState,
   onSelectBlock,
   onOpenAI,
   onOpenQuickLog,
   onOpenHistory,
+  onOpenHistoryForDate,
   onOpenProgress,
   onOpenRepMax,
   onOpenProfile,
@@ -74,175 +69,126 @@ export const HomeScreen: React.FC<Props> = ({
     return [...ordered, ...rest];
   }, [appState.blocks]);
 
-  const greetingText = greeting(language, appState.nickname);
+  const nickname = appState.nickname?.trim() ?? '';
 
   const labelForBlock = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
     return ORDER.includes(id) ? blockLabel(id, language) : block.name;
   };
 
-  const lastWorkoutInsight = useMemo(() => {
-    const dates = getWorkoutDates(appState);
-    if (dates.length === 0) {
-      return { title: t(language, 'lastWorkoutNoneTitle'), subtitle: t(language, 'lastWorkoutNoneSubtitle') };
-    }
+  const analytics = useMemo(() => {
+    const { current, previous } = getLastDaysRangesUtc(7, new Date());
+    const sets7d = getWorkoutsInRange(appState, current.start, current.end);
+    const setsPrev7d = getWorkoutsInRange(appState, previous.start, previous.end);
 
-    const dateKey = dates[0];
-    const dt = parseDateKey(dateKey);
-    const dayLabel = dt ? formatRelativeDayLabel(dt, new Date(), language) ?? formatWeekday(dt, language) : null;
-    const dateLabel = dt ? formatDate(dt) : dateKey;
+    const sessions7d = countSessions(sets7d);
+    const sessionsPrev7d = countSessions(setsPrev7d);
 
-    const daySets = getDailyWorkout(appState, dateKey);
-    const groups = groupDailySets(daySets);
-    const setCount = daySets.length;
+    const volume7d = calcTotalVolume(sets7d);
+    const volumePrev7d = calcTotalVolume(setsPrev7d);
 
-    const blockCounts = new Map<string, { id: string; count: number }>();
-    for (const g of groups) {
-      const blockId = g.blockId ?? '';
-      if (!blockId) continue;
-      const prev = blockCounts.get(blockId);
-      blockCounts.set(blockId, { id: blockId, count: (prev?.count ?? 0) + g.sets.length });
-    }
+    const hasData = sessions7d > 0 || sessionsPrev7d > 0;
+    const momentum = getMomentumStatus({ sessions7d, sessionsPrev7d, volume7d, volumePrev7d });
+    const pctChange = calcPctChange(volume7d, volumePrev7d, { clampAbs: 999 });
 
-    const dominantBlockId = Array.from(blockCounts.values()).sort((a, b) => b.count - a.count)[0]?.id;
-    const dominantLabel =
-      dominantBlockId && ORDER.includes(dominantBlockId as TrainingBlockId)
-        ? blockLabel(dominantBlockId as TrainingBlockId, language)
-        : null;
+    const muscleIds = ORDER as unknown as string[];
+    const volumeByMuscle7d = calcVolumeByMuscle(appState, sets7d, muscleIds);
+    const volumeByMusclePrev7d = calcVolumeByMuscle(appState, setsPrev7d, muscleIds);
 
-    const title = dominantLabel
-      ? t(language, 'lastWorkoutTitle', { block: dominantLabel })
-      : t(language, 'lastWorkoutFallbackTitle');
-    const subtitle = t(language, 'lastWorkoutSubtitle', {
-      day: dayLabel ?? dateLabel,
-      count: setCount,
+    const timeline = buildWorkoutTimeline(appState, { limit: 5 });
+
+    return {
+      hasData,
+      momentum,
+      volume7d,
+      pctChange,
+      volumeByMuscle7d,
+      volumeByMusclePrev7d,
+      timeline,
+    };
+  }, [appState]);
+
+  const volumeCardProps = useMemo(() => {
+    const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
+    const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+    const unit = t(language, 'units.kg');
+
+    const roundedPct = Math.round(analytics.pctChange);
+    const changeLabel =
+      roundedPct > 0
+        ? t(language, 'analysis.volume.changeUp', { pct: Math.abs(roundedPct) })
+        : roundedPct < 0
+          ? t(language, 'analysis.volume.changeDown', { pct: Math.abs(roundedPct) })
+          : t(language, 'analysis.volume.changeFlat');
+
+    const volumeLabel = `${formatter.format(Math.round(analytics.volume7d))} ${unit}`;
+
+    const rows: VolumeByMuscleRow[] = ORDER.map((id) => {
+      const label = blockLabel(id, language);
+      const current = analytics.volumeByMuscle7d[id] ?? 0;
+      const prev = analytics.volumeByMusclePrev7d[id] ?? 0;
+      const pct = calcPctChange(current, prev, { clampAbs: 999 });
+      return { id, label, volume7d: current, pctChange: pct };
     });
-    return { title, subtitle };
-  }, [appState]);
-
-  const progressInsight = useMemo(() => {
-    if (appState.sets.length === 0) {
-      return { title: t(language, 'progressNoneTitle'), subtitle: t(language, 'progressNoneSubtitle') };
-    }
-
-    const now = Date.now();
-    const dayMs = 86400000;
-    const recentStart = now - 30 * dayMs;
-    const prevStart = now - 60 * dayMs;
-
-    const byExercise = new Map<
-      string,
-      { recentMax?: number; prevMax?: number; recentCount: number }
-    >();
-
-    for (const s of appState.sets) {
-      const ts = new Date(s.createdAt).getTime();
-      const item = byExercise.get(s.exerciseId) ?? { recentCount: 0 };
-
-      if (ts >= recentStart) {
-        item.recentCount += 1;
-        item.recentMax = Math.max(item.recentMax ?? 0, s.weight);
-      } else if (ts >= prevStart) {
-        item.prevMax = Math.max(item.prevMax ?? 0, s.weight);
-      }
-
-      byExercise.set(s.exerciseId, item);
-    }
-
-    let best:
-      | { exercise: Exercise; recentMax: number; prevMax?: number; recentCount: number }
-      | null = null;
-
-    for (const ex of appState.exercises) {
-      const data = byExercise.get(ex.id);
-      if (!data || data.recentMax == null) continue;
-      const candidate = { exercise: ex, recentMax: data.recentMax, prevMax: data.prevMax, recentCount: data.recentCount };
-
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-
-      const candDelta = candidate.prevMax != null ? candidate.recentMax - candidate.prevMax : null;
-      const bestDelta = best.prevMax != null ? best.recentMax - best.prevMax : null;
-
-      if (candDelta != null && bestDelta == null) {
-        best = candidate;
-        continue;
-      }
-      if (candDelta != null && bestDelta != null) {
-        if (candDelta > bestDelta) {
-          best = candidate;
-          continue;
-        }
-        if (candDelta < bestDelta) continue;
-      }
-
-      if (candidate.recentCount > best.recentCount) {
-        best = candidate;
-        continue;
-      }
-      if (candidate.recentCount < best.recentCount) continue;
-
-      if (candidate.recentMax > best.recentMax) {
-        best = candidate;
-      }
-    }
-
-    if (!best) {
-      return { title: t(language, 'progressNoRecentTitle'), subtitle: t(language, 'progressNoRecentSubtitle') };
-    }
-
-    const delta = best.prevMax != null ? best.recentMax - best.prevMax : null;
-    const deltaText =
-      delta == null
-        ? `${best.recentMax} kg`
-        : `${delta >= 0 ? '+' : ''}${Math.round(delta * 10) / 10} kg`;
-    return {
-      title: t(language, 'progressTitle', { exercise: best.exercise.name, delta: deltaText }),
-      subtitle: t(language, 'tapForDetails'),
-    };
-  }, [appState]);
-
-  const repMaxInsight = useMemo(() => {
-    if (appState.sets.length === 0) {
-      return { title: t(language, 'repMaxNoneTitle'), subtitle: t(language, 'repMaxNoneSubtitle') };
-    }
-
-    let best: { set: SetEntry; exercise: Exercise } | null = null;
-    let bestOneRm = 0;
-
-    for (const s of appState.sets) {
-      const ex = appState.exercises.find((e) => e.id === s.exerciseId);
-      if (!ex) continue;
-      const oneRm = estimateOneRm(s.weight, s.reps);
-      if (oneRm > bestOneRm) {
-        bestOneRm = oneRm;
-        best = { set: s, exercise: ex };
-      }
-    }
-
-    if (!best) {
-      return { title: t(language, 'repMaxNoneTitle'), subtitle: t(language, 'repMaxNoneSubtitle') };
-    }
 
     return {
-      title: t(language, 'repMaxTitle', { exercise: best.exercise.name, oneRm: bestOneRm }),
-      subtitle: t(language, 'repMaxSubtitle', { weight: best.set.weight, reps: best.set.reps }),
+      totalLabel: t(language, 'analysis.volume.total7d'),
+      changeLabel,
+      volumeLabel,
+      rows,
     };
-  }, [appState]);
+  }, [analytics, language]);
+
+  const resolveBlockLabel = useMemo(() => {
+    const known = new Set<string>([...ORDER, 'cardio']);
+    const byId = new Map(appState.blocks.map((b) => [b.id, b.name] as const));
+    return (blockId: string | null): string | null => {
+      if (!blockId) return null;
+      if (known.has(blockId)) return blockLabel(blockId as any, language);
+      return byId.get(blockId) ?? null;
+    };
+  }, [appState.blocks, language]);
+
+  const openHistoryForDate = (dateKey: string) => {
+    if (onOpenHistoryForDate) {
+      onOpenHistoryForDate(dateKey);
+      return;
+    }
+    onOpenHistory();
+  };
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView style={styles.root}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} bounces>
         <View style={styles.headerRow}>
-          <View style={styles.headerTextWrapper}>
-            <Text style={styles.greeting}>{greetingText}</Text>
+          <View style={styles.brandColumn}>
+            <Image
+              source={require('../assets/treasy-logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="Treasy"
+            />
             <Text style={styles.subtitle}>{t(language, 'homeSubtitle')}</Text>
           </View>
-          <TouchableOpacity onPress={onOpenProfile} hitSlop={8}>
-            <Text style={styles.profileLink}>{t(language, 'profile')}</Text>
-          </TouchableOpacity>
+
+          <View style={styles.profileColumn}>
+            <View style={styles.headerButtonsRow}>
+              <TouchableOpacity onPress={onOpenProfile} hitSlop={8} style={styles.profileButton}>
+                <Text style={styles.profileLink}>{t(language, 'profile')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={onOpenAI}
+                hitSlop={8}
+                style={styles.helpButton}
+                activeOpacity={0.85}
+                accessibilityLabel={t(language, 'home.help')}
+              >
+                <Text style={styles.helpIcon}>{'?'}</Text>
+              </TouchableOpacity>
+            </View>
+            {nickname ? <Text style={styles.nickname}>{nickname}</Text> : null}
+          </View>
         </View>
 
         <TouchableOpacity style={styles.quickLogCard} onPress={onOpenQuickLog} activeOpacity={0.9}>
@@ -277,30 +223,38 @@ export const HomeScreen: React.FC<Props> = ({
             onPress={() => setAnalysisOpen((v) => !v)}
             activeOpacity={0.8}
           >
-            <Text style={styles.analysisTitle}>{t(language, 'analysis')}</Text>
+            <Text style={styles.analysisTitle}>{t(language, 'analysis.sectionTitle')}</Text>
             <Text style={styles.chevron}>{analysisOpen ? 'v' : '>'}</Text>
           </TouchableOpacity>
 
           {analysisOpen && (
             <View style={styles.analysisCards}>
-              <TouchableOpacity style={styles.analysisCard} onPress={onOpenHistory} activeOpacity={0.9}>
-                <Text style={styles.cardTitle}>{lastWorkoutInsight.title}</Text>
-                <Text style={styles.cardText}>{lastWorkoutInsight.subtitle}</Text>
-              </TouchableOpacity>
+              <MomentumCard
+                language={language}
+                hasData={analytics.hasData}
+                status={analytics.momentum}
+                onPress={onOpenProgress}
+              />
 
-              <TouchableOpacity style={styles.analysisCard} onPress={onOpenProgress} activeOpacity={0.9}>
-                <Text style={styles.cardTitle}>{progressInsight.title}</Text>
-                <Text style={styles.cardText}>{progressInsight.subtitle}</Text>
-              </TouchableOpacity>
+              <VolumeCard
+                language={language}
+                hasData={analytics.hasData}
+                totalLabel={volumeCardProps.totalLabel}
+                changeLabel={volumeCardProps.changeLabel}
+                volumeLabel={volumeCardProps.volumeLabel}
+                rows={volumeCardProps.rows}
+              />
+
+              <PreviousWorkoutsTimeline
+                language={language}
+                items={analytics.timeline}
+                resolveBlockLabel={resolveBlockLabel}
+                onPressDay={openHistoryForDate}
+              />
 
               <TouchableOpacity style={styles.analysisCard} onPress={onOpenRepMax} activeOpacity={0.9}>
-                <Text style={styles.cardTitle}>{repMaxInsight.title}</Text>
-                <Text style={styles.cardText}>{repMaxInsight.subtitle}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.analysisCard} onPress={onOpenAI} activeOpacity={0.9}>
-                <Text style={styles.cardTitle}>{t(language, 'aiSearchTitle')}</Text>
-                <Text style={styles.cardText}>{t(language, 'aiSearchHint')}</Text>
+                <Text style={styles.cardTitle}>{t(language, 'analysis.bestLifts.title')}</Text>
+                <Text style={styles.cardText}>{t(language, 'analysis.bestLifts.subtitle')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -308,7 +262,7 @@ export const HomeScreen: React.FC<Props> = ({
 
         <View style={{ height: Platform.OS === 'web' ? 32 : 48 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -316,13 +270,16 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#020617',
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.xxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.xs : SPACING.xxl,
   },
   headerRow: {
     flexDirection: 'row',
@@ -330,25 +287,60 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: SPACING.xl,
   },
-  headerTextWrapper: {
+  brandColumn: {
     flex: 1,
     paddingRight: SPACING.lg,
   },
-  greeting: {
-    fontSize: TEXT.title,
-    fontWeight: '700',
-    color: '#F9FAFB',
+  logo: {
+    height: 28,
+    width: 120,
     marginBottom: SPACING.xs,
   },
   subtitle: {
     fontSize: TEXT.sm,
     color: '#9CA3AF',
   },
+  profileColumn: {
+    alignItems: 'flex-end',
+  },
+  headerButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  profileButton: {
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: SPACING.sm,
+    paddingTop: SPACING.xs,
+    alignItems: 'flex-end',
+  },
   profileLink: {
     fontSize: TEXT.sm,
     color: '#60A5FA',
     fontWeight: '600',
-    paddingTop: SPACING.xs,
+  },
+  nickname: {
+    marginTop: 2,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+  },
+  helpButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpIcon: {
+    color: '#9CA3AF',
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   sectionTitle: {
     color: '#E5E7EB',

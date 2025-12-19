@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
 import { AppState } from '../features/workouts/model/types';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
@@ -10,6 +10,7 @@ import { t } from '../shared/i18n/i18n';
 type Props = {
   appState: AppState;
   onBack: () => void;
+  initialExpandedDateKey?: string | null;
 };
 
 type DayNode = {
@@ -53,21 +54,32 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
   });
 }
 
-export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
+export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey }) => {
   const language = appState.language ?? 'en';
   const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
-  const [expandedKey, setExpandedKey] = useState<string | null>(
-    days.length > 0 ? days[0].dateKey : null
-  );
+  const firstKey = days.length > 0 ? days[0].dateKey : null;
+  const [expandedKey, setExpandedKey] = useState<string | null>(() => initialExpandedDateKey ?? firstKey);
+
+  useEffect(() => {
+    if (initialExpandedDateKey != null) {
+      setExpandedKey(initialExpandedDateKey);
+    }
+  }, [initialExpandedDateKey]);
+
+  useEffect(() => {
+    if (expandedKey == null && firstKey != null) {
+      setExpandedKey(firstKey);
+    }
+  }, [expandedKey, firstKey]);
 
   const toggle = (key: string) => {
     setExpandedKey((prev) => (prev === key ? null : key));
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} hitSlop={8}>
+        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
           <Text style={styles.backText}>{t(language, 'back')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
@@ -133,7 +145,7 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack }) => {
           })}
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -141,18 +153,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xxxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: SPACING.sm,
   },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    marginRight: SPACING.lg,
+  },
   backText: {
     color: '#60A5FA',
     fontSize: TEXT.sm,
-    marginRight: SPACING.lg,
     fontWeight: '600',
   },
   headerTitle: {

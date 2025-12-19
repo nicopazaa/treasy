@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
 import { AppLanguage } from '../shared/types';
@@ -21,20 +21,22 @@ export const LoginScreen: React.FC<Props> = ({
   error,
 }) => {
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={onBack} hitSlop={8}>
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
         <Text style={styles.back}>{t(language, 'back')}</Text>
       </TouchableOpacity>
 
-      <View style={styles.buttons}>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <PrimaryButton title={t(language, 'loginWithGithub')} onPress={onContinueWithGithub} />
+      <View style={styles.content}>
+        <View style={styles.buttons}>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <PrimaryButton title={t(language, 'loginWithGithub')} onPress={onContinueWithGithub} />
 
-        <TouchableOpacity style={styles.secondaryButton} onPress={onContinueWithEmail} activeOpacity={0.9}>
-          <Text style={styles.secondaryText}>{t(language, 'loginWithEmail')}</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.secondaryButton} onPress={onContinueWithEmail} activeOpacity={0.9}>
+            <Text style={styles.secondaryText}>{t(language, 'loginWithEmail')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -42,13 +44,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
+  },
+  content: {
+    flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: SPACING.xxl,
+  },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   back: {
-    position: 'absolute',
-    top: 56,
-    left: SPACING.xxl,
     color: '#93C5FD',
     fontSize: TEXT.sm,
     fontWeight: '600',

@@ -6,6 +6,8 @@ import {
   SectionList,
   TouchableOpacity,
   SectionListData,
+  SafeAreaView,
+  Platform,
 } from 'react-native';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getSetsForExercise } from '../features/workouts/model/workoutService';
@@ -119,8 +121,8 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
   }, [appState, language]);
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={onBack} hitSlop={8}>
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
         <Text style={styles.back}>{t(language, 'back')}</Text>
       </TouchableOpacity>
 
@@ -166,7 +168,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -174,12 +176,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xxxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
+  },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
   },
   back: {
     color: '#93C5FD',
-    marginBottom: SPACING.md,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },

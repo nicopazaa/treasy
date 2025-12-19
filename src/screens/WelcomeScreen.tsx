@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, SafeAreaView } from 'react-native';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { SPACING, TEXT } from '../shared/theme/tokens';
@@ -27,49 +27,63 @@ export const WelcomeScreen: React.FC<Props> = ({ language, onBack, onComplete })
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.select({ ios: 'padding', android: undefined })}
-    >
-      <View style={styles.inner}>
-        <TouchableOpacity onPress={onBack} hitSlop={8}>
-          <Text style={styles.back}>{t(language, 'back')}</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.select({ ios: 'padding', android: undefined })}
+      >
+        <View style={styles.inner}>
+          <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+            <Text style={styles.back}>{t(language, 'back')}</Text>
+          </TouchableOpacity>
 
-        <View style={styles.form}>
-          <LabeledInput
-            label={t(language, 'email')}
-            placeholder={t(language, 'emailPlaceholder')}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={email}
-            onChangeText={setEmail}
-            returnKeyType="done"
-            onSubmitEditing={handleContinue}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <PrimaryButton title={t(language, 'continue')} onPress={handleContinue} />
+          <View style={styles.form}>
+            <LabeledInput
+              label={t(language, 'email')}
+              placeholder={t(language, 'emailPlaceholder')}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={email}
+              onChangeText={setEmail}
+              returnKeyType="done"
+              onSubmitEditing={handleContinue}
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <PrimaryButton title={t(language, 'continue')} onPress={handleContinue} />
+          </View>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
   container: {
     flex: 1,
     backgroundColor: '#020617',
   },
   inner: {
     flex: 1,
-    paddingHorizontal: SPACING.xxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    justifyContent: 'center',
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
+  },
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    minWidth: 44,
+    minHeight: 44,
     justifyContent: 'center',
   },
   back: {
-    position: 'absolute',
-    top: 56,
-    left: SPACING.xxl,
     color: '#93C5FD',
     fontSize: TEXT.sm,
     fontWeight: '600',

@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   TouchableOpacity,
+  SafeAreaView,
 } from 'react-native';
 import { AppState } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
@@ -54,12 +55,13 @@ export const ProfileScreen: React.FC<Props> = ({
         : t(language, 'continuingWithoutLogin');
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity onPress={onBack} hitSlop={8}>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
@@ -135,23 +137,36 @@ export const ProfileScreen: React.FC<Props> = ({
           <PrimaryButton title={t(language, 'save')} onPress={handleSave} />
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
   container: {
     flex: 1,
     backgroundColor: '#020617',
   },
   content: {
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xxxl,
+    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     paddingBottom: SPACING.xxl,
+    ...Platform.select({
+      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+    }),
+  },
+  backButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
   },
   back: {
     color: '#93C5FD',
-    marginBottom: SPACING.md,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
