@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 
 interface Props {
@@ -203,7 +204,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     paddingBottom: SPACING.xxl,
     ...Platform.select({

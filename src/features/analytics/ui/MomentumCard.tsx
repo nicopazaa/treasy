@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import type { AppLanguage } from '../../../shared/types';
-import { SPACING, TEXT as TEXT_TOKENS, RADIUS } from '../../../shared/theme/tokens';
+import { SPACING, TEXT as TEXT_TOKENS, RADIUS, COLORS } from '../../../shared/theme/tokens';
 import { t } from '../../../shared/i18n/i18n';
 import type { MomentumStatus } from '../model/insights';
 
@@ -20,6 +20,13 @@ export const MomentumCard: React.FC<Props> = ({ language, hasData, status, onPre
       : status === 'down'
         ? t(language, 'analysis.momentum.down')
         : t(language, 'analysis.momentum.stable');
+  const statusColor = !hasData
+    ? COLORS.neutral
+    : status === 'up'
+      ? COLORS.success
+      : status === 'down'
+        ? COLORS.warning
+        : COLORS.neutral;
 
   return (
     <TouchableOpacity
@@ -30,7 +37,7 @@ export const MomentumCard: React.FC<Props> = ({ language, hasData, status, onPre
       hitSlop={8}
     >
       <Text style={styles.title}>{t(language, 'analysis.momentum.title')}</Text>
-      <Text style={styles.main}>{main}</Text>
+      <Text style={[styles.main, { color: statusColor }]}>{main}</Text>
       <Text style={styles.sub}>{t(language, 'analysis.momentum.basedOn7d')}</Text>
     </TouchableOpacity>
   );
@@ -64,4 +71,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

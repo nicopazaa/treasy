@@ -8,11 +8,11 @@ import {
   Platform,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState } from '../features/workouts/model/types';
 import { answerAiQuestion } from '../features/analytics/model/aiService';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
 
 interface Props {
@@ -82,12 +82,14 @@ export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, i
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.inner}>
-          <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-            <Text style={styles.back}>{t(language, 'back')}</Text>
-          </TouchableOpacity>
+          <View style={styles.content}>
+            <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+              <Text style={styles.back}>{t(language, 'back')}</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.title}>{t(language, 'aiSearchTitle')}</Text>
-          <Text style={styles.subtitle}>{t(language, 'aiSubtitle')}</Text>
+            <Text style={styles.title}>{t(language, 'aiSearchTitle')}</Text>
+            <Text style={styles.subtitle}>{t(language, 'aiSubtitle')}</Text>
+          </View>
 
           <ScrollView
             ref={scrollRef}
@@ -114,7 +116,7 @@ export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, i
             ))}
           </ScrollView>
 
-          <View style={styles.composer}>
+          <View style={[styles.composer, styles.content]}>
             <TextInput
               style={styles.input}
               placeholder={t(language, 'aiPlaceholder')}
@@ -153,11 +155,13 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
+  },
+  content: {
+    paddingHorizontal: SCREEN_PADDING,
   },
   backButton: {
     minWidth: 44,
@@ -186,6 +190,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   scrollContent: {
+    paddingHorizontal: SCREEN_PADDING,
     paddingBottom: SPACING.xxxl,
   },
   scenariosCard: {
@@ -274,4 +279,3 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
-

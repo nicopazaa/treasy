@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, SafeAreaView, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
 import { getBlockTone } from '../shared/theme/blockTone';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import {
   buildWorkoutTimeline,
@@ -113,14 +114,6 @@ export const HomeScreen: React.FC<Props> = ({
     const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
     const unit = t(language, 'units.kg');
 
-    const roundedPct = Math.round(analytics.pctChange);
-    const changeLabel =
-      roundedPct > 0
-        ? t(language, 'analysis.volume.changeUp', { pct: Math.abs(roundedPct) })
-        : roundedPct < 0
-          ? t(language, 'analysis.volume.changeDown', { pct: Math.abs(roundedPct) })
-          : t(language, 'analysis.volume.changeFlat');
-
     const volumeLabel = `${formatter.format(Math.round(analytics.volume7d))} ${unit}`;
 
     const rows: VolumeByMuscleRow[] = ORDER.map((id) => {
@@ -133,7 +126,7 @@ export const HomeScreen: React.FC<Props> = ({
 
     return {
       totalLabel: t(language, 'analysis.volume.total7d'),
-      changeLabel,
+      changePct: analytics.pctChange,
       volumeLabel,
       rows,
     };
@@ -192,7 +185,7 @@ export const HomeScreen: React.FC<Props> = ({
         </View>
 
         <TouchableOpacity style={styles.quickLogCard} onPress={onOpenQuickLog} activeOpacity={0.9}>
-          <Text style={styles.quickLogTitle}>{t(language, 'quickLogTitle')}</Text>
+          <Text style={styles.quickLogTitle}>{t(language, 'home.quickLog.title')}</Text>
           <Text style={styles.quickLogText}>{t(language, 'quickLogExample')}</Text>
         </TouchableOpacity>
 
@@ -240,7 +233,7 @@ export const HomeScreen: React.FC<Props> = ({
                 language={language}
                 hasData={analytics.hasData}
                 totalLabel={volumeCardProps.totalLabel}
-                changeLabel={volumeCardProps.changeLabel}
+                changePct={volumeCardProps.changePct}
                 volumeLabel={volumeCardProps.volumeLabel}
                 rows={volumeCardProps.rows}
               />
@@ -278,7 +271,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: Platform.OS === 'ios' ? SPACING.xs : SPACING.xxl,
   },
   headerRow: {

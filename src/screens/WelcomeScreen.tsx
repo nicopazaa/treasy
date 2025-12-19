@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
-import { SPACING, TEXT } from '../shared/theme/tokens';
+import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
 import { AppLanguage } from '../shared/types';
 import { t } from '../shared/i18n/i18n';
 
@@ -69,7 +70,7 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
     justifyContent: 'center',
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
@@ -78,7 +79,7 @@ const styles = StyleSheet.create({
   backButton: {
     position: 'absolute',
     top: 0,
-    left: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    left: SCREEN_PADDING,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',

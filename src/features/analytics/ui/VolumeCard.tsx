@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, LayoutAnimation } from 'react-native';
 import type { AppLanguage } from '../../../shared/types';
-import { SPACING, TEXT as TEXT_TOKENS, RADIUS } from '../../../shared/theme/tokens';
+import { SPACING, TEXT as TEXT_TOKENS, RADIUS, COLORS } from '../../../shared/theme/tokens';
 import { t } from '../../../shared/i18n/i18n';
 
 export type VolumeByMuscleRow = {
@@ -15,7 +15,7 @@ type Props = {
   language: AppLanguage;
   hasData: boolean;
   totalLabel: string;
-  changeLabel: string;
+  changePct: number;
   volumeLabel: string;
   rows: VolumeByMuscleRow[];
 };
@@ -26,18 +26,23 @@ function formatNumber(language: AppLanguage, value: number): string {
   return formatter.format(Math.round(value));
 }
 
-function formatChange(language: AppLanguage, pctChange: number): string {
+function formatChange(language: AppLanguage, pctChange: number): { text: string; color: string } {
   const rounded = Math.round(pctChange);
-  if (rounded > 0) return t(language, 'analysis.volume.changeUp', { pct: Math.abs(rounded) });
-  if (rounded < 0) return t(language, 'analysis.volume.changeDown', { pct: Math.abs(rounded) });
-  return t(language, 'analysis.volume.changeFlat');
+  if (Math.abs(rounded) < 1) {
+    return { text: t(language, 'analysis.volume.stableLabel'), color: COLORS.neutral };
+  }
+  if (rounded > 0) {
+    return { text: t(language, 'analysis.volume.changeUp', { pct: Math.abs(rounded) }), color: COLORS.success };
+  }
+  return { text: t(language, 'analysis.volume.downLabel'), color: COLORS.warning };
 }
 
-export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, changeLabel, volumeLabel, rows }) => {
+export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, changePct, volumeLabel, rows }) => {
   const [open, setOpen] = useState(false);
 
   const items = useMemo(() => rows.slice(), [rows]);
   const unit = t(language, 'units.kg');
+  const changeDisplay = formatChange(language, changePct);
 
   const toggle = () => {
     if (Platform.OS !== 'web') {
@@ -52,7 +57,9 @@ export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, cha
 
       <View style={styles.rowBetween}>
         <Text style={styles.label}>{totalLabel}</Text>
-        <Text style={styles.change}>{changeLabel}</Text>
+        <Text style={[styles.change, { color: hasData ? changeDisplay.color : COLORS.neutral }]}>
+          {hasData ? changeDisplay.text : t(language, 'analysis.empty')}
+        </Text>
       </View>
 
       <Text style={styles.value}>{hasData ? volumeLabel : t(language, 'analysis.empty')}</Text>
@@ -77,7 +84,7 @@ export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, cha
                       {item.label}
                     </Text>
                     <View style={styles.itemRight}>
-                      <Text style={styles.itemChange}>{changeText}</Text>
+                      <Text style={[styles.itemChange, { color: changeText.color }]}>{changeText.text}</Text>
                       <Text style={styles.itemVolume}>{volumeText}</Text>
                     </View>
                   </View>
@@ -195,4 +202,3 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
 });
-

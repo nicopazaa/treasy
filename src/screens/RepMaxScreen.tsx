@@ -6,13 +6,13 @@ import {
   SectionList,
   TouchableOpacity,
   SectionListData,
-  SafeAreaView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getSetsForExercise } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
-import { SPACING, TEXT } from '../shared/theme/tokens';
+import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 
 interface Props {
@@ -122,15 +122,17 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-        <Text style={styles.back}>{t(language, 'back')}</Text>
-      </TouchableOpacity>
+      <View style={styles.content}>
+        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+          <Text style={styles.back}>{t(language, 'back')}</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
-      <Text style={styles.subtitle}>{t(language, 'repMaxSubtitleScreen')}</Text>
+        <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
+        <Text style={styles.subtitle}>{t(language, 'repMaxSubtitleScreen')}</Text>
+      </View>
 
       {sections.length === 0 ? (
-        <Text style={styles.emptyText}>{t(language, 'noRepMaxYet')}</Text>
+        <Text style={[styles.emptyText, styles.content]}>{t(language, 'noRepMaxYet')}</Text>
       ) : (
         <SectionList
           sections={sections}
@@ -176,11 +178,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
+  },
+  content: {
+    paddingHorizontal: SCREEN_PADDING,
   },
   backButton: {
     minWidth: 44,
@@ -211,6 +215,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
   },
   sectionHeader: {
     paddingVertical: SPACING.xs,

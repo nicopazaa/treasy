@@ -8,11 +8,11 @@ import {
   Platform,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { LANGUAGE_OPTIONS, t } from '../shared/i18n/i18n';
 
 interface Props {
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#020617',
   },
   content: {
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     paddingBottom: SPACING.xxl,
     ...Platform.select({

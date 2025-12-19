@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState } from '../features/workouts/model/types';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
 
 type Props = {
@@ -78,17 +79,19 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-          <Text style={styles.backText}>{t(language, 'back')}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+            <Text style={styles.backText}>{t(language, 'back')}</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
+        </View>
+
+        <Text style={styles.headerSubtitle}>{t(language, 'historySubtitle')}</Text>
       </View>
 
-      <Text style={styles.headerSubtitle}>{t(language, 'historySubtitle')}</Text>
-
       {days.length === 0 ? (
-        <View style={styles.emptyContainer}>
+        <View style={[styles.emptyContainer, styles.content]}>
           <Text style={styles.emptyTitle}>{t(language, 'historyEmptyTitle')}</Text>
           <Text style={styles.emptyText}>{t(language, 'historyEmptyText')}</Text>
         </View>
@@ -153,11 +156,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
+  },
+  content: {
+    paddingHorizontal: SCREEN_PADDING,
   },
   header: {
     flexDirection: 'row',
@@ -187,6 +192,7 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     marginTop: SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
   },
   emptyTitle: {
     color: '#F9FAFB',
@@ -199,6 +205,7 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
   scrollContent: {
+    paddingHorizontal: SCREEN_PADDING,
     paddingBottom: SPACING.xxxl,
   },
   row: {

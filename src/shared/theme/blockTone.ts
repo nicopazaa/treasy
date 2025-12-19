@@ -1,16 +1,23 @@
+import { COLORS, MUSCLE_ACCENT } from './tokens';
+
 export type BlockTone = {
   accent: string;
   soft: string;
 };
 
+const makeTone = (accent: string): BlockTone => ({
+  accent,
+  soft: hexToRgba(accent, 0.16),
+});
+
 const KNOWN_TONES: Record<string, BlockTone> = {
-  chest: { accent: '#F87171', soft: 'rgba(248, 113, 113, 0.16)' },
-  shoulders: { accent: '#F59E0B', soft: 'rgba(245, 158, 11, 0.16)' },
-  back: { accent: '#10B981', soft: 'rgba(16, 185, 129, 0.16)' },
-  arms: { accent: '#38BDF8', soft: 'rgba(56, 189, 248, 0.16)' },
-  core: { accent: '#A3E635', soft: 'rgba(163, 230, 53, 0.16)' },
-  legs: { accent: '#6366F1', soft: 'rgba(99, 102, 241, 0.16)' },
-  cardio: { accent: '#F43F5E', soft: 'rgba(244, 63, 94, 0.16)' },
+  chest: makeTone(MUSCLE_ACCENT.chest),
+  shoulders: makeTone(MUSCLE_ACCENT.shoulders),
+  back: makeTone(MUSCLE_ACCENT.back),
+  arms: makeTone(MUSCLE_ACCENT.arms),
+  core: makeTone(MUSCLE_ACCENT.core),
+  legs: makeTone(MUSCLE_ACCENT.legs),
+  cardio: makeTone(COLORS.blue2),
 };
 
 const NAME_TO_ID: Record<string, string> = {
@@ -24,13 +31,14 @@ const NAME_TO_ID: Record<string, string> = {
 };
 
 const FALLBACK_ACCENTS = [
-  '#0EA5E9',
-  '#F97316',
-  '#22C55E',
-  '#E11D48',
-  '#14B8A6',
-  '#F59E0B',
+  COLORS.blue1,
+  COLORS.blue2,
+  COLORS.blue3,
+  COLORS.blue4,
+  COLORS.blue5,
+  COLORS.blue6,
 ];
+const NEUTRAL_TONE = makeTone(COLORS.neutral);
 
 function hashString(input: string): number {
   let hash = 0;
@@ -55,7 +63,7 @@ function resolveKey(key: string): string {
 
 export function getBlockTone(key: string): BlockTone {
   if (!key) {
-    return { accent: '#94A3B8', soft: 'rgba(148, 163, 184, 0.16)' };
+    return NEUTRAL_TONE;
   }
   const resolved = resolveKey(key);
   const known = KNOWN_TONES[resolved];

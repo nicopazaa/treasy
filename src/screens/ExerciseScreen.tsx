@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,17 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  SafeAreaView,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { Exercise, SetEntry } from '../features/workouts/model/types';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { UndoToast } from '../shared/ui/UndoToast';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../shared/utils/dateLabels';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
   onAddSet: (weight: number, reps: number) => void;
   onUpdateSet: (setId: string, weight: number, reps: number) => void;
   onDeleteSet: (setId: string) => void;
+  onRestoreSet: (set: SetEntry) => void;
   onAskAIForExercise: () => void;
 }
 
@@ -41,6 +43,7 @@ export const ExerciseScreen: React.FC<Props> = ({
   onAddSet,
   onUpdateSet,
   onDeleteSet,
+  onRestoreSet,
   onAskAIForExercise,
 }) => {
   const [weight, setWeight] = useState('');
@@ -49,6 +52,9 @@ export const ExerciseScreen: React.FC<Props> = ({
   const [editWeight, setEditWeight] = useState('');
   const [editReps, setEditReps] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+  const [setActions, setSetActions] = useState<SetEntry | null>(null);
+  const [deletedSet, setDeletedSet] = useState<SetEntry | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tone = getBlockTone(exercise.blockId);
 
   const lastSet = sets[0] ?? null;
@@ -57,6 +63,13 @@ export const ExerciseScreen: React.FC<Props> = ({
     const dt = new Date(lastSet.createdAt);
     return formatRelativeDayLabel(dt, new Date(), language) ?? formatShortDate(dt);
   }, [language, lastSet]);
+
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    },
+    []
+  );
 
   const handleAdd = () => {
     const weightText = weight.trim();
@@ -73,6 +86,7 @@ export const ExerciseScreen: React.FC<Props> = ({
   };
 
   const openEditSet = (set: SetEntry) => {
+    setSetActions(null);
     setEditingSet(set);
     setEditWeight(String(set.weight));
     setEditReps(String(set.reps));
@@ -101,24 +115,28 @@ export const ExerciseScreen: React.FC<Props> = ({
     closeEditSet();
   };
 
-  const confirmDeleteSet = (set: SetEntry) => {
-    Alert.alert(
-      t(language, 'deleteSetTitle'),
-      t(language, 'deleteSetBody', { weight: set.weight, reps: set.reps }),
-      [
-        { text: t(language, 'cancel'), style: 'cancel' },
-        { text: t(language, 'delete'), style: 'destructive', onPress: () => onDeleteSet(set.id) },
-      ]
-    );
+  const handleDeleteSet = (set: SetEntry) => {
+    if (editingSet?.id === set.id) {
+      closeEditSet();
+    }
+    onDeleteSet(set.id);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setDeletedSet(set);
+    undoTimerRef.current = setTimeout(() => setDeletedSet(null), 4500);
+  };
+
+  const undoDeleteSet = () => {
+    if (!deletedSet) return;
+    onRestoreSet(deletedSet);
+    setDeletedSet(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   };
 
   const openSetActions = (set: SetEntry) => {
-    Alert.alert(`${set.weight} kg x ${set.reps}`, '', [
-      { text: t(language, 'edit'), onPress: () => openEditSet(set) },
-      { text: t(language, 'delete'), style: 'destructive', onPress: () => confirmDeleteSet(set) },
-      { text: t(language, 'cancel'), style: 'cancel' },
-    ]);
+    setSetActions(set);
   };
+
+  const closeSetActions = () => setSetActions(null);
 
   const handleCopyLastSet = () => {
     if (!lastSet) return;
@@ -143,30 +161,92 @@ export const ExerciseScreen: React.FC<Props> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-        <Text style={styles.back}>{t(language, 'back')}</Text>
-      </TouchableOpacity>
+      <View style={styles.content}>
+        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+          <Text style={styles.back}>{t(language, 'back')}</Text>
+        </TouchableOpacity>
 
-      <Text style={[styles.title, { color: tone.accent }]}>{exercise.name}</Text>
+        <Text style={[styles.title, { color: tone.accent }]}>{exercise.name}</Text>
+      </View>
 
       <FlatList
         data={sets}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={header}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, styles.listPadding]}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.setRow} onLongPress={() => openSetActions(item)} activeOpacity={0.9}>
-            <View style={styles.setInfo}>
+          <View style={styles.setRow}>
+            <TouchableOpacity style={styles.setInfo} onPress={() => openEditSet(item)} activeOpacity={0.85}>
               <Text style={styles.setText}>
                 {item.weight} kg x {item.reps} {t(language, 'reps').toLowerCase()}
               </Text>
               <Text style={styles.setDate}>{formatRelativeDateTime(new Date(item.createdAt), new Date(), language)}</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.setKebab}
+              onPress={(event) => {
+                event.stopPropagation?.();
+                openSetActions(item);
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.kebabText}>{'⋯'}</Text>
+            </TouchableOpacity>
+          </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>{t(language, 'noSetsYet')}</Text>}
       />
+
+      <Modal
+        visible={Boolean(setActions)}
+        animationType="fade"
+        transparent
+        onRequestClose={closeSetActions}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={closeSetActions}>
+          <Pressable style={styles.sheetCard} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>
+              {setActions ? `${setActions.weight} kg x ${setActions.reps}` : ''}
+            </Text>
+            <TouchableOpacity
+              style={styles.sheetAction}
+              onPress={() => {
+                const target = setActions;
+                closeSetActions();
+                if (target) openEditSet(target);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.sheetActionText}>{t(language, 'edit')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sheetAction, styles.sheetActionDanger]}
+              onPress={() => {
+                const target = setActions;
+                closeSetActions();
+                if (target) handleDeleteSet(target);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.sheetActionText, styles.sheetActionDangerText]}>{t(language, 'delete')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetAction} onPress={closeSetActions} activeOpacity={0.85}>
+              <Text style={styles.sheetActionText}>{t(language, 'cancel')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <View pointerEvents="box-none" style={styles.toastContainer}>
+        <UndoToast
+          visible={Boolean(deletedSet)}
+          message={t(language, 'toast.setDeleted')}
+          actionLabel={t(language, 'undo')}
+          onAction={undoDeleteSet}
+        />
+      </View>
 
       <View style={styles.stickyBar}>
         <PrimaryButton title={t(language, 'logSet')} onPress={handleAdd} style={styles.stickyButton} />
@@ -214,12 +294,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     paddingBottom: STICKY_HEIGHT,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
+  },
+  content: {
+    paddingHorizontal: SCREEN_PADDING,
   },
   backButton: {
     minWidth: 44,
@@ -253,10 +335,16 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     marginBottom: SPACING.xs,
   },
+  copyRow: {
+    marginTop: SPACING.sm,
+  },
   copyLink: {
     color: '#60A5FA',
     fontSize: TEXT.xs,
     fontWeight: '700',
+  },
+  copyLinkDisabled: {
+    color: COLORS.neutral,
   },
   aiBox: {
     marginTop: SPACING.lg,
@@ -285,14 +373,37 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: STICKY_HEIGHT + SPACING.lg,
   },
+  listPadding: {
+    paddingHorizontal: SCREEN_PADDING,
+  },
   setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: '#111827',
+    minHeight: 52,
   },
   setInfo: {
-    flexShrink: 1,
+    flex: 1,
     paddingRight: SPACING.md,
+  },
+  setKebab: {
+    width: 44,
+    height: 44,
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  kebabText: {
+    color: '#9CA3AF',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 22,
+    marginTop: -2,
   },
   setText: {
     color: '#E5E7EB',
@@ -314,7 +425,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.lg,
     backgroundColor: '#020617',
@@ -324,13 +435,56 @@ const styles = StyleSheet.create({
   stickyButton: {
     marginVertical: 0,
   },
+  toastContainer: {
+    position: 'absolute',
+    left: SCREEN_PADDING,
+    right: SCREEN_PADDING,
+    bottom: STICKY_HEIGHT + SPACING.sm,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: '#020617',
+    borderTopLeftRadius: RADIUS.lg,
+    borderTopRightRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    padding: SPACING.lg,
+    gap: SPACING.xs,
+  },
+  sheetTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '700',
+    marginBottom: SPACING.sm,
+  },
+  sheetAction: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+  },
+  sheetActionText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  sheetActionDanger: {
+    borderTopWidth: 1,
+    borderTopColor: '#111827',
+  },
+  sheetActionDangerText: {
+    color: COLORS.warning,
+  },
 
   // Modal
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.8)',
     justifyContent: 'center',
-    paddingHorizontal: SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
   },
   modalCard: {
     backgroundColor: '#020617',
@@ -417,9 +571,6 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
             <Text style={styles.lastSetText}>
               {t(language, 'last')}: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
             </Text>
-            <TouchableOpacity onPress={onCopyLastSet} hitSlop={8}>
-              <Text style={styles.copyLink}>{t(language, 'copyPreviousSet')}</Text>
-            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -437,6 +588,18 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
           value={reps}
           onChangeText={onChangeReps}
         />
+
+        <TouchableOpacity
+          onPress={onCopyLastSet}
+          disabled={!lastSet}
+          hitSlop={8}
+          style={styles.copyRow}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.copyLink, !lastSet && styles.copyLinkDisabled]}>
+            {t(language, 'copyPreviousSet')}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.aiBox, { borderColor: toneAccent }]}>

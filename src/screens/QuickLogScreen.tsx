@@ -8,21 +8,24 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  SafeAreaView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone } from '../shared/theme/blockTone';
-import { SPACING, TEXT, RADIUS } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 
 type Props = {
   appState: AppState;
   onBack: () => void;
-  onSave: (text: string) => { newExerciseId?: string; newExerciseName?: string };
+  onSave: (text: string, options?: { blockId?: string | null }) => {
+    newExerciseId?: string;
+    newExerciseName?: string;
+  };
   onLogSet: (exerciseId: string, weight: number, reps: number) => void;
   onCategorizeExercise: (exerciseId: string, blockId: TrainingBlockId) => void;
   showLocalOnlyNotice?: boolean;
@@ -153,7 +156,7 @@ export const QuickLogScreen: React.FC<Props> = ({
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    const res = onSave(trimmed);
+    const res = onSave(trimmed, { blockId: selectedBlockId });
     setInput('');
     flashSaved();
 
@@ -168,15 +171,17 @@ export const QuickLogScreen: React.FC<Props> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-        <Text style={styles.back}>{'< Tilbake'}</Text>
-      </TouchableOpacity>
+      <View style={styles.content}>
+        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+          <Text style={styles.back}>{'< Tilbake'}</Text>
+        </TouchableOpacity>
 
-      {showLocalNoticeLine ? (
-        <Text style={styles.localOnlyNotice}>
-          {t(language, 'localOnlyNotice')}
-        </Text>
-      ) : null}
+        {showLocalNoticeLine ? (
+          <Text style={styles.localOnlyNotice}>
+            {t(language, 'localOnlyNotice')}
+          </Text>
+        ) : null}
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -184,7 +189,7 @@ export const QuickLogScreen: React.FC<Props> = ({
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.guidedCard}>
-          <Text style={styles.guidedTitle}>{t(language, 'quickLogTitle')}</Text>
+          <Text style={styles.guidedTitle}>{t(language, 'home.quickLog.title')}</Text>
           <Text style={styles.guidedSubtitle}>{t(language, 'quickLogExample')}</Text>
 
           <View style={styles.selectBox}>
@@ -435,16 +440,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingHorizontal: Platform.OS === 'web' ? SPACING.xxxl : SPACING.xxl,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
   },
+  content: {
+    paddingHorizontal: SCREEN_PADDING,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
+    paddingHorizontal: SCREEN_PADDING,
     paddingBottom: SPACING.xxl,
   },
   backButton: {
@@ -622,7 +630,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(2, 6, 23, 0.72)',
     justifyContent: 'center',
-    paddingHorizontal: SPACING.xxl,
+    paddingHorizontal: SCREEN_PADDING,
   },
   dialogCard: {
     backgroundColor: '#020617',

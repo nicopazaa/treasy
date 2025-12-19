@@ -15,6 +15,8 @@ import {
   setExerciseBlockId,
   updateSet,
   deleteSet,
+  restoreExercise,
+  restoreSet,
 } from './src/features/workouts';
 
 import { LandingScreen } from './src/screens/LandingScreen';
@@ -29,7 +31,7 @@ import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
-import { parseQuickLog, findExerciseFuzzy } from './src/features/quicklog';
+import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
 import { t } from './src/shared/i18n/i18n';
 import type { NavState, ScreenName } from './src/app/navigation/types';
 
@@ -67,6 +69,21 @@ function navHistoryReducer(state: NavHistoryState, action: NavHistoryAction): Na
   }
 }
 
+function normalizeExerciseBlocks(state: AppState): AppState {
+  const validBlocks = new Set(state.blocks.map((b) => b.id));
+  let changed = false;
+  const exercises = state.exercises.map((ex) => {
+    if (validBlocks.has(ex.blockId)) return ex;
+    const inferred = inferBlockIdFromExercise(ex.name);
+    const fallback = inferred && validBlocks.has(inferred) ? inferred : state.blocks[0]?.id ?? ex.blockId;
+    if (!fallback || fallback === ex.blockId) return ex;
+    changed = true;
+    return { ...ex, blockId: fallback };
+  });
+  if (!changed) return state;
+  return { ...state, exercises };
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
   const [navHistory, dispatchNav] = useReducer(navHistoryReducer, {
@@ -87,8 +104,9 @@ export default function App() {
     const init = async () => {
       const stored = await loadAppState();
       const next = stored ?? createInitialState();
-      setAppState(next);
-      dispatchNav({ type: 'reset', nav: { screen: next.onboarded ? 'home' : 'landing' } });
+      const normalized = normalizeExerciseBlocks(next);
+      setAppState(normalized);
+      dispatchNav({ type: 'reset', nav: { screen: normalized.onboarded ? 'home' : 'landing' } });
       setLoading(false);
     };
     init();
@@ -263,21 +281,30 @@ export default function App() {
   };
 
   const handleQuickLogSave = (
-    text: string
+    text: string,
+    options?: { blockId?: string | null }
   ): { newExerciseId?: string; newExerciseName?: string } => {
     if (!appState) return {};
 
     let next = addLogEntry(appState, text);
     const parsed = parseQuickLog(text);
+    const blockHint = options?.blockId ?? null;
 
     if (parsed) {
       const existing = findExerciseFuzzy(next, parsed.exerciseName);
       if (existing) {
         next = addSetsForExercise(next, existing.id, parsed.sets);
       } else {
+        const inferredBlock = inferBlockIdFromExercise(parsed.exerciseName);
+        const allowedBlocks = new Set(next.blocks.map((b) => b.id));
+        const targetBlock = (blockHint && allowedBlocks.has(blockHint) ? blockHint : null)
+          ?? (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
+          ?? next.blocks[0]?.id
+          ?? 'chest';
+
         const created = addExerciseWithSetsResult(
           next,
-          'uncategorized',
+          targetBlock,
           parsed.exerciseName,
           parsed.sets
         );
@@ -390,6 +417,8 @@ export default function App() {
           exercises={appState.exercises.filter(
             (ex) => ex.blockId === currentBlock.id
           )}
+          sets={appState.sets}
+          allBlocks={appState.blocks}
           onBack={() => navigate('home')}
           onSelectExercise={(exerciseId) =>
             navigate('exercise', {
@@ -400,6 +429,11 @@ export default function App() {
           onReorderExercises={(orderedExerciseIds) => {
             setAppState((prev) =>
               prev ? reorderExercisesInBlock(prev, currentBlock.id, orderedExerciseIds) : prev
+            );
+          }}
+          onMoveExercise={(exerciseId, blockId) => {
+            setAppState((prev) =>
+              prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
             );
           }}
           onAddExercise={(name) => {
@@ -415,6 +449,11 @@ export default function App() {
           onDeleteExercise={(exerciseId) => {
             setAppState((prev) =>
               prev ? deleteExercise(prev, exerciseId) : prev
+            );
+          }}
+          onRestoreExercise={(exercise, sets, index) => {
+            setAppState((prev) =>
+              prev ? restoreExercise(prev, exercise, sets, index) : prev
             );
           }}
         />
@@ -445,6 +484,9 @@ export default function App() {
           }}
           onDeleteSet={(setId) => {
             setAppState((prev) => (prev ? deleteSet(prev, setId) : prev));
+          }}
+          onRestoreSet={(setEntry) => {
+            setAppState((prev) => (prev ? restoreSet(prev, setEntry) : prev));
           }}
           onAskAIForExercise={() =>
             navigate('ai', {

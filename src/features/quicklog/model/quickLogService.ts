@@ -9,7 +9,7 @@ const BLOCK_KEYWORDS: Array<{ id: TrainingBlockId; keywords: string[] }> = [
   { id: 'back', keywords: ['rygg', 'markloft', 'roing', 'pullup', 'lat'] },
   { id: 'arms', keywords: ['biceps', 'triceps', 'curl', 'extension'] },
   { id: 'core', keywords: ['mage', 'planke', 'situp', 'crunch'] },
-  { id: 'legs', keywords: ['bein', 'kneb', 'squat', 'utfall', 'leg'] },
+  { id: 'legs', keywords: ['bein', 'kneb', 'squat', 'utfall', 'leg', 'calf', 'tahev', 'tåhev'] },
   { id: 'cardio', keywords: ['cardio', 'lop', 'jogg', 'run', 'sykkel', 'bike'] },
 ];
 

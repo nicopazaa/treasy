@@ -106,6 +106,34 @@ export function deleteExercise(state: AppState, exerciseId: string): AppState {
   };
 }
 
+export function restoreExercise(
+  state: AppState,
+  exercise: Exercise,
+  sets: SetEntry[],
+  index?: number
+): AppState {
+  if (!exercise?.id) return state;
+  const withoutExercise = state.exercises.filter((ex) => ex.id !== exercise.id);
+  const blockPositions = withoutExercise
+    .map((ex, idx) => (ex.blockId === exercise.blockId ? idx : -1))
+    .filter((idx) => idx >= 0);
+  const baseIndex = blockPositions.length > 0 ? blockPositions[0] : withoutExercise.length;
+  const withinBlock =
+    typeof index === 'number' && index >= 0 ? Math.min(index, blockPositions.length) : blockPositions.length;
+  const insertIndex = baseIndex + withinBlock;
+  const nextExercises = withoutExercise.slice();
+  nextExercises.splice(insertIndex, 0, exercise);
+
+  const filteredSets = state.sets.filter((s) => s.exerciseId !== exercise.id);
+  const validSets = sets.filter((s) => s && s.exerciseId === exercise.id);
+
+  return {
+    ...state,
+    exercises: nextExercises,
+    sets: [...filteredSets, ...validSets],
+  };
+}
+
 export function reorderExercisesInBlock(
   state: AppState,
   blockId: string,
@@ -229,6 +257,13 @@ export function deleteSet(state: AppState, setId: string): AppState {
     ...state,
     sets: state.sets.filter((s) => s.id !== setId),
   };
+}
+
+export function restoreSet(state: AppState, set: SetEntry): AppState {
+  if (!set?.id) return state;
+  const nextSets = state.sets.filter((s) => s.id !== set.id);
+  nextSets.push(set);
+  return { ...state, sets: nextSets };
 }
 
 export function getSetsForExercise(state: AppState, exerciseId: string): SetEntry[] {
