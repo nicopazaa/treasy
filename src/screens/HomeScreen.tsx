@@ -24,7 +24,6 @@ const ORDER: TrainingBlockId[] = [
   'back',
   'arms',
   'core',
-  'cardio',
   'legs',
 ];
 
@@ -69,7 +68,9 @@ export const HomeScreen: React.FC<Props> = ({
       if (block) ordered.push(block);
     }
 
-    const rest = appState.blocks.filter((b) => !ORDER.includes(b.id as TrainingBlockId));
+    const rest = appState.blocks.filter(
+      (b) => !ORDER.includes(b.id as TrainingBlockId) && b.id !== 'cardio'
+    );
     return [...ordered, ...rest];
   }, [appState.blocks]);
 
@@ -249,24 +250,25 @@ export const HomeScreen: React.FC<Props> = ({
           <Text style={styles.quickLogText}>{t(language, 'quickLogExample')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>{t(language, 'muscleGroups')}</Text>
-        <View style={styles.section}>
-          {blocks.map((block) => {
-            const tone = getBlockTone(block.id);
-            return (
-              <TouchableOpacity
-                key={block.id}
-                style={[
-                  styles.blockButton,
-                  { backgroundColor: tone.soft, borderColor: tone.accent },
-                ]}
-                onPress={() => onSelectBlock(block.id)}
-                activeOpacity={0.9}
-              >
-                <Text style={[styles.blockLabel, { color: tone.accent }]}>{labelForBlock(block)}</Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.groupsWrapper}>
+          <Text style={styles.groupsTitle}>{t(language, 'muscleGroups')}</Text>
+
+          <View style={styles.groupsList}>
+            {blocks.map((block) => {
+              const tone = getBlockTone(block.id);
+              return (
+                <TouchableOpacity
+                  key={block.id}
+                  style={styles.groupRow}
+                  onPress={() => onSelectBlock(block.id)}
+                  activeOpacity={0.9}
+                >
+                  <View style={[styles.groupDot, { backgroundColor: tone.accent }]} />
+                  <Text style={styles.groupRowText}>{labelForBlock(block)}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         <View style={styles.analysisWrapper}>
@@ -388,6 +390,41 @@ const styles = StyleSheet.create({
   blockLabel: {
     fontSize: TEXT.lg,
     fontWeight: '600',
+  },
+  groupsWrapper: {
+    marginBottom: SPACING.xxl,
+  },
+  groupsTitle: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginBottom: SPACING.sm,
+  },
+  groupsList: {
+    gap: SPACING.sm,
+  },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0B1220',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    minHeight: 52,
+  },
+  groupDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    marginRight: SPACING.md,
+  },
+  groupRowText: {
+    flex: 1,
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '700',
   },
   analysisWrapper: {
     marginTop: SPACING.sm,

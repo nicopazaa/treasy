@@ -10,7 +10,6 @@ const DEFAULT_BLOCKS: TrainingBlock[] = [
   { id: 'back',      name: 'Rygg' },
   { id: 'arms',      name: 'Armer' },
   { id: 'core',      name: 'Core' },
-  { id: 'cardio',    name: 'Cardio' },
   { id: 'legs',      name: 'Bein' },
 ];
 

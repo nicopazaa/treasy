@@ -238,6 +238,21 @@ export default function App() {
     return {};
   };
 
+  const handleQuickLogSet = (exerciseId: string, weight: number, reps: number) => {
+    setAppState((prev) => {
+      if (!prev) return prev;
+
+      const exercise = prev.exercises.find((ex) => ex.id === exerciseId);
+      const language = prev.language ?? 'en';
+      const weightText = language === 'nb' ? String(weight).replace('.', ',') : String(weight);
+      const logText = exercise ? `${exercise.name} ${weightText}x${reps}` : `${weightText}x${reps}`;
+
+      let next = addSet(prev, exerciseId, weight, reps);
+      next = addLogEntry(next, logText);
+      return next;
+    });
+  };
+
   if (loading || !appState || authBusy) {
     return (
       <View style={styles.loadingContainer}>
@@ -399,6 +414,7 @@ export default function App() {
           appState={appState}
           onBack={() => navigate('home')}
           onSave={handleQuickLogSave}
+          onLogSet={handleQuickLogSet}
           onCategorizeExercise={(exerciseId, blockId) => {
             setAppState((prev) =>
               prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev

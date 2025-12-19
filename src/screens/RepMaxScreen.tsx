@@ -56,7 +56,7 @@ function estimateOneRm(weight: number, reps: number): number {
 function labelForBlock(block: TrainingBlock, language: AppState['language']): string {
   const lang = language ?? 'en';
   const id = block.id as TrainingBlockId;
-  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'].includes(id)) {
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs'].includes(id)) {
     return blockLabel(id, lang);
   }
   return block.name;
@@ -68,7 +68,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
   const sections: RepMaxSection[] = useMemo(() => {
     const res: RepMaxSection[] = [];
 
-    for (const block of appState.blocks as TrainingBlock[]) {
+    for (const block of appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[]) {
       const exercisesForBlock = appState.exercises.filter((ex) => ex.blockId === block.id);
       const items: RepMaxItem[] = [];
 
@@ -243,4 +243,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
 });
-

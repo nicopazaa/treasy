@@ -27,7 +27,7 @@ function estimateOneRm(weight: number, reps: number): number {
 
 function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
   const id = block.id as TrainingBlockId;
-  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'].includes(id)) {
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs'].includes(id)) {
     return blockLabel(id, language);
   }
   return block.name;
@@ -35,10 +35,11 @@ function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
 
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(appState.blocks[0]?.id ?? null);
+  const initialBlockId = appState.blocks.find((b) => b.id !== 'cardio')?.id ?? null;
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(initialBlockId);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const blocks = appState.blocks as TrainingBlock[];
+  const blocks = appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[];
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
 
   const exercises = useMemo(() => {
