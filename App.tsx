@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, PanResponder, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppState, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
 import {
   addExercise,
@@ -337,10 +338,12 @@ export default function App() {
 
   if (loading || !appState || authBusy) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <ExpoStatusBar style="light" />
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <ExpoStatusBar style="light" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
@@ -353,201 +356,203 @@ export default function App() {
     : null;
 
   return (
-    <View style={styles.appContainer} {...panResponder.panHandlers}>
-      <StatusBar barStyle="light-content" />
-      <ExpoStatusBar style="light" />
+    <SafeAreaProvider>
+      <View style={styles.appContainer} {...panResponder.panHandlers}>
+        <StatusBar barStyle="light-content" />
+        <ExpoStatusBar style="light" />
 
-      {nav.screen === 'landing' && (
-        <LandingScreen
-          language={appState.language ?? 'en'}
-          onContinueWithoutLogin={handleContinueWithoutLogin}
-          onLogin={() => navigate('login')}
-        />
-      )}
+        {nav.screen === 'landing' && (
+          <LandingScreen
+            language={appState.language ?? 'en'}
+            onContinueWithoutLogin={handleContinueWithoutLogin}
+            onLogin={() => navigate('login')}
+          />
+        )}
 
-      {nav.screen === 'login' && (
-        <LoginScreen
-          language={appState.language ?? 'en'}
-          onBack={() => navigate(appState.onboarded ? 'profile' : 'landing')}
-          onContinueWithGithub={() => {
-            startGithubLogin();
-          }}
-          onContinueWithEmail={() => {
-            setLoginError(null);
-            navigate('welcome');
-          }}
-          error={loginError}
-        />
-      )}
+        {nav.screen === 'login' && (
+          <LoginScreen
+            language={appState.language ?? 'en'}
+            onBack={() => navigate(appState.onboarded ? 'profile' : 'landing')}
+            onContinueWithGithub={() => {
+              startGithubLogin();
+            }}
+            onContinueWithEmail={() => {
+              setLoginError(null);
+              navigate('welcome');
+            }}
+            error={loginError}
+          />
+        )}
 
-      {nav.screen === 'welcome' && (
-        <WelcomeScreen
-          language={appState.language ?? 'en'}
-          onBack={() => navigate('login')}
-          onComplete={handleWelcomeComplete}
-        />
-      )}
+        {nav.screen === 'welcome' && (
+          <WelcomeScreen
+            language={appState.language ?? 'en'}
+            onBack={() => navigate('login')}
+            onComplete={handleWelcomeComplete}
+          />
+        )}
 
-      {nav.screen === 'home' && (
-        <HomeScreen
-          appState={appState}
-          onSelectBlock={(blockId) =>
-            navigate('block', { selectedBlockId: blockId })
-          }
-          onOpenAI={() => navigate('ai')}
-          onOpenQuickLog={() => navigate('quickLog')}
-          onOpenProfile={() => navigate('profile')}
-          onOpenHistory={() => {
-            setHistoryInitialDateKey(null);
-            navigate('history');
-          }}
-          onOpenHistoryForDate={(dateKey) => {
-            setHistoryInitialDateKey(dateKey);
-            navigate('history');
-          }}
-          onOpenProgress={() => navigate('progress')}
-          onOpenRepMax={() => navigate('repMax')}
-        />
-      )}
+        {nav.screen === 'home' && (
+          <HomeScreen
+            appState={appState}
+            onSelectBlock={(blockId) =>
+              navigate('block', { selectedBlockId: blockId })
+            }
+            onOpenAI={() => navigate('ai')}
+            onOpenQuickLog={() => navigate('quickLog')}
+            onOpenProfile={() => navigate('profile')}
+            onOpenHistory={() => {
+              setHistoryInitialDateKey(null);
+              navigate('history');
+            }}
+            onOpenHistoryForDate={(dateKey) => {
+              setHistoryInitialDateKey(dateKey);
+              navigate('history');
+            }}
+            onOpenProgress={() => navigate('progress')}
+            onOpenRepMax={() => navigate('repMax')}
+          />
+        )}
 
-      {nav.screen === 'block' && currentBlock && (
-        <BlockScreen
-          language={appState.language ?? 'en'}
-          block={currentBlock}
-          exercises={appState.exercises.filter(
-            (ex) => ex.blockId === currentBlock.id
-          )}
-          sets={appState.sets}
-          allBlocks={appState.blocks}
-          onBack={() => navigate('home')}
-          onSelectExercise={(exerciseId) =>
-            navigate('exercise', {
-              selectedBlockId: currentBlock.id,
-              selectedExerciseId: exerciseId,
-            })
-          }
-          onReorderExercises={(orderedExerciseIds) => {
-            setAppState((prev) =>
-              prev ? reorderExercisesInBlock(prev, currentBlock.id, orderedExerciseIds) : prev
-            );
-          }}
-          onMoveExercise={(exerciseId, blockId) => {
-            setAppState((prev) =>
-              prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
-            );
-          }}
-          onAddExercise={(name) => {
-            setAppState((prev) =>
-              prev ? addExercise(prev, currentBlock.id, name) : prev
-            );
-          }}
-          onRenameExercise={(exerciseId, name) => {
-            setAppState((prev) =>
-              prev ? renameExercise(prev, exerciseId, name) : prev
-            );
-          }}
-          onDeleteExercise={(exerciseId) => {
-            setAppState((prev) =>
-              prev ? deleteExercise(prev, exerciseId) : prev
-            );
-          }}
-          onRestoreExercise={(exercise, sets, index) => {
-            setAppState((prev) =>
-              prev ? restoreExercise(prev, exercise, sets, index) : prev
-            );
-          }}
-        />
-      )}
+        {nav.screen === 'block' && currentBlock && (
+          <BlockScreen
+            language={appState.language ?? 'en'}
+            block={currentBlock}
+            exercises={appState.exercises.filter(
+              (ex) => ex.blockId === currentBlock.id
+            )}
+            sets={appState.sets}
+            allBlocks={appState.blocks}
+            onBack={() => navigate('home')}
+            onSelectExercise={(exerciseId) =>
+              navigate('exercise', {
+                selectedBlockId: currentBlock.id,
+                selectedExerciseId: exerciseId,
+              })
+            }
+            onReorderExercises={(orderedExerciseIds) => {
+              setAppState((prev) =>
+                prev ? reorderExercisesInBlock(prev, currentBlock.id, orderedExerciseIds) : prev
+              );
+            }}
+            onMoveExercise={(exerciseId, blockId) => {
+              setAppState((prev) =>
+                prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
+              );
+            }}
+            onAddExercise={(name) => {
+              setAppState((prev) =>
+                prev ? addExercise(prev, currentBlock.id, name) : prev
+              );
+            }}
+            onRenameExercise={(exerciseId, name) => {
+              setAppState((prev) =>
+                prev ? renameExercise(prev, exerciseId, name) : prev
+              );
+            }}
+            onDeleteExercise={(exerciseId) => {
+              setAppState((prev) =>
+                prev ? deleteExercise(prev, exerciseId) : prev
+              );
+            }}
+            onRestoreExercise={(exercise, sets, index) => {
+              setAppState((prev) =>
+                prev ? restoreExercise(prev, exercise, sets, index) : prev
+              );
+            }}
+          />
+        )}
 
-      {nav.screen === 'exercise' && currentExercise && (
-        <ExerciseScreen
-          language={appState.language ?? 'en'}
-          exercise={currentExercise}
-          sets={appState.sets
-            .filter((s) => s.exerciseId === currentExercise.id)
-            .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))}
-          onBack={() =>
-            navigate('block', {
-              selectedBlockId: currentExercise.blockId,
-              selectedExerciseId: currentExercise.id,
-            })
-          }
-          onAddSet={(weight, reps) => {
-            setAppState((prev) =>
-              prev ? addSet(prev, currentExercise.id, weight, reps) : prev
-            );
-          }}
-          onUpdateSet={(setId, weight, reps) => {
-            setAppState((prev) =>
-              prev ? updateSet(prev, setId, weight, reps) : prev
-            );
-          }}
-          onDeleteSet={(setId) => {
-            setAppState((prev) => (prev ? deleteSet(prev, setId) : prev));
-          }}
-          onRestoreSet={(setEntry) => {
-            setAppState((prev) => (prev ? restoreSet(prev, setEntry) : prev));
-          }}
-          onAskAIForExercise={() =>
-            navigate('ai', {
-              selectedExerciseId: currentExercise.id,
-              aiInitialQuestion: t(appState.language ?? 'en', 'appa.prompt.lastForExercise', {
-                exercise: currentExercise.name,
-              }),
-            })
-          }
-        />
-      )}
+        {nav.screen === 'exercise' && currentExercise && (
+          <ExerciseScreen
+            language={appState.language ?? 'en'}
+            exercise={currentExercise}
+            sets={appState.sets
+              .filter((s) => s.exerciseId === currentExercise.id)
+              .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))}
+            onBack={() =>
+              navigate('block', {
+                selectedBlockId: currentExercise.blockId,
+                selectedExerciseId: currentExercise.id,
+              })
+            }
+            onAddSet={(weight, reps) => {
+              setAppState((prev) =>
+                prev ? addSet(prev, currentExercise.id, weight, reps) : prev
+              );
+            }}
+            onUpdateSet={(setId, weight, reps) => {
+              setAppState((prev) =>
+                prev ? updateSet(prev, setId, weight, reps) : prev
+              );
+            }}
+            onDeleteSet={(setId) => {
+              setAppState((prev) => (prev ? deleteSet(prev, setId) : prev));
+            }}
+            onRestoreSet={(setEntry) => {
+              setAppState((prev) => (prev ? restoreSet(prev, setEntry) : prev));
+            }}
+            onAskAIForExercise={() =>
+              navigate('ai', {
+                selectedExerciseId: currentExercise.id,
+                aiInitialQuestion: t(appState.language ?? 'en', 'appa.prompt.lastForExercise', {
+                  exercise: currentExercise.name,
+                }),
+              })
+            }
+          />
+        )}
 
-      {nav.screen === 'ai' && (
-        <AIScreen
-          appState={appState}
-          onBack={() => navigate('home')}
-          initialQuestion={nav.aiInitialQuestion ?? undefined}
-          initialExerciseId={nav.selectedExerciseId ?? null}
-        />
-      )}
+        {nav.screen === 'ai' && (
+          <AIScreen
+            appState={appState}
+            onBack={() => navigate('home')}
+            initialQuestion={nav.aiInitialQuestion ?? undefined}
+            initialExerciseId={nav.selectedExerciseId ?? null}
+          />
+        )}
 
-      {nav.screen === 'history' && (
-        <HistoryScreen
-          appState={appState}
-          onBack={() => navigate('home')}
-          initialExpandedDateKey={historyInitialDateKey}
-        />
-      )}
+        {nav.screen === 'history' && (
+          <HistoryScreen
+            appState={appState}
+            onBack={() => navigate('home')}
+            initialExpandedDateKey={historyInitialDateKey}
+          />
+        )}
 
-      {nav.screen === 'progress' && (
-        <ProgressScreen appState={appState} onBack={() => navigate('home')} />
-      )}
+        {nav.screen === 'progress' && (
+          <ProgressScreen appState={appState} onBack={() => navigate('home')} />
+        )}
 
-      {nav.screen === 'repMax' && (
-        <RepMaxScreen appState={appState} onBack={() => navigate('home')} />
-      )}
+        {nav.screen === 'repMax' && (
+          <RepMaxScreen appState={appState} onBack={() => navigate('home')} />
+        )}
 
-      {nav.screen === 'quickLog' && (
-        <QuickLogScreen
-          appState={appState}
-          onBack={() => navigate('home')}
-          onSave={handleQuickLogSave}
-          onLogSet={handleQuickLogSet}
-          onCategorizeExercise={(exerciseId, blockId) => {
-            setAppState((prev) =>
-              prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
-            );
-          }}
-          showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
-        />
-      )}
+        {nav.screen === 'quickLog' && (
+          <QuickLogScreen
+            appState={appState}
+            onBack={() => navigate('home')}
+            onSave={handleQuickLogSave}
+            onLogSet={handleQuickLogSet}
+            onCategorizeExercise={(exerciseId, blockId) => {
+              setAppState((prev) =>
+                prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
+              );
+            }}
+            showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
+          />
+        )}
 
-      {nav.screen === 'profile' && (
-        <ProfileScreen
-          appState={appState}
-          onBack={() => navigate('home')}
-          onUpdate={(next: AppState) => setAppState(next)}
-          onOpenLogin={() => navigate('login')}
-        />
-      )}
-    </View>
+        {nav.screen === 'profile' && (
+          <ProfileScreen
+            appState={appState}
+            onBack={() => navigate('home')}
+            onUpdate={(next: AppState) => setAppState(next)}
+            onOpenLogin={() => navigate('login')}
+          />
+        )}
+      </View>
+    </SafeAreaProvider>
   );
 }
 
