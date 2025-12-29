@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState } from '../features/workouts/model/types';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
-import { getBlockTone } from '../shared/theme/blockTone';
+import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
@@ -203,6 +203,7 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                     <View style={styles.groupList}>
                       {day.groups.map((block) => {
                         const tone = getBlockTone(block.blockId ?? block.blockName ?? '');
+                        const dotColor = getDotColor(block.blockId ?? block.blockName ?? '');
                         const blockKey = block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block';
                         const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
                         const isBlockCollapsed = collapsedBlocks.has(blockKey);
@@ -212,13 +213,13 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                               <TouchableOpacity
                                 style={styles.blockHeaderRow}
                                 onPress={() => toggleBlockCollapsed(blockKey)}
-                                activeOpacity={0.8}
+                                activeOpacity={0.85}
                               >
-                                <Text style={[styles.blockLabel, { color: tone.accent }]}>
+                                <Text style={[styles.blockLabel, { color: dotColor }]}>
                                   {block.blockName}
                                 </Text>
                                 <Text style={styles.blockSummary}>
-                                  {t(language, 'setsCount') ?? 'Sets'} [{blockSetCount}] {isBlockCollapsed ? '>' : 'v'}
+                                  Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}
                                 </Text>
                               </TouchableOpacity>
                             ) : null}
@@ -234,7 +235,10 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                           {
                                             backgroundColor: tone.soft,
                                             top: SPACING.xs * -1,
-                                            bottom: group === block.exercises[block.exercises.length - 1] ? 16 : -SPACING.xs,
+                                            bottom:
+                                              group === block.exercises[block.exercises.length - 1]
+                                                ? 16
+                                                : -SPACING.xs,
                                           },
                                         ]}
                                       />
@@ -249,13 +253,23 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                       <View style={styles.groupTextColumn}>
                                         <TouchableOpacity
                                           onPress={() => toggleExerciseCollapsed(group.id)}
-                                          activeOpacity={0.8}
+                                          activeOpacity={0.85}
                                           style={styles.exerciseRow}
                                         >
-                                          <View style={[styles.exerciseDot, { backgroundColor: tone.accent }]} />
-                                          <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                          <View style={styles.exerciseTitleColumn}>
+                                            <View style={styles.exerciseTitleRow}>
+                                              <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
+                                              <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                            </View>
+                                            <View
+                                              style={[
+                                                styles.exerciseDivider,
+                                                { backgroundColor: dotColor },
+                                              ]}
+                                            />
+                                          </View>
                                           <Text style={styles.exerciseSummary}>
-                                            {t(language, 'setsCount') ?? 'Sets'} [{group.sets.length}] {isExerciseCollapsed ? '>' : 'v'}
+                                            Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
                                           </Text>
                                         </TouchableOpacity>
                                         {!isExerciseCollapsed && (
@@ -379,7 +393,7 @@ const styles = StyleSheet.create({
   timelineLine: {
     flex: 1,
     width: 2,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#2563EB',
     marginTop: SPACING.xs,
   },
   card: {
@@ -448,6 +462,7 @@ const styles = StyleSheet.create({
   groupRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     paddingVertical: SPACING.xs,
     paddingLeft: SPACING.xs,
     marginBottom: SPACING.xs,
@@ -462,11 +477,24 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   blockSummary: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
+    color: 'rgba(148,163,184,0.75)',
+    fontSize: 11,
+    fontWeight: '600',
   },
   exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+    paddingRight: SPACING.sm,
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  exerciseTitleColumn: {
+    flexShrink: 1,
+    alignSelf: 'flex-start',
+  },
+  exerciseTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
@@ -483,15 +511,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.15,
   },
   exerciseSummary: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
+    color: 'rgba(148,163,184,0.75)',
+    fontSize: 11,
+    fontWeight: '600',
     marginLeft: SPACING.xs,
+  },
+  exerciseDivider: {
+    height: StyleSheet.hairlineWidth,
+    width: 182,
+    alignSelf: 'flex-start',
+    marginLeft: SPACING.sm + 8,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.xs + 2,
+    opacity: 0.62,
+    borderRadius: 999,
   },
   groupDetail: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
-    marginTop: 4,
     fontWeight: '700',
   },
   setCountAbove: {
@@ -501,17 +538,19 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   goldText: {
-    color: '#93C5FD',
+    color: '#E5E7EB',
     fontWeight: '800',
+    fontSize: TEXT.xs,
   },
   whiteText: {
-    color: '#E5E7EB',
+    color: '#9CA3AF',
     fontWeight: '700',
     fontSize: TEXT.xs,
   },
   indexText: {
-    color: '#10B981',
+    color: '#9CA3AF',
     fontWeight: '800',
+    fontSize: TEXT.sm,
   },
   mutedText: {
     color: '#9CA3AF',
