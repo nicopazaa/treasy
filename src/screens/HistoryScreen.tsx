@@ -33,12 +33,16 @@ function parseDateKey(dateKey: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
-function formatSetLines(
+function formatSetParts(
   language: AppState['language'],
   sets: Array<{ weight: number; reps: number }>
-): string[] {
+): Array<{ weight: string; reps: string; repsLabel: string }> {
   const repsLabel = t(language ?? 'en', 'reps').toLowerCase();
-  return sets.map((s) => `${s.weight} kg x ${s.reps} ${repsLabel}`);
+  return sets.map((s) => ({
+    weight: `${s.weight} kg`,
+    reps: `${s.reps}`,
+    repsLabel,
+  }));
 }
 
 function buildDayNodes(appState: AppState, language: AppState['language']): DayNode[] {
@@ -139,9 +143,12 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                               ) : null}
                               <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
                               <View style={styles.setList}>
-                                {formatSetLines(language, group.sets).map((line, idx) => (
+                                {formatSetParts(language, group.sets).map((line, idx) => (
                                   <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
-                                    {line}
+                                    <Text style={styles.weightText}>{line.weight}</Text>
+                                    <Text style={styles.mutedText}> x </Text>
+                                    <Text style={styles.repsText}>{line.reps}</Text>
+                                    <Text style={styles.mutedText}> {line.repsLabel}</Text>
                                   </Text>
                                 ))}
                               </View>
@@ -299,6 +306,19 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: TEXT.xs,
     marginTop: 2,
+    fontWeight: '700',
+  },
+  weightText: {
+    color: '#60A5FA',
+    fontWeight: '800',
+  },
+  repsText: {
+    color: '#93C5FD',
+    fontWeight: '800',
+  },
+  mutedText: {
+    color: '#9CA3AF',
+    fontWeight: '700',
   },
   groupTime: {
     color: '#9CA3AF',
