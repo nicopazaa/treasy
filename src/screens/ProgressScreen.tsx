@@ -7,6 +7,7 @@ import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
 interface Props {
   appState: AppState;
@@ -135,7 +136,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
               >
                 <View style={[styles.pillDot, { backgroundColor: selectedBlockTone.accent }]} />
                 <Text style={[styles.pillText, selected && styles.pillTextSelected]} numberOfLines={1}>
-                  {ex.name}
+                  {formatExerciseLabel(ex)}
                 </Text>
               </TouchableOpacity>
             );
@@ -148,7 +149,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         {selectedExercise && progressRows.length > 0 ? (
           <>
             <Text style={[styles.progressSubtitle, { color: selectedBlockTone.accent }]}>
-              {selectedExercise.name}
+              {formatExerciseLabel(selectedExercise)}
             </Text>
             <Text style={styles.chartCaption}>{t(language, 'weightOverTime')}</Text>
             <View style={styles.chart}>

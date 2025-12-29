@@ -1,4 +1,5 @@
 import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry } from './types';
+import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
 
 function generateId(prefix: string = 'id'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
@@ -342,6 +343,7 @@ export function getWorkoutDates(state: AppState): string[] {
 export interface DailySetView {
   id: string;
   exerciseName: string;
+  exerciseLabel: string;
   blockName?: string;
   blockId?: string;
   weight: number;
@@ -364,6 +366,7 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
     results.push({
       id: s.id,
       exerciseName: exercise ? exercise.name : 'Ukjent øvelse',
+      exerciseLabel: exercise ? formatExerciseLabel(exercise) : 'Ukjent øvelse',
       blockName: block?.name,
       blockId: block?.id,
       weight: s.weight,
@@ -379,6 +382,7 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
 export interface GroupedDailySetView {
   id: string;
   exerciseName: string;
+  exerciseLabel: string;
   blockName?: string;
   blockId?: string;
   time: string;
@@ -389,13 +393,14 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
   const map = new Map<string, GroupedDailySetView>();
 
   for (const set of sets) {
-    const key = `${set.exerciseName}__${set.blockId ?? set.blockName ?? ''}`;
+    const key = `${set.exerciseLabel}__${set.blockId ?? set.blockName ?? ''}`;
     const existing = map.get(key);
 
     if (!existing) {
       map.set(key, {
         id: set.id,
         exerciseName: set.exerciseName,
+        exerciseLabel: set.exerciseLabel,
         blockName: set.blockName,
         blockId: set.blockId,
         time: set.time,

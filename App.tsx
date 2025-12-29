@@ -233,9 +233,10 @@ export default function App() {
   };
 
   const panResponder = useMemo(() => {
-    const EDGE_W = 28;
-    const SWIPE_X = 80;
-    const MAX_Y = 80;
+    const isIOS = Platform.OS === 'ios';
+    const EDGE_W = isIOS ? 64 : 28;
+    const SWIPE_X = isIOS ? 48 : 80;
+    const MAX_Y = isIOS ? 120 : 80;
 
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, gesture) => {

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { getSetsForExercise } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
 interface Props {
   appState: AppState;
@@ -66,6 +67,7 @@ function labelForBlock(block: TrainingBlock, language: AppState['language']): st
 
 export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
 
   const sections: RepMaxSection[] = useMemo(() => {
     const res: RepMaxSection[] = [];
@@ -92,7 +94,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
 
         items.push({
           id: ex.id,
-          exerciseName: ex.name,
+          exerciseName: formatExerciseLabel(ex),
           blockId: block.id,
           weight: best.weight,
           reps: best.reps,
@@ -120,6 +122,45 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
     return res;
   }, [appState, language]);
 
+  useEffect(() => {
+    setCollapsedBlocks((prev) => {
+      if (sections.length === 0) return new Set();
+
+      const next = new Set(prev);
+      const sectionIds = sections.map((s) => s.blockId);
+
+      // Remove blocks that no longer exist
+      for (const id of Array.from(next)) {
+        if (!sectionIds.includes(id)) next.delete(id);
+      }
+
+      // If nothing is set yet, collapse all but first block to reduce scroll
+      if (next.size === 0 && sections.length > 1) {
+        for (let i = 1; i < sections.length; i++) {
+          next.add(sections[i].blockId);
+        }
+      }
+
+      return next;
+    });
+  }, [sections]);
+
+  const toggleBlock = (blockId: string) => {
+    setCollapsedBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(blockId)) {
+        next.delete(blockId);
+      } else {
+        next.add(blockId);
+      }
+      return next;
+    });
+  };
+
+  const visibleSections = sections.map((section) =>
+    collapsedBlocks.has(section.blockId) ? { ...section, data: [] } : section
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -135,7 +176,7 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
         <Text style={[styles.emptyText, styles.content]}>{t(language, 'noRepMaxYet')}</Text>
       ) : (
         <SectionList
-          sections={sections}
+          sections={visibleSections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderSectionHeader={({
@@ -144,10 +185,16 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
             section: SectionListData<RepMaxItem, RepMaxSection>;
           }) => {
             const tone = getBlockTone(section.blockId);
+            const isCollapsed = collapsedBlocks.has(section.blockId);
             return (
-              <View style={styles.sectionHeader}>
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                activeOpacity={0.8}
+                onPress={() => toggleBlock(section.blockId)}
+              >
                 <Text style={[styles.sectionTitle, { color: tone.accent }]}>{section.title}</Text>
-              </View>
+                <Text style={styles.chevron}>{isCollapsed ? '>' : 'v'}</Text>
+              </TouchableOpacity>
             );
           }}
           renderItem={({ item }) => (
@@ -220,9 +267,17 @@ const styles = StyleSheet.create({
   sectionHeader: {
     paddingVertical: SPACING.xs,
     marginTop: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   sectionTitle: {
     color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  chevron: {
+    color: '#9CA3AF',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },

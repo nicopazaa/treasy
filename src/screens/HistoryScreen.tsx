@@ -33,8 +33,9 @@ function parseDateKey(dateKey: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
-function formatSetSummary(sets: Array<{ weight: number; reps: number }>): string {
-  return sets.map((s) => `${s.weight} kg x ${s.reps}`).join(', ');
+function formatSetSummary(language: AppState['language'], sets: Array<{ weight: number; reps: number }>): string {
+  const repsLabel = t(language ?? 'en', 'reps').toLowerCase();
+  return sets.map((s) => `${s.weight} kg x ${s.reps} ${repsLabel}`).join(', ');
 }
 
 function buildDayNodes(appState: AppState, language: AppState['language']): DayNode[] {
@@ -133,8 +134,8 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                   {group.blockName}
                                 </Text>
                               ) : null}
-                              <Text style={styles.exerciseName}>{group.exerciseName}</Text>
-                              <Text style={styles.groupDetail}>{formatSetSummary(group.sets)}</Text>
+                              <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                              <Text style={styles.groupDetail}>{formatSetSummary(language, group.sets)}</Text>
                             </View>
                             <Text style={styles.groupTime}>{group.time}</Text>
                           </View>
