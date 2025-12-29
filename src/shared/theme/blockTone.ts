@@ -18,6 +18,7 @@ const KNOWN_TONES: Record<string, BlockTone> = {
   core: makeTone(MUSCLE_ACCENT.core),
   legs: makeTone(MUSCLE_ACCENT.legs),
   cardio: makeTone(COLORS.blue2),
+  other: makeTone(COLORS.warning),
 };
 
 const NAME_TO_ID: Record<string, string> = {
@@ -28,6 +29,7 @@ const NAME_TO_ID: Record<string, string> = {
   core: 'core',
   bein: 'legs',
   cardio: 'cardio',
+  annet: 'other',
 };
 
 const FALLBACK_ACCENTS = [

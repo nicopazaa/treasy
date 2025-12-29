@@ -7,7 +7,8 @@ export type TrainingBlockId =
   | 'arms'
   | 'core'
   | 'legs'
-  | 'cardio';
+  | 'cardio'
+  | 'other';
 
 export interface LogEntry {
   id: string;
@@ -39,6 +40,10 @@ export interface SetEntry {
   weight: number;
   reps: number;
   createdAt: string; // ISO string
+  isBodyweight?: boolean;
+  distanceKm?: number | null;
+  durationMin?: number | null;
+  setType?: 'weighted' | 'bodyweight' | 'cardio';
 }
 
 export interface AppState {

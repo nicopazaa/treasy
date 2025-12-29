@@ -345,7 +345,12 @@ export default function App() {
     return {};
   };
 
-  const handleQuickLogSet = (exerciseId: string, weight: number, reps: number) => {
+  const handleQuickLogSet = (
+    exerciseId: string,
+    weight: number,
+    reps: number,
+    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
+  ) => {
     setAppState((prev) => {
       if (!prev) return prev;
 
@@ -353,9 +358,24 @@ export default function App() {
       const language = prev.language ?? 'en';
       const weightText = language === 'nb' ? String(weight).replace('.', ',') : String(weight);
       const exerciseLabel = exercise ? formatExerciseLabel(exercise) : null;
-      const logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
 
-      let next = addSet(prev, exerciseId, weight, reps);
+      let logText: string;
+      if (options?.distanceKm != null || options?.durationMin != null) {
+        const parts: string[] = [];
+        if (options.distanceKm != null) parts.push(`${options.distanceKm} km`);
+        if (options.durationMin != null) parts.push(`${options.durationMin} min`);
+        logText = exerciseLabel ? `${exerciseLabel} ${parts.join(' / ')}` : parts.join(' / ');
+      } else if (options?.bodyweight) {
+        logText = exerciseLabel ? `${exerciseLabel} BW x ${reps}` : `BW x ${reps}`;
+      } else {
+        logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
+      }
+
+      let next = addSet(prev, exerciseId, weight, reps, {
+        isBodyweight: options?.bodyweight,
+        distanceKm: options?.distanceKm ?? null,
+        durationMin: options?.durationMin ?? null,
+      });
       next = addLogEntry(next, logText);
       return next;
     });
@@ -501,11 +521,11 @@ export default function App() {
                 selectedExerciseId: currentExercise.id,
               })
             }
-            onAddSet={(weight, reps) => {
-              setAppState((prev) =>
-                prev ? addSet(prev, currentExercise.id, weight, reps) : prev
-              );
-            }}
+          onAddSet={(weight, reps) => {
+            setAppState((prev) =>
+              prev ? addSet(prev, currentExercise.id, weight, reps, {}) : prev
+            );
+          }}
             onUpdateSet={(setId, weight, reps) => {
               setAppState((prev) =>
                 prev ? updateSet(prev, setId, weight, reps) : prev

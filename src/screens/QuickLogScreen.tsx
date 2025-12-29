@@ -27,12 +27,17 @@ type Props = {
     newExerciseId?: string;
     newExerciseName?: string;
   };
-  onLogSet: (exerciseId: string, weight: number, reps: number) => void;
+  onLogSet: (
+    exerciseId: string,
+    weight: number,
+    reps: number,
+    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
+  ) => void;
   onCategorizeExercise: (exerciseId: string, blockId: TrainingBlockId) => void;
   showLocalOnlyNotice?: boolean;
 };
 
-const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
+const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'other'];
 
 const WEIGHT_KEYS = [
   ['1', '2', '3'],
@@ -73,6 +78,10 @@ export const QuickLogScreen: React.FC<Props> = ({
   const [repsModalOpen, setRepsModalOpen] = useState(false);
   const [weightText, setWeightText] = useState('');
   const [repsText, setRepsText] = useState('');
+  const [bodyweightMode, setBodyweightMode] = useState(false);
+  const [cardioModalOpen, setCardioModalOpen] = useState(false);
+  const [distanceText, setDistanceText] = useState('');
+  const [durationText, setDurationText] = useState('');
   const [setError, setSetError] = useState<string | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
@@ -176,6 +185,10 @@ export const QuickLogScreen: React.FC<Props> = ({
     setSetError(null);
     setWeightModalOpen(false);
     setRepsModalOpen(false);
+    setBodyweightMode(false);
+    setCardioModalOpen(false);
+    setDistanceText('');
+    setDurationText('');
   };
 
   const startSetFlow = (exerciseId: string) => {
@@ -184,6 +197,7 @@ export const QuickLogScreen: React.FC<Props> = ({
     setWeightText('');
     setRepsText('');
     setSetError(null);
+    setBodyweightMode(false);
     setWeightModalOpen(true);
   };
 
@@ -304,6 +318,37 @@ export const QuickLogScreen: React.FC<Props> = ({
               )
             ) : null}
           </View>
+
+          {selectedExercise ? (
+            <View style={styles.quickActions}>
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.inlineButton]}
+                onPress={() => {
+                  setBodyweightMode(true);
+                  setWeightText('0');
+                  setWeightModalOpen(false);
+                  setRepsModalOpen(true);
+                }}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
+              </TouchableOpacity>
+
+              {selectedBlockId === 'other' ? (
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.inlineButton]}
+                  onPress={() => {
+                    setCardioModalOpen(true);
+                    setDistanceText('');
+                    setDurationText('');
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.secondaryButtonText}>{t(language, 'logDistanceTime')}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.inputCard}>
@@ -414,6 +459,17 @@ export const QuickLogScreen: React.FC<Props> = ({
                 <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => {
+                  setBodyweightMode(true);
+                  setWeightText('0');
+                  setWeightModalOpen(false);
+                  setRepsModalOpen(true);
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={styles.primarySmallButton}
                 onPress={() => {
                   const w = Number(weightText.trim().replace(',', '.'));
@@ -466,13 +522,71 @@ export const QuickLogScreen: React.FC<Props> = ({
                     return;
                   }
                   if (selectedExercise) {
-                    onLogSet(selectedExercise.id, w, r);
+                    onLogSet(selectedExercise.id, w, r, { bodyweight: bodyweightMode });
                     flashSaved();
                   }
                   resetSetFlow();
                 }}
               >
                 <Text style={styles.primarySmallButtonText}>{t(language, 'logSet')}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={cardioModalOpen} transparent animationType="fade">
+        <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
+          <Pressable style={styles.dialogCard} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>
+              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
+            </Text>
+            <Text style={styles.dialogSubtitle}>{t(language, 'distanceLabel')}</Text>
+            <TextInput
+              style={styles.dialogInput}
+              placeholder="5"
+              placeholderTextColor="#6B7280"
+              value={distanceText}
+              onChangeText={setDistanceText}
+              keyboardType="numeric"
+            />
+            <Text style={styles.dialogSubtitle}>{t(language, 'durationLabel')}</Text>
+            <TextInput
+              style={styles.dialogInput}
+              placeholder="30"
+              placeholderTextColor="#6B7280"
+              value={durationText}
+              onChangeText={setDurationText}
+              keyboardType="numeric"
+            />
+
+            {setError ? <Text style={styles.error}>{setError}</Text> : null}
+
+            <View style={styles.dialogButtons}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={resetSetFlow}>
+                <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primarySmallButton}
+                onPress={() => {
+                  const dist = distanceText ? Number(distanceText.trim().replace(',', '.')) : null;
+                  const dur = durationText ? Number(durationText.trim().replace(',', '.')) : null;
+                  if ((!dist || dist <= 0) && (!dur || dur <= 0)) {
+                    setSetError(t(language, 'cardioInvalid'));
+                    return;
+                  }
+                  if (selectedExercise) {
+                    onLogSet(selectedExercise.id, 0, 1, {
+                      bodyweight: false,
+                      distanceKm: dist && dist > 0 ? dist : null,
+                      durationMin: dur && dur > 0 ? dur : null,
+                    });
+                    flashSaved();
+                  }
+                  resetSetFlow();
+                }}
+              >
+                <Text style={styles.primarySmallButtonText}>{t(language, 'logDistanceTime')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -749,6 +863,12 @@ const styles = StyleSheet.create({
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
+  quickActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+    flexWrap: 'wrap',
+  },
 
   // Dialogs
   dialogBackdrop: {
@@ -802,6 +922,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.pill,
     marginRight: SPACING.sm,
+  },
+  inlineButton: {
+    marginRight: 0,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
   },
   secondaryButtonText: {
     color: '#9CA3AF',

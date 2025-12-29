@@ -38,6 +38,7 @@ const ORDER: TrainingBlockId[] = [
   'arms',
   'core',
   'legs',
+  'other',
 ];
 
 export const HomeScreen: React.FC<Props> = ({

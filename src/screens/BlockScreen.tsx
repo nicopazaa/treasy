@@ -39,7 +39,7 @@ interface Props {
 }
 
 const STICKY_HEIGHT = 88;
-const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
+const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'other'];
 
 export const BlockScreen: React.FC<Props> = ({
   language,

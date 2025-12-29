@@ -35,13 +35,37 @@ function parseDateKey(dateKey: string): Date | null {
 
 function formatSetParts(
   language: AppState['language'],
-  sets: Array<{ weight: number; reps: number }>
-): Array<{ weight: string; reps: string; repsLabel: string }> {
+  sets: Array<{
+    weight: number;
+    reps: number;
+    isBodyweight?: boolean;
+    distanceKm?: number | null;
+    durationMin?: number | null;
+    setType?: 'weighted' | 'bodyweight' | 'cardio';
+  }>
+): Array<{
+  weightValue: string;
+  weightUnit: string;
+  repsValue: string | null;
+  repsLabel: string | null;
+  index: number;
+}> {
   const repsLabel = t(language ?? 'en', 'reps').toLowerCase();
-  return sets.map((s) => ({
-    weight: `${s.weight} kg`,
-    reps: `${s.reps}`,
-    repsLabel,
+  return sets.map((s, idx) => ({
+    weightValue:
+      s.setType === 'cardio'
+        ? s.distanceKm != null
+          ? `${s.distanceKm} km`
+          : s.durationMin != null
+            ? `${s.durationMin} min`
+            : `${s.weight}`
+        : s.isBodyweight
+          ? 'BW'
+          : `${s.weight}`,
+    weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
+    repsValue: s.setType === 'cardio' ? null : `${s.reps}`,
+    repsLabel: s.setType === 'cardio' ? null : repsLabel,
+    index: idx + 1,
   }));
 }
 
@@ -142,13 +166,25 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                 </Text>
                               ) : null}
                               <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                              <Text style={styles.setCountLine}>
+                                <Text style={styles.greenText}>{t(language, 'setsLabel') ?? 'Sets'} </Text>
+                                <Text style={styles.greenText}>[</Text>
+                                <Text style={styles.greenText}>{group.sets.length}</Text>
+                                <Text style={styles.greenText}>]</Text>
+                              </Text>
                               <View style={styles.setList}>
                                 {formatSetParts(language, group.sets).map((line, idx) => (
                                   <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
-                                    <Text style={styles.weightText}>{line.weight}</Text>
-                                    <Text style={styles.mutedText}> x </Text>
-                                    <Text style={styles.repsText}>{line.reps}</Text>
-                                    <Text style={styles.mutedText}> {line.repsLabel}</Text>
+                                    <Text style={styles.indexText}>[{line.index}] </Text>
+                                    <Text style={styles.goldText}>{line.weightValue}</Text>
+                                    {line.weightUnit ? <Text style={styles.whiteText}> {line.weightUnit}</Text> : null}
+                                    {line.repsValue ? (
+                                      <>
+                                        <Text style={styles.mutedText}> x </Text>
+                                        <Text style={styles.goldText}>{line.repsValue}</Text>
+                                        {line.repsLabel ? <Text style={styles.whiteText}> {line.repsLabel}</Text> : null}
+                                      </>
+                                    ) : null}
                                   </Text>
                                 ))}
                               </View>
@@ -271,7 +307,7 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   dateLabel: {
-    color: '#F9FAFB',
+    color: '#60A5FA',
     fontSize: TEXT.md,
     fontWeight: '700',
   },
@@ -293,7 +329,7 @@ const styles = StyleSheet.create({
     paddingRight: SPACING.sm,
   },
   blockLabel: {
-    fontSize: TEXT.xs,
+    fontSize: TEXT.md,
     fontWeight: '800',
     marginBottom: 2,
   },
@@ -301,6 +337,7 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '700',
+    letterSpacing: 0.15,
   },
   groupDetail: {
     color: '#9CA3AF',
@@ -308,17 +345,31 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '700',
   },
-  weightText: {
-    color: '#60A5FA',
+  setCountLine: {
+    marginTop: 2,
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  goldText: {
+    color: '#FBBF24',
     fontWeight: '800',
   },
-  repsText: {
-    color: '#93C5FD',
+  whiteText: {
+    color: '#F9FAFB',
+    fontWeight: '700',
+  },
+  indexText: {
+    color: '#9CA3AF',
     fontWeight: '800',
   },
   mutedText: {
     color: '#9CA3AF',
     fontWeight: '700',
+  },
+  greenText: {
+    color: '#10B981',
+    fontWeight: '800',
   },
   groupTime: {
     color: '#9CA3AF',

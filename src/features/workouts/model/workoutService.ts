@@ -28,6 +28,41 @@ function sanitizeMetadata(metadata?: ExerciseMetadataInput): { shortCode: string
   };
 }
 
+type SetMeta = {
+  isBodyweight?: boolean;
+  distanceKm?: number | null;
+  durationMin?: number | null;
+  setType?: 'weighted' | 'bodyweight' | 'cardio';
+};
+
+function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
+  const isCardio = Number.isFinite(meta?.distanceKm) || Number.isFinite(meta?.durationMin);
+  const isBw = meta?.isBodyweight || (!isCardio && weight === 0);
+  if (isCardio) {
+    return {
+      ...meta,
+      isBodyweight: false,
+      setType: 'cardio',
+    };
+  }
+  if (isBw) {
+    return {
+      ...meta,
+      isBodyweight: true,
+      setType: 'bodyweight',
+      distanceKm: null,
+      durationMin: null,
+    };
+  }
+  return {
+    ...meta,
+    isBodyweight: false,
+    setType: 'weighted',
+    distanceKm: null,
+    durationMin: null,
+  };
+}
+
 export function addLogEntry(state: AppState, text: string): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
@@ -242,10 +277,18 @@ export function setExerciseBlockId(state: AppState, exerciseId: string, blockId:
   };
 }
 
-export function addSet(state: AppState, exerciseId: string, weight: number, reps: number): AppState {
-  if (!Number.isFinite(weight) || !Number.isFinite(reps) || weight < 0 || reps <= 0) {
+export function addSet(
+  state: AppState,
+  exerciseId: string,
+  weight: number,
+  reps: number,
+  meta?: SetMeta
+): AppState {
+  if (!Number.isFinite(weight) || !Number.isFinite(reps) || reps <= 0) {
     return state;
   }
+
+  const resolvedMeta = resolveSetMeta(weight, meta);
 
   const newSet: SetEntry = {
     id: generateId('set'),
@@ -253,6 +296,10 @@ export function addSet(state: AppState, exerciseId: string, weight: number, reps
     weight,
     reps,
     createdAt: new Date().toISOString(),
+    isBodyweight: resolvedMeta.isBodyweight,
+    distanceKm: resolvedMeta.distanceKm ?? null,
+    durationMin: resolvedMeta.durationMin ?? null,
+    setType: resolvedMeta.setType,
   };
 
   return {
@@ -264,7 +311,8 @@ export function addSet(state: AppState, exerciseId: string, weight: number, reps
 export function addSetsForExercise(
   state: AppState,
   exerciseId: string,
-  sets: Array<{ weight: number; reps: number }>
+  sets: Array<{ weight: number; reps: number }>,
+  meta?: SetMeta
 ): AppState {
   const validSets = sets.filter(
     (s) =>
@@ -276,12 +324,17 @@ export function addSetsForExercise(
   if (validSets.length === 0) return state;
 
   const createdAt = new Date().toISOString();
+  const resolvedMeta = resolveSetMeta(validSets[0].weight, meta);
   const newSets: SetEntry[] = validSets.map((s) => ({
     id: generateId('set'),
     exerciseId,
     weight: s.weight,
     reps: s.reps,
     createdAt,
+    isBodyweight: resolvedMeta.isBodyweight,
+    distanceKm: resolvedMeta.distanceKm ?? null,
+    durationMin: resolvedMeta.durationMin ?? null,
+    setType: resolvedMeta.setType,
   }));
 
   return {
@@ -349,6 +402,10 @@ export interface DailySetView {
   weight: number;
   reps: number;
   time: string;
+  isBodyweight?: boolean;
+  distanceKm?: number | null;
+  durationMin?: number | null;
+  setType?: 'weighted' | 'bodyweight' | 'cardio';
 }
 
 export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[] {
@@ -372,6 +429,10 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
       weight: s.weight,
       reps: s.reps,
       time,
+      isBodyweight: s.isBodyweight,
+      distanceKm: s.distanceKm ?? null,
+      durationMin: s.durationMin ?? null,
+      setType: s.setType,
     });
   }
 
@@ -386,7 +447,14 @@ export interface GroupedDailySetView {
   blockName?: string;
   blockId?: string;
   time: string;
-  sets: Array<{ weight: number; reps: number }>;
+  sets: Array<{
+    weight: number;
+    reps: number;
+    isBodyweight?: boolean;
+    distanceKm?: number | null;
+    durationMin?: number | null;
+    setType?: 'weighted' | 'bodyweight' | 'cardio';
+  }>;
 }
 
 export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
@@ -401,15 +469,31 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
         id: set.id,
         exerciseName: set.exerciseName,
         exerciseLabel: set.exerciseLabel,
-        blockName: set.blockName,
-        blockId: set.blockId,
-        time: set.time,
-        sets: [{ weight: set.weight, reps: set.reps }],
-      });
-      continue;
-    }
+      blockName: set.blockName,
+      blockId: set.blockId,
+      time: set.time,
+      sets: [
+        {
+          weight: set.weight,
+          reps: set.reps,
+          isBodyweight: set.isBodyweight,
+          distanceKm: set.distanceKm,
+          durationMin: set.durationMin,
+          setType: set.setType,
+        },
+      ],
+    });
+    continue;
+  }
 
-    existing.sets.push({ weight: set.weight, reps: set.reps });
+    existing.sets.push({
+      weight: set.weight,
+      reps: set.reps,
+      isBodyweight: set.isBodyweight,
+      distanceKm: set.distanceKm,
+      durationMin: set.durationMin,
+      setType: set.setType,
+    });
     existing.time = set.time;
   }
 

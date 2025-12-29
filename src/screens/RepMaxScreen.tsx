@@ -39,8 +39,9 @@ interface RepMaxSection {
 }
 
 function pickBestSet(sets: SetEntry[]): SetEntry | null {
-  if (sets.length === 0) return null;
-  return sets.reduce<SetEntry | null>((best, current) => {
+  const weighted = sets.filter((s) => s.setType !== 'bodyweight' && s.setType !== 'cardio' && s.weight > 0);
+  if (weighted.length === 0) return null;
+  return weighted.reduce<SetEntry | null>((best, current) => {
     if (!best) return current;
     if (current.weight > best.weight) return current;
     if (current.weight < best.weight) return best;
