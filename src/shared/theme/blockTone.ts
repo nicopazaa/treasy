@@ -1,4 +1,4 @@
-import { COLORS, MUSCLE_ACCENT } from './tokens';
+import { COLORS, MUSCLE_ACCENT, PALETTE } from './tokens';
 
 export type BlockTone = {
   accent: string;
@@ -17,8 +17,9 @@ const KNOWN_TONES: Record<string, BlockTone> = {
   arms: makeTone(MUSCLE_ACCENT.arms),
   core: makeTone(MUSCLE_ACCENT.core),
   legs: makeTone(MUSCLE_ACCENT.legs),
-  cardio: makeTone(COLORS.blue2),
-  other: makeTone(COLORS.warning),
+  cardio: makeTone(COLORS.warning),
+  other: makeTone(PALETTE.BLUE_MED),
+  bodyweight: makeTone(PALETTE.BLUE_MED),
 };
 
 const NAME_TO_ID: Record<string, string> = {
@@ -29,18 +30,24 @@ const NAME_TO_ID: Record<string, string> = {
   core: 'core',
   bein: 'legs',
   cardio: 'cardio',
-  annet: 'other',
+  annet: 'bodyweight',
+  kroppsvekt: 'bodyweight',
 };
 
-const FALLBACK_ACCENTS = [
-  COLORS.blue1,
-  COLORS.blue2,
-  COLORS.blue3,
-  COLORS.blue4,
-  COLORS.blue5,
-  COLORS.blue6,
-];
+const FALLBACK_ACCENTS = [MUSCLE_ACCENT.chest, MUSCLE_ACCENT.core, MUSCLE_ACCENT.legs];
 const NEUTRAL_TONE = makeTone(COLORS.neutral);
+
+const DOT_MAP: Record<string, string> = {
+  chest: PALETTE.DOT_CHEST,
+  shoulders: PALETTE.DOT_SHOULDERS,
+  back: PALETTE.DOT_BACK,
+  arms: PALETTE.DOT_ARMS,
+  core: PALETTE.DOT_CORE,
+  legs: MUSCLE_ACCENT.legs,
+  cardio: PALETTE.DOT_CARDIO,
+  bodyweight: MUSCLE_ACCENT.core,
+  other: MUSCLE_ACCENT.core,
+};
 
 function hashString(input: string): number {
   let hash = 0;
@@ -74,4 +81,9 @@ export function getBlockTone(key: string): BlockTone {
   const idx = hashString(resolved) % FALLBACK_ACCENTS.length;
   const accent = FALLBACK_ACCENTS[idx];
   return { accent, soft: hexToRgba(accent, 0.16) };
+}
+
+export function getDotColor(key: string): string {
+  const resolved = resolveKey(key);
+  return DOT_MAP[resolved] ?? MUSCLE_ACCENT.core;
 }

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { Exercise, SetEntry } from '../features/workouts/model/types';
+import { Exercise, SetEntry, CardioEntry } from '../features/workouts/model/types';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { UndoToast } from '../shared/ui/UndoToast';
@@ -26,8 +26,10 @@ interface Props {
   language: AppLanguage;
   exercise: Exercise;
   sets: SetEntry[];
+  cardioEntries?: CardioEntry[];
   onBack: () => void;
   onAddSet: (weight: number, reps: number) => void;
+  onAddCardio?: (options: { durationMin: number | null; distanceKm: number | null; heartRate?: number | null; intensity?: 'easy' | 'moderate' | 'hard' | null }) => void;
   onUpdateSet: (setId: string, weight: number, reps: number) => void;
   onDeleteSet: (setId: string) => void;
   onRestoreSet: (set: SetEntry) => void;
@@ -46,9 +48,16 @@ export const ExerciseScreen: React.FC<Props> = ({
   onDeleteSet,
   onRestoreSet,
   onAskAIForExercise,
+  cardioEntries = [],
+  onAddCardio,
 }) => {
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
+  const [durationMin, setDurationMin] = useState(10);
+  const [durationHour, setDurationHour] = useState(0);
+  const [distance, setDistance] = useState('');
+  const [heartRate, setHeartRate] = useState('');
+  const [intensity, setIntensity] = useState<'easy' | 'moderate' | 'hard' | null>(null);
   const [editingSet, setEditingSet] = useState<SetEntry | null>(null);
   const [editWeight, setEditWeight] = useState('');
   const [editReps, setEditReps] = useState('');
@@ -57,6 +66,7 @@ export const ExerciseScreen: React.FC<Props> = ({
   const [deletedSet, setDeletedSet] = useState<SetEntry | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tone = getBlockTone(exercise.blockId);
+  const isCardio = exercise.blockId === 'cardio';
 
   const lastSet = sets[0] ?? null;
   const lastSetLabel = useMemo(() => {
@@ -73,6 +83,15 @@ export const ExerciseScreen: React.FC<Props> = ({
   );
 
   const handleAdd = () => {
+    if (isCardio) {
+      const totalMinutes = durationHour * 60 + durationMin;
+      const km = distance.trim() ? Number(distance.replace(',', '.')) : null;
+      const hr = heartRate.trim() ? Number(heartRate.replace(',', '.')) : null;
+      if (onAddCardio) {
+        onAddCardio({ durationMin: totalMinutes, distanceKm: km, heartRate: hr, intensity });
+      }
+      return;
+    }
     const weightText = weight.trim();
     const repsText = reps.trim();
     if (!weightText || !repsText) return;
@@ -140,7 +159,7 @@ export const ExerciseScreen: React.FC<Props> = ({
   const closeSetActions = () => setSetActions(null);
 
   const handleCopyLastSet = () => {
-    if (!lastSet) return;
+    if (!lastSet || isCardio) return;
     setWeight(String(lastSet.weight));
     setReps(String(lastSet.reps));
   };
@@ -153,8 +172,19 @@ export const ExerciseScreen: React.FC<Props> = ({
       lastSetLabel={lastSetLabel}
       weight={weight}
       reps={reps}
+      durationHour={durationHour}
+      durationMin={durationMin}
+      distance={distance}
+      heartRate={heartRate}
+      intensity={intensity}
+      isCardio={isCardio}
       onChangeWeight={setWeight}
       onChangeReps={setReps}
+      onChangeHour={setDurationHour}
+      onChangeMinute={setDurationMin}
+      onChangeDistance={setDistance}
+      onChangeHeartRate={setHeartRate}
+      onChangeIntensity={setIntensity}
       onCopyLastSet={handleCopyLastSet}
       onAskAIForExercise={onAskAIForExercise}
     />

@@ -34,7 +34,8 @@ function formatChange(language: AppLanguage, pctChange: number): { text: string;
   if (rounded > 0) {
     return { text: t(language, 'analysis.volume.changeUp', { pct: Math.abs(rounded) }), color: COLORS.success };
   }
-  return { text: t(language, 'analysis.volume.downLabel'), color: COLORS.warning };
+  // Reduce noise: show subtle down arrow without the numeric to keep UI calmer.
+  return { text: '↓', color: COLORS.warning };
 }
 
 export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, changePct, volumeLabel, rows }) => {

@@ -15,6 +15,7 @@ const BLOCK_LABELS = {
   legs: { nb: 'Bein', en: 'Legs', es: 'Piernas' },
   cardio: { nb: 'Cardio', en: 'Cardio', es: 'Cardio' },
   other: { nb: 'Annet', en: 'Other', es: 'Otro' },
+  bodyweight: { nb: 'Kroppsvekt', en: 'Bodyweight', es: 'Peso corporal' },
 } as const satisfies Record<string, Record<AppLanguage, string>>;
 
 type BlockId = keyof typeof BLOCK_LABELS;
@@ -69,6 +70,7 @@ const STRINGS = {
     muscleGroups: 'Muscle groups',
     analysis: 'Insights',
     'home.help': 'Help',
+    otherSectionTitle: 'Other',
     'analysis.sectionTitle': 'Insights',
     'analysis.empty': 'No data yet',
 
@@ -126,6 +128,8 @@ const STRINGS = {
     'appa.scenario.bestSet': 'What is my best set in [exercise]?',
     'appa.scenario.repsAtWeight': 'How many reps at 100 kg in [exercise] in the last 30 days?',
     'appa.scenario.blockInMonth': 'How many chest sessions in December?',
+    'appa.scenario.lastSetExercise': 'What was my last set in [exercise]?',
+    'appa.scenario.bestSetExercise': 'Show my best set in [exercise]',
     'appa.prompt.lastForExercise': 'What did I do last in {exercise}?',
 
     quickLogPlaceholder: 'Write: Bench 80x2, 70x5, 60x8',
@@ -137,7 +141,9 @@ const STRINGS = {
     newExerciseFound: 'New exercise found: "{name}"',
     chooseMuscleGroup: 'Choose muscle group:',
 
-    historyTitle: 'History',
+    historyTitle: 'Overview of past sessions',
+    setsCount: 'Total sets',
+    bestLiftLabel: 'Best lift',
     historySubtitle: 'Each date shows what you logged that day.',
     historyEmptyTitle: 'No sessions yet',
     historyEmptyText: 'Log something to get started.',
@@ -258,6 +264,7 @@ const STRINGS = {
     muscleGroups: 'Muskelgrupper',
     analysis: 'Analyse',
     'home.help': 'Hjelp',
+    otherSectionTitle: 'Andre',
     'analysis.sectionTitle': 'Analyse',
     'analysis.empty': 'Ingen data ennå',
 
@@ -315,6 +322,8 @@ const STRINGS = {
     'appa.scenario.bestSet': 'Hva er beste sett i [øvelse]?',
     'appa.scenario.repsAtWeight': 'Hvor mange reps på 100 kg i [øvelse] de siste 30 dagene?',
     'appa.scenario.blockInMonth': 'Hvor mange brystøkter i desember?',
+    'appa.scenario.lastSetExercise': 'Hva var siste sett i [øvelse]?',
+    'appa.scenario.bestSetExercise': 'Vis beste sett i [øvelse]',
     'appa.prompt.lastForExercise': 'Hva tok jeg sist i {exercise}?',
 
     quickLogPlaceholder: 'Skriv: Benk 80x2, 70x5, 60x8',
@@ -326,7 +335,9 @@ const STRINGS = {
     newExerciseFound: 'Ny øvelse funnet: "{name}"',
     chooseMuscleGroup: 'Velg muskelgruppe:',
 
-    historyTitle: 'Tidligere økter',
+    historyTitle: 'Oversikt over tidligere økter',
+    setsCount: 'Antall sett',
+    bestLiftLabel: 'Beste løft',
     historySubtitle: 'Hver dato viser det du logget den dagen.',
     historyEmptyTitle: 'Ingen økter enda',
     historyEmptyText: 'Logg noe i hurtigloggen for å komme i gang.',
@@ -447,6 +458,7 @@ const STRINGS = {
     muscleGroups: 'Grupos musculares',
     analysis: 'Análisis',
     'home.help': 'Ayuda',
+    otherSectionTitle: 'Otros',
     'analysis.sectionTitle': 'Análisis',
     'analysis.empty': 'Aún no hay datos',
 
@@ -504,6 +516,8 @@ const STRINGS = {
     'appa.scenario.bestSet': '¿Cuál es mi mejor serie en [ejercicio]?',
     'appa.scenario.repsAtWeight': '¿Cuántas reps a 100 kg en [ejercicio] en los últimos 30 días?',
     'appa.scenario.blockInMonth': '¿Cuántos entrenos de pecho en diciembre?',
+    'appa.scenario.lastSetExercise': '¿Cuál fue mi última serie en [ejercicio]?',
+    'appa.scenario.bestSetExercise': 'Muéstrame mi mejor serie en [ejercicio]',
     'appa.prompt.lastForExercise': '¿Qué hice la última vez en {exercise}?',
 
     quickLogPlaceholder: 'Escribe: Press banca 80x2, 70x5, 60x8',
@@ -515,7 +529,9 @@ const STRINGS = {
     newExerciseFound: 'Nuevo ejercicio: "{name}"',
     chooseMuscleGroup: 'Elige grupo muscular:',
 
-    historyTitle: 'Historial',
+    historyTitle: 'Resumen de sesiones pasadas',
+    setsCount: 'Series totales',
+    bestLiftLabel: 'Mejor levantamiento',
     historySubtitle: 'Cada fecha muestra lo que registraste ese día.',
     historyEmptyTitle: 'Sin sesiones aún',
     historyEmptyText: 'Registra algo para empezar.',

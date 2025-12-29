@@ -4,6 +4,7 @@ import {
   getWorkoutDates,
   getDailyWorkout,
   groupDailySets,
+  getSetsForExercise,
 } from '../../workouts/model/workoutService';
 import type { AppLanguage } from '../../../shared/types';
 import { blockLabel } from '../../../shared/i18n/i18n';
@@ -365,6 +366,19 @@ function calcTotalVolume(sets: SetEntry[]): number {
   return total;
 }
 
+function formatSetLine(language: AppLanguage, set: SetEntry, exerciseName?: string): string {
+  const base = `${set.weight} kg x ${set.reps} ${language === 'es' ? 'reps' : language === 'en' ? 'reps' : 'reps'}`;
+  const namePart = exerciseName ? `${exerciseName}: ` : '';
+  const time = new Date(set.createdAt).toLocaleString(localeForLanguage(language), {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  return `${namePart}${base} (${time})`;
+}
+
 export function answerAiQuestion(
   appState: AppState,
   rawQuestion: string,
@@ -496,6 +510,39 @@ export function answerAiQuestion(
 
   // Finn ovelse
   const exercise = findExerciseFromQuestion(appState, q, contextExerciseId);
+
+  if (
+    exercise &&
+    (q.includes('siste sett') ||
+      q.includes('last set') ||
+      q.includes('ultimo set') ||
+      q.includes('último set') ||
+      q.includes('ultima serie') ||
+      q.includes('última serie'))
+  ) {
+    const sets = getSetsForExercise(appState, exercise.id);
+    const last = sets[0];
+    if (!last) {
+      if (language === 'es') return `No encuentro series para ${exercise.name}.`;
+      if (language === 'en') return `I can't find sets for ${exercise.name}.`;
+      return `Jeg finner ingen sett for ${exercise.name}.`;
+    }
+    return formatSetLine(language, last, exercise.name);
+  }
+
+  if (
+    exercise &&
+    (q.includes('beste sett') || q.includes('best set') || q.includes('mejor serie') || q.includes('mejor set'))
+  ) {
+    const sets = getSetsForExercise(appState, exercise.id);
+    const best = pickBestSet(sets);
+    if (!best) {
+      if (language === 'es') return `No encuentro series para ${exercise.name}.`;
+      if (language === 'en') return `I can't find sets for ${exercise.name}.`;
+      return `Jeg finner ingen sett for ${exercise.name}.`;
+    }
+    return formatSetLine(language, best, exercise.name);
+  }
 
   if (exercise) {
     const exerciseSets = appState.sets

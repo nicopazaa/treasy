@@ -15,6 +15,7 @@ import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
+import { COLORS } from '../shared/theme/tokens';
 
 interface Props {
   appState: AppState;
@@ -25,11 +26,7 @@ interface RepMaxItem {
   id: string; // exercise id
   exerciseName: string;
   blockId: string;
-  weight: number;
-  reps: number;
-  oneRm: number;
-  date: string;
-  time: string;
+  bestText: string;
 }
 
 interface RepMaxSection {
@@ -39,22 +36,28 @@ interface RepMaxSection {
 }
 
 function pickBestSet(sets: SetEntry[]): SetEntry | null {
-  const weighted = sets.filter((s) => s.setType !== 'bodyweight' && s.setType !== 'cardio' && s.weight > 0);
-  if (weighted.length === 0) return null;
-  return weighted.reduce<SetEntry | null>((best, current) => {
+  if (!sets?.length) return null;
+  return sets.reduce<SetEntry | null>((best, current) => {
     if (!best) return current;
-    if (current.weight > best.weight) return current;
-    if (current.weight < best.weight) return best;
+    const bestWeighted = best.setType !== 'bodyweight' && best.setType !== 'cardio' && best.weight > 0;
+    const currentWeighted =
+      current.setType !== 'bodyweight' && current.setType !== 'cardio' && current.weight > 0;
+
+    if (bestWeighted && currentWeighted) {
+      if (current.weight > best.weight) return current;
+      if (current.weight < best.weight) return best;
+      if (current.reps > best.reps) return current;
+      if (current.reps < best.reps) return best;
+      return current.createdAt > best.createdAt ? current : best;
+    }
+
+    if (bestWeighted) return best;
+    if (currentWeighted) return current;
+
     if (current.reps > best.reps) return current;
     if (current.reps < best.reps) return best;
     return current.createdAt > best.createdAt ? current : best;
   }, null);
-}
-
-function estimateOneRm(weight: number, reps: number): number {
-  if (reps <= 1) return weight;
-  const est = weight * (1 + reps / 30);
-  return Math.round(est * 10) / 10;
 }
 
 function labelForBlock(block: TrainingBlock, language: AppState['language']): string {
@@ -82,35 +85,18 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
         const best = pickBestSet(sets);
         if (!best) continue;
 
-        const dt = new Date(best.createdAt);
-        const date = dt.toLocaleDateString('nb-NO', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        });
-        const time = dt.toLocaleTimeString('nb-NO', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-
+        const isWeighted = best.setType !== 'bodyweight' && best.setType !== 'cardio' && best.weight > 0;
+        const bestText = isWeighted ? `${best.weight} kg` : `${best.reps} reps`;
         items.push({
           id: ex.id,
           exerciseName: formatExerciseLabel(ex),
           blockId: block.id,
-          weight: best.weight,
-          reps: best.reps,
-          oneRm: estimateOneRm(best.weight, best.reps),
-          date,
-          time,
+          bestText,
         });
       }
 
       if (items.length > 0) {
-        items.sort((a, b) => {
-          if (a.weight !== b.weight) return b.weight - a.weight;
-          if (a.reps !== b.reps) return b.reps - a.reps;
-          return a.exerciseName.localeCompare(b.exerciseName);
-        });
+        items.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
 
         res.push({
           title: labelForBlock(block, language),
@@ -169,7 +155,11 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.badge}>🌟</Text>
+          <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
+          <Text style={styles.clip}>📎</Text>
+        </View>
         <Text style={styles.subtitle}>{t(language, 'repMaxSubtitleScreen')}</Text>
       </View>
 
@@ -201,17 +191,13 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
           renderItem={({ item }) => (
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.exercise}>{item.exerciseName}</Text>
-                <Text style={styles.detail}>
-                  {item.weight} kg x {item.reps} {t(language, 'reps').toLowerCase()}
-                </Text>
-                <Text style={styles.estimate}>
-                  {t(language, 'oneRmEst')}: {item.oneRm} kg
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.date}>{item.date}</Text>
-                <Text style={styles.time}>{item.time}</Text>
+                <View style={styles.rowHeader}>
+                  <Text style={styles.exercise} numberOfLines={1} ellipsizeMode="tail">
+                    {item.exerciseName}
+                  </Text>
+                  <Text style={styles.bestIcon}>🌟</Text>
+                </View>
+                <Text style={styles.detail}>{item.bestText}</Text>
               </View>
             </View>
           )}
@@ -247,8 +233,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TEXT.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#F9FAFB',
+    marginTop: SPACING.xs,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
   },
   subtitle: {
     marginTop: SPACING.xs,
@@ -287,25 +279,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: SPACING.sm,
   },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  bestIcon: {
+    fontSize: TEXT.sm,
+    color: '#9CA3AF',
+    opacity: 0.8,
+  },
   exercise: {
     color: '#E5E7EB',
     fontSize: TEXT.md,
     fontWeight: '700',
   },
   detail: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-  },
-  estimate: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    marginTop: SPACING.xs,
-  },
-  date: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-  },
-  time: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
   },

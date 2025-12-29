@@ -27,24 +27,38 @@ export const RADIUS = {
   pill: 999,
 };
 
-export const COLORS = {
-  blue1: '#60A5FA',
-  blue2: '#3B82F6',
-  blue3: '#2563EB',
-  blue4: '#1D4ED8',
-  blue5: '#1E40AF',
-  blue6: '#0B2F6B',
+export const PALETTE = {
+  BLUE_DEEP: '#1D4ED8',
+  BLUE_MED: '#3B82F6',
+  BLUE_LIGHT: '#60A5FA',
+  GREEN_POSITIVE: '#22C55E',
+  ORANGE_SOFT: '#F59E0B',
+  DOT_CHEST: '#FBBF24',
+  DOT_SHOULDERS: '#FB923C',
+  DOT_BACK: '#38BDF8',
+  DOT_ARMS: '#60A5FA',
+  DOT_CORE: '#2DD4BF',
+  DOT_CARDIO: '#F59E0B',
+} as const;
 
-  success: '#22C55E',
-  warning: '#F59E0B',
+export const COLORS = {
+  blue1: PALETTE.BLUE_LIGHT,
+  blue2: PALETTE.BLUE_MED,
+  blue3: PALETTE.BLUE_DEEP,
+  blue4: '#2D7FF6',
+  blue5: '#1B5FCC',
+  blue6: '#13479B',
+
+  success: PALETTE.GREEN_POSITIVE,
+  warning: PALETTE.ORANGE_SOFT,
   neutral: '#94A3B8',
 } as const;
 
 export const MUSCLE_ACCENT = {
-  chest: COLORS.blue2,
-  shoulders: COLORS.blue1,
-  back: COLORS.blue3,
-  arms: COLORS.blue4,
-  core: COLORS.blue5,
-  legs: COLORS.blue6,
+  chest: PALETTE.BLUE_DEEP,
+  shoulders: PALETTE.BLUE_DEEP,
+  back: PALETTE.BLUE_DEEP,
+  arms: PALETTE.BLUE_DEEP,
+  core: PALETTE.BLUE_MED,
+  legs: PALETTE.BLUE_LIGHT,
 } as const;

@@ -39,7 +39,7 @@ interface Props {
 }
 
 const STICKY_HEIGHT = 88;
-const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'other'];
+const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'];
 
 export const BlockScreen: React.FC<Props> = ({
   language,
@@ -185,6 +185,24 @@ export const BlockScreen: React.FC<Props> = ({
 
   const movingExercise = movingExerciseId ? exercises.find((e) => e.id === movingExerciseId) ?? null : null;
 
+  const bestSetLabel = (exerciseId: string): string | null => {
+    const relevant = sets.filter((s) => s.exerciseId === exerciseId && s.setType !== 'cardio');
+    if (relevant.length === 0) return null;
+    const best = relevant.reduce<SetEntry | null>((acc, cur) => {
+      if (!acc) return cur;
+      const accWeight = acc.weight ?? 0;
+      const curWeight = cur.weight ?? 0;
+      if (curWeight > accWeight) return cur;
+      if (curWeight < accWeight) return acc;
+      if ((cur.reps ?? 0) > (acc.reps ?? 0)) return cur;
+      if ((cur.reps ?? 0) < (acc.reps ?? 0)) return acc;
+      return cur;
+    }, null);
+    if (!best) return null;
+    if (best.isBodyweight || best.weight === 0) return `BW x ${best.reps}`;
+    return `${best.weight} kg x ${best.reps}`;
+  };
+
   const reorderTo = (targetExerciseId: string) => {
     if (!movingExerciseId) return;
     if (movingExerciseId === targetExerciseId) {
@@ -206,40 +224,60 @@ export const BlockScreen: React.FC<Props> = ({
     setMovingExerciseId(null);
   };
 
-  const renderExercise = ({ item }: { item: Exercise }) => (
-    <TouchableOpacity
-      style={[
-        styles.exerciseCard,
-        { borderColor: tone.accent, backgroundColor: tone.soft },
-        movingExerciseId === item.id && styles.exerciseCardMoving,
-      ]}
-      onPress={() => {
-        if (movingExerciseId) {
-          reorderTo(item.id);
-          return;
-        }
-        onSelectExercise(item.id);
-      }}
-      onLongPress={() => setMovingExerciseId(item.id)}
-      delayLongPress={240}
-      activeOpacity={0.9}
-    >
-      <Text style={styles.exerciseTitle} numberOfLines={1}>
-        {formatExerciseLabel(item)}
-      </Text>
+  const renderExercise = ({ item }: { item: Exercise }) => {
+    const bestLabel = bestSetLabel(item.id);
+
+    return (
       <TouchableOpacity
-        style={styles.kebabButton}
-        onPress={(event) => {
-          event.stopPropagation?.();
-          openExerciseActions(item);
+        style={[
+          styles.exerciseCard,
+          { borderColor: tone.accent, backgroundColor: tone.soft },
+          movingExerciseId === item.id && styles.exerciseCardMoving,
+        ]}
+        onPress={() => {
+          if (movingExerciseId) {
+            reorderTo(item.id);
+            return;
+          }
+          onSelectExercise(item.id);
         }}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        activeOpacity={0.85}
+        onLongPress={() => setMovingExerciseId(item.id)}
+        delayLongPress={240}
+        activeOpacity={0.9}
       >
-        <Text style={[styles.kebabText, { color: tone.accent }]}>{'⋯'}</Text>
+        <View style={styles.exerciseTitleRow}>
+          <Text style={styles.exerciseTitle} numberOfLines={1} ellipsizeMode="tail">
+            {formatExerciseLabel(item)}
+          </Text>
+        </View>
+
+        <View style={styles.exerciseMetaRow}>
+          <TouchableOpacity
+            style={styles.kebabButton}
+            onPress={(event) => {
+              event.stopPropagation?.();
+              openExerciseActions(item);
+            }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.kebabText, { color: tone.accent }]}>{'...'}</Text>
+          </TouchableOpacity>
+
+          {bestLabel ? (
+            <View style={styles.bestSetRow}>
+              <Text style={styles.bestSetText} numberOfLines={1} ellipsizeMode="tail">
+                {bestLabel}
+              </Text>
+              <Text style={styles.bestSetEmoji} accessibilityLabel="Bestesett">
+                🌟
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -512,13 +550,15 @@ const styles = StyleSheet.create({
   },
   exerciseCard: {
     paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.md,
     marginVertical: SPACING.xs,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     minHeight: 56,
+    gap: SPACING.md,
   },
   exerciseCardMoving: {
     borderWidth: 2,
@@ -529,7 +569,36 @@ const styles = StyleSheet.create({
     fontSize: TEXT.md,
     fontWeight: '700',
     flex: 1,
-    paddingRight: SPACING.md,
+  },
+  exerciseMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+  },
+  exerciseTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  bestSetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: 180,
+    flexShrink: 1,
+  },
+  bestSetText: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  bestSetEmoji: {
+    marginLeft: SPACING.xs,
+    fontSize: TEXT.md,
+    lineHeight: TEXT.md + 2,
+    color: COLORS.warning,
   },
   kebabButton: {
     width: 40,

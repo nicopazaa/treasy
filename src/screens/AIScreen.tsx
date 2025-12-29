@@ -49,6 +49,8 @@ export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, i
       t(language, 'appa.scenario.bestSet'),
       t(language, 'appa.scenario.repsAtWeight'),
       t(language, 'appa.scenario.blockInMonth'),
+      t(language, 'appa.scenario.lastSetExercise'),
+      t(language, 'appa.scenario.bestSetExercise'),
     ],
     [language]
   );

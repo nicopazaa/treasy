@@ -9,7 +9,8 @@ export const DEFAULT_BLOCKS: TrainingBlock[] = [
   { id: 'arms',      name: 'Armer' },
   { id: 'core',      name: 'Core' },
   { id: 'legs',      name: 'Bein' },
-  { id: 'other',     name: 'Annet' },
+  { id: 'cardio',    name: 'Cardio' },
+  { id: 'bodyweight', name: 'Kroppsvekt' },
 ];
 
 export function generateUserId(): string {
@@ -60,6 +61,7 @@ export function createInitialState(options?: {
     blocks: DEFAULT_BLOCKS,
     exercises: [],
     sets: [],
+    cardioEntries: [],
     logs: [],
   };
 }

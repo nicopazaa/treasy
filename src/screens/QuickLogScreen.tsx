@@ -15,7 +15,7 @@ import { AppLanguage } from '../shared/types';
 import { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
-import { getBlockTone } from '../shared/theme/blockTone';
+import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
@@ -37,7 +37,7 @@ type Props = {
   showLocalOnlyNotice?: boolean;
 };
 
-const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'other'];
+const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
 
 const WEIGHT_KEYS = [
   ['1', '2', '3'],
@@ -95,12 +95,13 @@ export const QuickLogScreen: React.FC<Props> = ({
       if (block) ordered.push(block);
     }
 
-    const rest = appState.blocks.filter(
-      (b) => !MUSCLE_GROUP_ORDER.includes(b.id as TrainingBlockId) && b.id !== 'cardio'
-    );
-
-    return [...ordered, ...rest];
+    return ordered;
   }, [appState.blocks]);
+
+  const otherBlocks = useMemo(
+    () => appState.blocks.filter((b) => ['cardio', 'bodyweight'].includes(b.id)),
+    [appState.blocks]
+  );
 
   const selectedBlock = selectedBlockId
     ? muscleGroupBlocks.find((b) => b.id === selectedBlockId) ?? null
@@ -144,7 +145,9 @@ export const QuickLogScreen: React.FC<Props> = ({
 
   const blockTitle = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
-    const isKnown = (['chest', 'shoulders', 'back', 'arms', 'core', 'legs'] as string[]).includes(id);
+    const isKnown = (
+      ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]
+    ).includes(id);
     return isKnown ? blockLabel(id, language) : block.name;
   };
 
@@ -255,28 +258,58 @@ export const QuickLogScreen: React.FC<Props> = ({
             </TouchableOpacity>
 
             {muscleGroupsOpen && (
-              <View style={styles.selectList}>
-                {muscleGroupBlocks.map((block) => {
-                  const tone = getBlockTone(block.id);
-                  const selected = block.id === selectedBlockId;
-                  return (
-                    <TouchableOpacity
-                      key={block.id}
-                      style={[styles.selectRow, selected && styles.selectRowSelected]}
-                      onPress={() => {
-                        setSelectedBlockId(block.id);
-                        setSelectedExerciseId(null);
-                        setExercisesOpen(true);
-                        setMuscleGroupsOpen(false);
-                      }}
-                      activeOpacity={0.9}
-                    >
-                      <View style={[styles.dot, { backgroundColor: tone.accent }]} />
-                      <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <>
+                <View style={styles.selectList}>
+                  {muscleGroupBlocks.map((block) => {
+                    const tone = getBlockTone(block.id);
+                    const selected = block.id === selectedBlockId;
+                    return (
+                      <TouchableOpacity
+                        key={block.id}
+                        style={[styles.selectRow, selected && styles.selectRowSelected]}
+                        onPress={() => {
+                          setSelectedBlockId(block.id);
+                          setSelectedExerciseId(null);
+                          setExercisesOpen(true);
+                          setMuscleGroupsOpen(false);
+                        }}
+                        activeOpacity={0.9}
+                      >
+                        <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
+                        <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {otherBlocks.length > 0 ? (
+                  <>
+                    <Text style={styles.otherLabel}>{t(language, 'otherSectionTitle')}</Text>
+                    <View style={styles.selectList}>
+                      {otherBlocks.map((block) => {
+                        const tone = getBlockTone(block.id);
+                        const selected = block.id === selectedBlockId;
+                        return (
+                          <TouchableOpacity
+                            key={block.id}
+                            style={[styles.selectRow, selected && styles.selectRowSelected]}
+                            onPress={() => {
+                              setSelectedBlockId(block.id);
+                              setSelectedExerciseId(null);
+                              setExercisesOpen(true);
+                              setMuscleGroupsOpen(false);
+                            }}
+                            activeOpacity={0.9}
+                          >
+                            <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
+                            <Text style={styles.selectRowText}>{block.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+              </>
             )}
           </View>
 
@@ -309,7 +342,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                         onPress={() => startSetFlow(ex.id)}
                         activeOpacity={0.9}
                       >
-                        <View style={[styles.dot, { backgroundColor: getBlockTone(selectedBlockId).accent }]} />
+                        <View style={[styles.dot, { backgroundColor: getDotColor(selectedBlockId) }]} />
                         <Text style={styles.selectRowText}>{formatExerciseLabel(ex)}</Text>
                       </TouchableOpacity>
                     );
@@ -334,7 +367,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                 <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
               </TouchableOpacity>
 
-              {selectedBlockId === 'other' ? (
+              {selectedBlockId === 'cardio' ? (
                 <TouchableOpacity
                   style={[styles.secondaryButton, styles.inlineButton]}
                   onPress={() => {
@@ -394,7 +427,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                       }}
                       activeOpacity={0.9}
                     >
-                      <View style={[styles.dot, { backgroundColor: tone.accent }]} />
+                      <View style={[styles.dot, { backgroundColor: getDotColor(ex.blockId) }]} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.suggestionLabel}>{label}</Text>
                         <Text style={styles.suggestionMeta}>
@@ -428,6 +461,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                 <View key={entry.id} style={styles.liveLogRow}>
                   <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
                   <Text style={styles.liveLogText}>{entry.text}</Text>
+                  <Text style={styles.liveLogPin}>{entry.pinned ? '📌' : ' '}</Text>
                 </View>
               ))}
             </View>
@@ -736,6 +770,11 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
+  liveLogPin: {
+    minWidth: 20,
+    textAlign: 'right',
+    fontSize: TEXT.sm,
+  },
 
   guidedCard: {
     backgroundColor: '#0B1220',
@@ -987,5 +1026,12 @@ const styles = StyleSheet.create({
   groupText: {
     fontSize: TEXT.sm,
     fontWeight: '700',
+  },
+  otherLabel: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xs,
   },
 });

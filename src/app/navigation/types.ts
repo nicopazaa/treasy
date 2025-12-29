@@ -10,7 +10,8 @@ export type ScreenName =
   | 'progress'
   | 'repMax'
   | 'profile'
-  | 'quickLog';
+  | 'quickLog'
+  | 'cardio';
 
 export interface NavState {
   screen: ScreenName;
@@ -19,4 +20,3 @@ export interface NavState {
   aiInitialQuestion?: string | null;
   showLocalOnlyNotice?: boolean;
 }
-

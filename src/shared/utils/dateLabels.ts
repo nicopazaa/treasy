@@ -22,8 +22,8 @@ export function formatWeekday(date: Date, language: AppLanguage = 'nb'): string 
 export function formatDate(date: Date): string {
   const dd = String(date.getDate()).padStart(2, '0');
   const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
 }
 
 export function formatShortDate(date: Date): string {
@@ -69,4 +69,3 @@ export function formatRelativeDateTime(
   if (label) return `${label} ${time}`;
   return `${formatDate(date)} ${time}`;
 }
-

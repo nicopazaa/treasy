@@ -8,12 +8,13 @@ export type TrainingBlockId =
   | 'core'
   | 'legs'
   | 'cardio'
-  | 'other';
+  | 'bodyweight';
 
 export interface LogEntry {
   id: string;
   text: string;
   createdAt: string; // ISO string
+  pinned?: boolean;
 }
 
 export interface TrainingBlock {
@@ -46,6 +47,18 @@ export interface SetEntry {
   setType?: 'weighted' | 'bodyweight' | 'cardio';
 }
 
+export interface CardioEntry {
+  id: string;
+  exerciseId: string;
+  distanceKm: number | null;
+  durationMin: number | null;
+  avgHeartRate?: number | null;
+  intensity?: 'easy' | 'moderate' | 'hard' | null;
+  note?: string | null;
+  silentMode?: boolean | null;
+  createdAt: string; // ISO string
+}
+
 export interface AppState {
   // Intern identitet (alltid lokalt tilgjengelig)
   userId?: string;
@@ -66,5 +79,6 @@ export interface AppState {
   blocks: TrainingBlock[];
   exercises: Exercise[];
   sets: SetEntry[];
+  cardioEntries: CardioEntry[];
   logs?: LogEntry[];
 }

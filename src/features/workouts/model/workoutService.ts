@@ -1,4 +1,4 @@
-import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry } from './types';
+import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEntry } from './types';
 import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
 
 function generateId(prefix: string = 'id'): string {
@@ -63,7 +63,7 @@ function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
   };
 }
 
-export function addLogEntry(state: AppState, text: string): AppState {
+export function addLogEntry(state: AppState, text: string, options?: { pinned?: boolean }): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
 
@@ -71,12 +71,53 @@ export function addLogEntry(state: AppState, text: string): AppState {
     id: generateId('log'),
     text: trimmed,
     createdAt: new Date().toISOString(),
+    pinned: options?.pinned === true,
   };
 
   return {
     ...state,
     logs: [...(state.logs ?? []), entry],
   };
+}
+
+export function addCardioEntry(
+  state: AppState,
+  exerciseId: string,
+  distanceKm: number | null,
+  durationMin: number | null,
+  extras?: {
+    avgHeartRate?: number | null;
+    intensity?: 'easy' | 'moderate' | 'hard' | null;
+    note?: string | null;
+    silentMode?: boolean | null;
+  }
+): AppState {
+  const dist = distanceKm != null && Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null;
+  const dur = durationMin != null && Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null;
+  if (dist == null && dur == null) return state;
+
+  const entry: CardioEntry = {
+    id: generateId('cardio'),
+    exerciseId,
+    distanceKm: dist,
+    durationMin: dur,
+    avgHeartRate: extras?.avgHeartRate ?? null,
+    intensity: extras?.intensity ?? null,
+    note: extras?.note ?? null,
+    silentMode: extras?.silentMode ?? null,
+    createdAt: new Date().toISOString(),
+  };
+
+  return {
+    ...state,
+    cardioEntries: [...(state.cardioEntries ?? []), entry],
+  };
+}
+
+export function getCardioEntries(state: AppState, exerciseId?: string): CardioEntry[] {
+  const all = state.cardioEntries ?? [];
+  if (!exerciseId) return all;
+  return all.filter((c) => c.exerciseId === exerciseId);
 }
 
 export function addExercise(

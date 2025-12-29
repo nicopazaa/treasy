@@ -18,7 +18,14 @@ type DayNode = {
   dateKey: string;
   dateLabel: string;
   dayLabel: string;
-  groups: GroupedDailySetView[];
+  groups: BlockGroup[];
+};
+
+type BlockGroup = {
+  blockId?: string;
+  blockName?: string;
+  time: string;
+  exercises: GroupedDailySetView[];
 };
 
 function parseDateKey(dateKey: string): Date | null {
@@ -46,11 +53,10 @@ function formatSetParts(
 ): Array<{
   weightValue: string;
   weightUnit: string;
-  repsValue: string | null;
-  repsLabel: string | null;
+  repsText: string | null;
   index: number;
+  indent: number;
 }> {
-  const repsLabel = t(language ?? 'en', 'reps').toLowerCase();
   return sets.map((s, idx) => ({
     weightValue:
       s.setType === 'cardio'
@@ -63,10 +69,32 @@ function formatSetParts(
           ? 'BW'
           : `${s.weight}`,
     weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
-    repsValue: s.setType === 'cardio' ? null : `${s.reps}`,
-    repsLabel: s.setType === 'cardio' ? null : repsLabel,
+    repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
     index: idx + 1,
+    indent: idx,
   }));
+}
+
+function groupByBlock(groups: GroupedDailySetView[]): BlockGroup[] {
+  const map = new Map<string, BlockGroup>();
+
+  for (const group of groups) {
+    const key = group.blockId ?? group.blockName ?? 'unknown';
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        blockId: group.blockId,
+        blockName: group.blockName,
+        time: group.time,
+        exercises: [group],
+      });
+      continue;
+    }
+    existing.exercises.push(group);
+    if (group.time < existing.time) existing.time = group.time;
+  }
+
+  return Array.from(map.values()).sort((a, b) => (a.time > b.time ? 1 : -1));
 }
 
 function buildDayNodes(appState: AppState, language: AppState['language']): DayNode[] {
@@ -82,7 +110,7 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
       dayLabel = relative ?? formatWeekday(dt, language ?? 'en');
     }
 
-    const groups = groupDailySets(getDailyWorkout(appState, key));
+    const groups = groupByBlock(groupDailySets(getDailyWorkout(appState, key)));
     return { dateKey: key, dateLabel, dayLabel, groups };
   });
 }
@@ -92,6 +120,8 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
   const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
   const firstKey = days.length > 0 ? days[0].dateKey : null;
   const [expandedKey, setExpandedKey] = useState<string | null>(() => initialExpandedDateKey ?? firstKey);
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
+  const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (initialExpandedDateKey != null) {
@@ -109,6 +139,24 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
     setExpandedKey((prev) => (prev === key ? null : key));
   };
 
+  const toggleBlockCollapsed = (blockKey: string) => {
+    setCollapsedBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(blockKey)) next.delete(blockKey);
+      else next.add(blockKey);
+      return next;
+    });
+  };
+
+  const toggleExerciseCollapsed = (exerciseId: string) => {
+    setCollapsedExercises((prev) => {
+      const next = new Set(prev);
+      if (next.has(exerciseId)) next.delete(exerciseId);
+      else next.add(exerciseId);
+      return next;
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -116,10 +164,8 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
           <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
             <Text style={styles.backText}>{t(language, 'back')}</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
         </View>
-
-        <Text style={styles.headerSubtitle}>{t(language, 'historySubtitle')}</Text>
+        <Text style={styles.headerTitle}>{t(language, 'historyTitle')}</Text>
       </View>
 
       {days.length === 0 ? (
@@ -155,41 +201,90 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
 
                   {isExpanded && (
                     <View style={styles.groupList}>
-                      {day.groups.map((group) => {
-                        const tone = getBlockTone(group.blockId ?? group.blockName ?? '');
+                      {day.groups.map((block) => {
+                        const tone = getBlockTone(block.blockId ?? block.blockName ?? '');
+                        const blockKey = block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block';
+                        const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+                        const isBlockCollapsed = collapsedBlocks.has(blockKey);
                         return (
-                          <View key={group.id} style={styles.groupRow}>
-                            <View style={styles.groupTextColumn}>
-                              {group.blockName ? (
+                          <View key={blockKey} style={styles.blockGroup}>
+                            {block.blockName ? (
+                              <TouchableOpacity
+                                style={styles.blockHeaderRow}
+                                onPress={() => toggleBlockCollapsed(blockKey)}
+                                activeOpacity={0.8}
+                              >
                                 <Text style={[styles.blockLabel, { color: tone.accent }]}>
-                                  {group.blockName}
+                                  {block.blockName}
                                 </Text>
-                              ) : null}
-                              <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
-                              <Text style={styles.setCountLine}>
-                                <Text style={styles.greenText}>{t(language, 'setsLabel') ?? 'Sets'} </Text>
-                                <Text style={styles.greenText}>[</Text>
-                                <Text style={styles.greenText}>{group.sets.length}</Text>
-                                <Text style={styles.greenText}>]</Text>
-                              </Text>
-                              <View style={styles.setList}>
-                                {formatSetParts(language, group.sets).map((line, idx) => (
-                                  <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
-                                    <Text style={styles.indexText}>[{line.index}] </Text>
-                                    <Text style={styles.goldText}>{line.weightValue}</Text>
-                                    {line.weightUnit ? <Text style={styles.whiteText}> {line.weightUnit}</Text> : null}
-                                    {line.repsValue ? (
-                                      <>
-                                        <Text style={styles.mutedText}> x </Text>
-                                        <Text style={styles.goldText}>{line.repsValue}</Text>
-                                        {line.repsLabel ? <Text style={styles.whiteText}> {line.repsLabel}</Text> : null}
-                                      </>
-                                    ) : null}
-                                  </Text>
-                                ))}
+                                <Text style={styles.blockSummary}>
+                                  {t(language, 'setsCount') ?? 'Sets'} [{blockSetCount}] {isBlockCollapsed ? '>' : 'v'}
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {!isBlockCollapsed && (
+                              <View style={styles.blockExercises}>
+                                {block.exercises.map((group) => {
+                                  const isExerciseCollapsed = collapsedExercises.has(group.id);
+                                  return (
+                                    <View key={group.id} style={styles.groupRow}>
+                                      <View
+                                        style={[
+                                          styles.blockLine,
+                                          {
+                                            backgroundColor: tone.soft,
+                                            top: SPACING.xs * -1,
+                                            bottom: group === block.exercises[block.exercises.length - 1] ? 16 : -SPACING.xs,
+                                          },
+                                        ]}
+                                      />
+                                      {group === block.exercises[block.exercises.length - 1] ? (
+                                        <View
+                                          style={[
+                                            styles.blockLineEnd,
+                                            { backgroundColor: tone.soft },
+                                          ]}
+                                        />
+                                      ) : null}
+                                      <View style={styles.groupTextColumn}>
+                                        <TouchableOpacity
+                                          onPress={() => toggleExerciseCollapsed(group.id)}
+                                          activeOpacity={0.8}
+                                          style={styles.exerciseRow}
+                                        >
+                                          <View style={[styles.exerciseDot, { backgroundColor: tone.accent }]} />
+                                          <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                          <Text style={styles.exerciseSummary}>
+                                            {t(language, 'setsCount') ?? 'Sets'} [{group.sets.length}] {isExerciseCollapsed ? '>' : 'v'}
+                                          </Text>
+                                        </TouchableOpacity>
+                                        {!isExerciseCollapsed && (
+                                          <View style={styles.setList}>
+                                            {formatSetParts(language, group.sets).map((line, idx) => (
+                                              <Text
+                                                key={`${group.id}-set-${idx}`}
+                                                style={[styles.groupDetail, { marginLeft: SPACING.sm * (line.indent + 1) }]}
+                                              >
+                                                <Text style={styles.indexText}>[{line.index}] </Text>
+                                                <Text style={styles.goldText}>{line.weightValue}</Text>
+                                                {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
+                                                {line.repsText ? (
+                                                  <>
+                                                    <Text style={styles.mutedText}> x </Text>
+                                                    <Text style={styles.goldText}>{line.repsText}</Text>
+                                                  </>
+                                                ) : null}
+                                              </Text>
+                                            ))}
+                                          </View>
+                                        )}
+                                      </View>
+                                      <Text style={styles.groupTime}>{group.time}</Text>
+                                    </View>
+                                  );
+                                })}
                               </View>
-                            </View>
-                            <Text style={styles.groupTime}>{group.time}</Text>
+                            )}
                           </View>
                         );
                       })}
@@ -215,7 +310,8 @@ const styles = StyleSheet.create({
     }),
   },
   setList: {
-    gap: SPACING.xs,
+    gap: SPACING.sm,
+    paddingLeft: SPACING.lg,
   },
   content: {
     paddingHorizontal: SCREEN_PADDING,
@@ -237,9 +333,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerTitle: {
-    color: '#F9FAFB',
+    color: '#3B82F6',
     fontSize: TEXT.xl,
     fontWeight: '700',
+    marginLeft: SPACING.sm,
   },
   headerSubtitle: {
     color: '#9CA3AF',
@@ -319,10 +416,41 @@ const styles = StyleSheet.create({
   groupList: {
     marginTop: SPACING.sm,
   },
+  blockGroup: {
+    marginBottom: SPACING.md,
+  },
+  blockHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: SPACING.sm,
+  },
+  blockExercises: {
+    gap: SPACING.md,
+    paddingLeft: SPACING.lg,
+    position: 'relative',
+  },
+  blockLine: {
+    position: 'absolute',
+    left: SPACING.sm,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    borderRadius: 999,
+  },
+  blockLineEnd: {
+    position: 'absolute',
+    left: SPACING.sm,
+    width: 16,
+    height: 2,
+    bottom: 16,
+  },
   groupRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: SPACING.xs,
+    paddingLeft: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   groupTextColumn: {
     flexShrink: 1,
@@ -333,34 +461,56 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 2,
   },
+  blockSummary: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  exerciseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
   exerciseName: {
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '700',
     letterSpacing: 0.15,
   },
+  exerciseSummary: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    marginLeft: SPACING.xs,
+  },
   groupDetail: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
-    marginTop: 2,
+    marginTop: 4,
     fontWeight: '700',
   },
-  setCountLine: {
-    marginTop: 2,
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    color: '#10B981',
+  setCountAbove: {
+    marginLeft: SPACING.lg,
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   goldText: {
-    color: '#FBBF24',
+    color: '#93C5FD',
     fontWeight: '800',
   },
   whiteText: {
-    color: '#F9FAFB',
+    color: '#E5E7EB',
     fontWeight: '700',
+    fontSize: TEXT.xs,
   },
   indexText: {
-    color: '#9CA3AF',
+    color: '#10B981',
     fontWeight: '800',
   },
   mutedText: {

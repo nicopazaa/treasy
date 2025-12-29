@@ -10,6 +10,7 @@ import {
   addLogEntry,
   addSet,
   addSetsForExercise,
+  addCardioEntry,
   reorderExercisesInBlock,
   renameExercise,
   deleteExercise,
@@ -27,6 +28,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { BlockScreen } from './src/screens/BlockScreen';
 import { ExerciseScreen } from './src/screens/ExerciseScreen';
 import { AIScreen } from './src/screens/AIScreen';
+import { CardioScreen } from './src/screens/CardioScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
@@ -98,6 +100,25 @@ function splitNameAndCodes(raw: string): { name: string; metadata: ExerciseMetad
       shortCode: shortCode ?? null,
       tags,
     },
+  };
+}
+
+function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
+  const existing = state.exercises.find((ex) => ex.blockId === 'cardio');
+  if (existing) return { next: state, id: existing.id };
+
+  const newId = `cardio_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+  const exercise = {
+    id: newId,
+    blockId: 'cardio',
+    name: 'Cardio',
+    shortCode: 'CARDIO',
+    tags: [],
+  };
+
+  return {
+    next: { ...state, exercises: [...state.exercises, exercise] },
+    id: newId,
   };
 }
 
@@ -271,6 +292,20 @@ export default function App() {
     });
   }, [canGoBack, canGoForward, windowWidth]);
 
+  const handleStartCardio = () => {
+    if (!appState) return;
+    const { next, id } = ensureCardioExercise(appState);
+    if (next !== appState) setAppState(next);
+    navigate('cardio', { selectedExerciseId: id });
+  };
+
+  const handleAddNote = (text: string) => {
+    setAppState((prev) => {
+      if (!prev) return prev;
+      return addLogEntry(prev, text);
+    });
+  };
+
   const startGithubLogin = () => {
     setLoginError(null);
 
@@ -302,47 +337,52 @@ export default function App() {
     text: string,
     options?: { blockId?: string | null }
   ): { newExerciseId?: string; newExerciseName?: string } => {
-    if (!appState) return {};
+    let created: { newExerciseId?: string; newExerciseName?: string } = {};
 
-    let next = addLogEntry(appState, text);
-    const parsed = parseQuickLog(text);
-    const blockHint = options?.blockId ?? null;
+    setAppState((prev) => {
+      if (!prev) return prev;
 
-    if (parsed) {
-      const { name: parsedName, metadata } = splitNameAndCodes(parsed.exerciseName);
-      const existing =
-        findExerciseFuzzy(next, parsed.exerciseName) ??
-        (parsedName !== parsed.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
-      if (existing) {
-        next = addSetsForExercise(next, existing.id, parsed.sets);
-      } else {
-        const inferredBlock = inferBlockIdFromExercise(parsed.exerciseName);
-        const allowedBlocks = new Set(next.blocks.map((b) => b.id));
-        const targetBlock = (blockHint && allowedBlocks.has(blockHint) ? blockHint : null)
-          ?? (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
-          ?? next.blocks[0]?.id
-          ?? 'chest';
+      const blockHint = options?.blockId ?? null;
+      let next = addLogEntry(prev, text, { pinned: false });
+      const parsed = parseQuickLog(text);
 
-        const created = addExerciseWithSetsResult(
-          next,
-          targetBlock,
-          parsedName,
-          parsed.sets,
-          metadata
-        );
-        if (created) {
-          next = created.nextState;
-          const createdExercise =
-            next.exercises.find((ex) => ex.id === created.exerciseId) ?? null;
-          const label = createdExercise ? formatExerciseLabel(createdExercise) : parsedName;
-          setAppState(next);
-          return { newExerciseId: created.exerciseId, newExerciseName: label };
+      if (parsed) {
+        const { name: parsedName, metadata } = splitNameAndCodes(parsed.exerciseName);
+        const existing =
+          findExerciseFuzzy(next, parsed.exerciseName) ??
+          (parsedName !== parsed.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
+
+        if (existing) {
+          next = addSetsForExercise(next, existing.id, parsed.sets);
+        } else {
+          const inferredBlock = inferBlockIdFromExercise(parsed.exerciseName);
+          const allowedBlocks = new Set(next.blocks.map((b) => b.id));
+          const targetBlock = (blockHint && allowedBlocks.has(blockHint) ? blockHint : null)
+            ?? (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
+            ?? next.blocks[0]?.id
+            ?? 'chest';
+
+          const createdResult = addExerciseWithSetsResult(
+            next,
+            targetBlock,
+            parsedName,
+            parsed.sets,
+            metadata
+          );
+          if (createdResult) {
+            next = createdResult.nextState;
+            const createdExercise =
+              next.exercises.find((ex) => ex.id === createdResult.exerciseId) ?? null;
+            const label = createdExercise ? formatExerciseLabel(createdExercise) : parsedName;
+            created = { newExerciseId: createdResult.exerciseId, newExerciseName: label };
+          }
         }
       }
-    }
 
-    setAppState(next);
-    return {};
+      return next;
+    });
+
+    return created;
   };
 
   const handleQuickLogSet = (
@@ -371,13 +411,15 @@ export default function App() {
         logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
       }
 
-      let next = addSet(prev, exerciseId, weight, reps, {
+      if (options?.distanceKm != null || options?.durationMin != null) {
+        const next = addCardioEntry(prev, exerciseId, options.distanceKm ?? null, options.durationMin ?? null);
+        return addLogEntry(next, logText);
+      }
+
+      const next = addSet(prev, exerciseId, weight, reps, {
         isBodyweight: options?.bodyweight,
-        distanceKm: options?.distanceKm ?? null,
-        durationMin: options?.durationMin ?? null,
       });
-      next = addLogEntry(next, logText);
-      return next;
+      return addLogEntry(next, logText);
     });
   };
 
@@ -456,6 +498,8 @@ export default function App() {
             }}
             onOpenProgress={() => navigate('progress')}
             onOpenRepMax={() => navigate('repMax')}
+            onStartCardio={handleStartCardio}
+            onAddNote={handleAddNote}
           />
         )}
 
@@ -554,6 +598,30 @@ export default function App() {
             onBack={() => navigate('home')}
             initialQuestion={nav.aiInitialQuestion ?? undefined}
             initialExerciseId={nav.selectedExerciseId ?? null}
+          />
+        )}
+
+        {nav.screen === 'cardio' && (
+          <CardioScreen
+            language={appState.language ?? 'en'}
+            cardioEntries={appState.cardioEntries}
+            exerciseId={nav.selectedExerciseId ?? null}
+            onBack={() => navigate('home')}
+            onSave={(data) => {
+              setAppState((prev) => {
+                if (!prev) return prev;
+                const ensured = ensureCardioExercise(prev);
+                const exerciseId = data.exerciseId ?? ensured.id;
+                const withExercise = ensured.next;
+                return addCardioEntry(withExercise, exerciseId, null, data.durationMin, {
+                  avgHeartRate: data.avgHeartRate ?? null,
+                  intensity: data.intensity ?? null,
+                  note: data.note ?? null,
+                  silentMode: data.silentMode ?? null,
+                });
+              });
+              navigate('home');
+            }}
           />
         )}
 
