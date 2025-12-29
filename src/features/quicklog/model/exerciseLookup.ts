@@ -12,10 +12,20 @@ function normalizeName(value: string): string {
   return normalizeMatch(value).replace(/\s+/g, '');
 }
 
+function exerciseTokens(ex: Exercise): string[] {
+  const tokens = [ex.name, ex.shortCode ?? '', ...(ex.tags ?? [])];
+  return tokens.map(normalizeName).filter(Boolean);
+}
+
 export function findExerciseByName(appState: AppState, name: string): Exercise | null {
   const target = normalizeName(name);
   if (!target) return null;
-  return appState.exercises.find((ex) => normalizeName(ex.name) === target) ?? null;
+  return (
+    appState.exercises.find((ex) => {
+      const tokens = exerciseTokens(ex);
+      return tokens.includes(target);
+    }) ?? null
+  );
 }
 
 export function findExerciseFuzzy(appState: AppState, name: string): Exercise | null {
@@ -25,19 +35,20 @@ export function findExerciseFuzzy(appState: AppState, name: string): Exercise | 
   let best: { ex: Exercise; score: number } | null = null;
 
   for (const ex of appState.exercises) {
-    const exNorm = normalizeName(ex.name);
-    if (!exNorm) continue;
-    if (exNorm === target) return ex;
+    const tokens = exerciseTokens(ex);
+    for (const token of tokens) {
+      if (token === target) return ex;
 
-    let score = 0;
-    if (exNorm.includes(target) || target.includes(exNorm)) {
-      const minLen = Math.min(exNorm.length, target.length);
-      const maxLen = Math.max(exNorm.length, target.length);
-      score = minLen / maxLen;
-    }
+      let score = 0;
+      if (token.includes(target) || target.includes(token)) {
+        const minLen = Math.min(token.length, target.length);
+        const maxLen = Math.max(token.length, target.length);
+        score = minLen / maxLen;
+      }
 
-    if (!best || score > best.score) {
-      best = { ex, score };
+      if (!best || score > best.score) {
+        best = { ex, score };
+      }
     }
   }
 

@@ -1,7 +1,30 @@
-import { AppState, Exercise, LogEntry, SetEntry } from './types';
+import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry } from './types';
 
 function generateId(prefix: string = 'id'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
+}
+
+function sanitizeLabel(label?: string | null): string | null {
+  if (!label) return null;
+  const trimmed = label.replace(/[()]/g, '').trim();
+  if (!trimmed) return null;
+  return trimmed.toUpperCase();
+}
+
+function sanitizeMetadata(metadata?: ExerciseMetadataInput): { shortCode: string | null; tags: string[] } {
+  const shortCode = sanitizeLabel(metadata?.shortCode);
+  const tags = Array.from(
+    new Set(
+      (metadata?.tags ?? [])
+        .map((tag) => sanitizeLabel(tag))
+        .filter((tag): tag is string => Boolean(tag))
+    )
+  );
+
+  return {
+    shortCode,
+    tags,
+  };
 }
 
 export function addLogEntry(state: AppState, text: string): AppState {
@@ -20,14 +43,22 @@ export function addLogEntry(state: AppState, text: string): AppState {
   };
 }
 
-export function addExercise(state: AppState, blockId: string, name: string): AppState {
+export function addExercise(
+  state: AppState,
+  blockId: string,
+  name: string,
+  metadata?: ExerciseMetadataInput
+): AppState {
   const trimmed = name.trim();
   if (!trimmed) return state;
+  const meta = sanitizeMetadata(metadata);
 
   const newExercise: Exercise = {
     id: generateId('ex'),
     blockId,
     name: trimmed,
+    shortCode: meta.shortCode ?? undefined,
+    tags: meta.tags,
   };
 
   return {
@@ -40,9 +71,10 @@ export function addExerciseWithSets(
   state: AppState,
   blockId: string,
   name: string,
-  sets: Array<{ weight: number; reps: number }>
+  sets: Array<{ weight: number; reps: number }>,
+  metadata?: ExerciseMetadataInput
 ): AppState {
-  const res = addExerciseWithSetsResult(state, blockId, name, sets);
+  const res = addExerciseWithSetsResult(state, blockId, name, sets, metadata);
   return res ? res.nextState : state;
 }
 
@@ -50,10 +82,12 @@ export function addExerciseWithSetsResult(
   state: AppState,
   blockId: string,
   name: string,
-  sets: Array<{ weight: number; reps: number }>
+  sets: Array<{ weight: number; reps: number }>,
+  metadata?: ExerciseMetadataInput
 ): { nextState: AppState; exerciseId: string } | null {
   const trimmed = name.trim();
   if (!trimmed) return null;
+  const meta = sanitizeMetadata(metadata);
   const validSets = sets.filter(
     (s) =>
       Number.isFinite(s.weight) &&
@@ -67,6 +101,8 @@ export function addExerciseWithSetsResult(
     id: generateId('ex'),
     blockId,
     name: trimmed,
+    shortCode: meta.shortCode ?? undefined,
+    tags: meta.tags,
   };
   const createdAt = new Date().toISOString();
   const newSets: SetEntry[] = validSets.map((s) => ({
@@ -87,14 +123,28 @@ export function addExerciseWithSetsResult(
   };
 }
 
-export function renameExercise(state: AppState, exerciseId: string, name: string): AppState {
+export function renameExercise(
+  state: AppState,
+  exerciseId: string,
+  name: string,
+  metadata?: ExerciseMetadataInput
+): AppState {
   const trimmed = name.trim();
   if (!trimmed) return state;
+  const metaProvided = typeof metadata !== 'undefined';
+  const meta = sanitizeMetadata(metadata);
+
   return {
     ...state,
-    exercises: state.exercises.map((ex) =>
-      ex.id === exerciseId ? { ...ex, name: trimmed } : ex
-    ),
+    exercises: state.exercises.map((ex) => {
+      if (ex.id !== exerciseId) return ex;
+      const next: Exercise = { ...ex, name: trimmed };
+      if (metaProvided) {
+        next.shortCode = meta.shortCode ?? undefined;
+        next.tags = meta.tags;
+      }
+      return next;
+    }),
   };
 }
 

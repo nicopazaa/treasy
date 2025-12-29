@@ -20,6 +20,7 @@ import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
+import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
 interface Props {
   language: AppLanguage;
@@ -166,7 +167,7 @@ export const ExerciseScreen: React.FC<Props> = ({
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.title, { color: tone.accent }]}>{exercise.name}</Text>
+        <Text style={[styles.title, { color: tone.accent }]}>{formatExerciseLabel(exercise)}</Text>
       </View>
 
       <FlatList

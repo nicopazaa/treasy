@@ -14,12 +14,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { TrainingBlock, Exercise, TrainingBlockId, SetEntry } from '../features/workouts/model/types';
+import { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetadataInput } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { UndoToast } from '../shared/ui/UndoToast';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
 interface Props {
   language: AppLanguage;
@@ -29,8 +30,8 @@ interface Props {
   allBlocks: TrainingBlock[];
   onBack: () => void;
   onSelectExercise: (exerciseId: string) => void;
-  onAddExercise: (name: string) => void;
-  onRenameExercise: (exerciseId: string, name: string) => void;
+  onAddExercise: (name: string, metadata?: ExerciseMetadataInput) => void;
+  onRenameExercise: (exerciseId: string, name: string, metadata?: ExerciseMetadataInput) => void;
   onDeleteExercise: (exerciseId: string) => void;
   onRestoreExercise: (exercise: Exercise, sets: SetEntry[], index?: number) => void;
   onReorderExercises: (orderedExerciseIds: string[]) => void;
@@ -57,6 +58,8 @@ export const BlockScreen: React.FC<Props> = ({
 }) => {
   const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
   const [exerciseName, setExerciseName] = useState('');
+  const [exerciseShort, setExerciseShort] = useState('');
+  const [exerciseTags, setExerciseTags] = useState('');
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [movingExerciseId, setMovingExerciseId] = useState<string | null>(null);
@@ -84,8 +87,16 @@ export const BlockScreen: React.FC<Props> = ({
       : block.name;
   }, [block.id, block.name, language]);
 
+  const parseTags = (raw: string): string[] =>
+    raw
+      .split(/[,\s]+/)
+      .map((t) => t.replace(/[()]/g, '').trim())
+      .filter(Boolean);
+
   const openAddModal = () => {
     setExerciseName('');
+    setExerciseShort('');
+    setExerciseTags('');
     setEditingExerciseId(null);
     setError(null);
     setModalMode('add');
@@ -93,6 +104,8 @@ export const BlockScreen: React.FC<Props> = ({
 
   const openEditModal = (exercise: Exercise) => {
     setExerciseName(exercise.name);
+    setExerciseShort(exercise.shortCode ?? '');
+    setExerciseTags((exercise.tags ?? []).join(', '));
     setEditingExerciseId(exercise.id);
     setError(null);
     setModalMode('edit');
@@ -109,12 +122,19 @@ export const BlockScreen: React.FC<Props> = ({
       setError(t(language, 'enterExerciseName'));
       return;
     }
+    const meta: ExerciseMetadataInput = {
+      shortCode: exerciseShort.replace(/[()]/g, '').trim() || null,
+      tags: parseTags(exerciseTags),
+    };
+
     if (modalMode === 'add') {
-      onAddExercise(trimmed);
+      onAddExercise(trimmed, meta);
     } else if (modalMode === 'edit' && editingExerciseId) {
-      onRenameExercise(editingExerciseId, trimmed);
+      onRenameExercise(editingExerciseId, trimmed, meta);
     }
     setExerciseName('');
+    setExerciseShort('');
+    setExerciseTags('');
     setEditingExerciseId(null);
     setError(null);
     setModalMode(null);
@@ -143,7 +163,7 @@ export const BlockScreen: React.FC<Props> = ({
   const confirmDelete = (exercise: Exercise) => {
     Alert.alert(
       t(language, 'deleteExerciseTitle'),
-      t(language, 'deleteExerciseBody', { name: exercise.name }),
+      t(language, 'deleteExerciseBody', { name: formatExerciseLabel(exercise) }),
       [
         { text: t(language, 'cancel'), style: 'cancel' },
         {
@@ -205,7 +225,7 @@ export const BlockScreen: React.FC<Props> = ({
       activeOpacity={0.9}
     >
       <Text style={styles.exerciseTitle} numberOfLines={1}>
-        {item.name}
+        {formatExerciseLabel(item)}
       </Text>
       <TouchableOpacity
         style={styles.kebabButton}
@@ -234,7 +254,7 @@ export const BlockScreen: React.FC<Props> = ({
         {movingExercise ? (
           <View style={[styles.moveBanner, { borderColor: tone.accent }]}>
             <Text style={styles.moveBannerText}>
-              {t(language, 'moveExerciseHint', { name: movingExercise.name })}
+              {t(language, 'moveExerciseHint', { name: formatExerciseLabel(movingExercise) })}
             </Text>
             <TouchableOpacity onPress={() => setMovingExerciseId(null)} hitSlop={8}>
               <Text style={[styles.moveCancelText, { color: tone.accent }]}>{t(language, 'cancel')}</Text>
@@ -247,7 +267,7 @@ export const BlockScreen: React.FC<Props> = ({
         data={exercises}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderExercise}
-        style={{ marginTop: SPACING.xl }}
+        style={{ marginTop: SPACING.lg }}
         contentContainerStyle={[styles.listContent, styles.listPadding]}
         ListEmptyComponent={<Text style={styles.emptyText}>{t(language, 'noExercisesYet')}</Text>}
       />
@@ -260,7 +280,9 @@ export const BlockScreen: React.FC<Props> = ({
       >
         <Pressable style={styles.sheetBackdrop} onPress={() => setExerciseAction(null)}>
           <Pressable style={styles.sheetCard} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>{exerciseAction?.name ?? ''}</Text>
+            <Text style={styles.sheetTitle}>
+              {exerciseAction ? formatExerciseLabel(exerciseAction) : ''}
+            </Text>
 
             <TouchableOpacity
               style={styles.sheetAction}
@@ -405,6 +427,30 @@ export const BlockScreen: React.FC<Props> = ({
               onSubmitEditing={handleConfirm}
             />
 
+            <Text style={styles.inputLabel}>{t(language, 'exerciseShortCode')}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t(language, 'exerciseShortCodePlaceholder')}
+              placeholderTextColor="#4B5563"
+              value={exerciseShort}
+              onChangeText={setExerciseShort}
+              autoCapitalize="characters"
+              returnKeyType="next"
+            />
+
+            <Text style={styles.inputLabel}>{t(language, 'exerciseTags')}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t(language, 'exerciseTagsPlaceholder')}
+              placeholderTextColor="#4B5563"
+              value={exerciseTags}
+              onChangeText={setExerciseTags}
+              autoCapitalize="characters"
+              returnKeyType="done"
+              onSubmitEditing={handleConfirm}
+            />
+            <Text style={styles.inputHint}>{t(language, 'exerciseTagsHint')}</Text>
+
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <View style={styles.modalButtons}>
@@ -459,19 +505,20 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
   listContent: {
-    paddingBottom: STICKY_HEIGHT + SPACING.lg,
+    paddingBottom: STICKY_HEIGHT + SPACING.md,
   },
   listPadding: {
     paddingHorizontal: SCREEN_PADDING,
   },
   exerciseCard: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    marginVertical: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginVertical: SPACING.xs,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 56,
   },
   exerciseCardMoving: {
     borderWidth: 2,
@@ -485,11 +532,11 @@ const styles = StyleSheet.create({
     paddingRight: SPACING.md,
   },
   kebabButton: {
-    width: 44,
-    height: 44,
-    minWidth: 44,
-    minHeight: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    minWidth: 40,
+    minHeight: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -638,6 +685,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     color: '#F9FAFB',
     fontSize: TEXT.md,
+  },
+  inputHint: {
+    color: '#6B7280',
+    fontSize: TEXT.xs,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   error: {
     color: '#F97373',

@@ -18,6 +18,7 @@ import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
 type Props = {
   appState: AppState;
@@ -100,12 +101,19 @@ export const QuickLogScreen: React.FC<Props> = ({
     return appState.exercises
       .filter((ex) => ex.blockId === selectedBlockId)
       .slice()
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => formatExerciseLabel(a).localeCompare(formatExerciseLabel(b)));
   }, [appState.exercises, selectedBlockId]);
 
   const selectedExercise = selectedExerciseId
     ? appState.exercises.find((ex) => ex.id === selectedExerciseId) ?? null
     : null;
+
+  const pendingExerciseLabel = useMemo(() => {
+    if (!pendingExercise) return '';
+    const found = appState.exercises.find((ex) => ex.id === pendingExercise.id);
+    if (found) return formatExerciseLabel(found);
+    return pendingExercise.name;
+  }, [appState.exercises, pendingExercise]);
 
   const todayLogs: LogEntry[] = useMemo(() => {
     const logs = appState.logs ?? [];
@@ -239,7 +247,7 @@ export const QuickLogScreen: React.FC<Props> = ({
             >
               <Text style={styles.selectLabel}>{t(language, 'exercises')}</Text>
               <Text style={styles.selectValue}>
-                {selectedExercise ? selectedExercise.name : t(language, 'enterExerciseName')}
+                {selectedExercise ? formatExerciseLabel(selectedExercise) : t(language, 'enterExerciseName')}
               </Text>
               <Text style={[styles.chevron, !selectedBlockId && styles.chevronDisabled]}>
                 {exercisesOpen ? 'v' : '>'}
@@ -261,7 +269,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                         activeOpacity={0.9}
                       >
                         <View style={[styles.dot, { backgroundColor: getBlockTone(selectedBlockId).accent }]} />
-                        <Text style={styles.selectRowText}>{ex.name}</Text>
+                        <Text style={styles.selectRowText}>{formatExerciseLabel(ex)}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -313,7 +321,9 @@ export const QuickLogScreen: React.FC<Props> = ({
       <Modal visible={weightModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
           <Pressable style={styles.dialogCard} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>{selectedExercise?.name ?? ''}</Text>
+            <Text style={styles.dialogTitle}>
+              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
+            </Text>
             <Text style={styles.dialogSubtitle}>{t(language, 'weightKg')}</Text>
             <TextInput
               style={styles.dialogInput}
@@ -354,7 +364,9 @@ export const QuickLogScreen: React.FC<Props> = ({
       <Modal visible={repsModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
           <Pressable style={styles.dialogCard} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>{selectedExercise?.name ?? ''}</Text>
+            <Text style={styles.dialogTitle}>
+              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
+            </Text>
             <Text style={styles.dialogSubtitle}>{t(language, 'reps')}</Text>
             <TextInput
               style={styles.dialogInput}
@@ -399,7 +411,7 @@ export const QuickLogScreen: React.FC<Props> = ({
         <Pressable style={styles.sheetBackdrop} onPress={() => setPendingExercise(null)}>
           <Pressable style={styles.sheetCard} onPress={() => {}}>
             <Text style={styles.sheetTitle}>
-              {t(language, 'newExerciseFound', { name: pendingExercise?.name ?? '' })}
+              {t(language, 'newExerciseFound', { name: pendingExerciseLabel })}
             </Text>
             <Text style={styles.sheetSubtitle}>{t(language, 'chooseMuscleGroup')}</Text>
 

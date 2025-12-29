@@ -24,6 +24,13 @@ export interface Exercise {
   id: string;
   blockId: string;
   name: string;
+  shortCode?: string | null;
+  tags?: string[];
+}
+
+export interface ExerciseMetadataInput {
+  shortCode?: string | null;
+  tags?: string[];
 }
 
 export interface SetEntry {
@@ -56,4 +63,3 @@ export interface AppState {
   sets: SetEntry[];
   logs?: LogEntry[];
 }
-

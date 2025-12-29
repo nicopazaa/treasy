@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, PanResponder, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AppState, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
+import { AppState, ExerciseMetadataInput, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
 import {
   addExercise,
   addExerciseWithSets,
@@ -34,6 +34,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
 import { t } from './src/shared/i18n/i18n';
+import { formatExerciseLabel } from './src/shared/utils/exerciseLabel';
 import type { NavState, ScreenName } from './src/app/navigation/types';
 
 type NavHistoryState = {
@@ -83,6 +84,21 @@ function normalizeExerciseBlocks(state: AppState): AppState {
   });
   if (!changed) return state;
   return { ...state, exercises };
+}
+
+function splitNameAndCodes(raw: string): { name: string; metadata: ExerciseMetadataInput } {
+  const matches = Array.from(raw.matchAll(/\(([^)]+)\)/g))
+    .map((m) => (m[1] ?? '').trim())
+    .filter(Boolean);
+  const name = raw.replace(/\s*\([^)]+\)\s*/g, ' ').replace(/\s+/g, ' ').trim() || raw.trim();
+  const [shortCode, ...tags] = matches;
+  return {
+    name,
+    metadata: {
+      shortCode: shortCode ?? null,
+      tags,
+    },
+  };
 }
 
 export default function App() {
@@ -292,7 +308,10 @@ export default function App() {
     const blockHint = options?.blockId ?? null;
 
     if (parsed) {
-      const existing = findExerciseFuzzy(next, parsed.exerciseName);
+      const { name: parsedName, metadata } = splitNameAndCodes(parsed.exerciseName);
+      const existing =
+        findExerciseFuzzy(next, parsed.exerciseName) ??
+        (parsedName !== parsed.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
       if (existing) {
         next = addSetsForExercise(next, existing.id, parsed.sets);
       } else {
@@ -306,13 +325,17 @@ export default function App() {
         const created = addExerciseWithSetsResult(
           next,
           targetBlock,
-          parsed.exerciseName,
-          parsed.sets
+          parsedName,
+          parsed.sets,
+          metadata
         );
         if (created) {
           next = created.nextState;
+          const createdExercise =
+            next.exercises.find((ex) => ex.id === created.exerciseId) ?? null;
+          const label = createdExercise ? formatExerciseLabel(createdExercise) : parsedName;
           setAppState(next);
-          return { newExerciseId: created.exerciseId, newExerciseName: parsed.exerciseName };
+          return { newExerciseId: created.exerciseId, newExerciseName: label };
         }
       }
     }
@@ -328,7 +351,8 @@ export default function App() {
       const exercise = prev.exercises.find((ex) => ex.id === exerciseId);
       const language = prev.language ?? 'en';
       const weightText = language === 'nb' ? String(weight).replace('.', ',') : String(weight);
-      const logText = exercise ? `${exercise.name} ${weightText}x${reps}` : `${weightText}x${reps}`;
+      const exerciseLabel = exercise ? formatExerciseLabel(exercise) : null;
+      const logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
 
       let next = addSet(prev, exerciseId, weight, reps);
       next = addLogEntry(next, logText);
@@ -440,16 +464,16 @@ export default function App() {
                 prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
               );
             }}
-            onAddExercise={(name) => {
-              setAppState((prev) =>
-                prev ? addExercise(prev, currentBlock.id, name) : prev
-              );
-            }}
-            onRenameExercise={(exerciseId, name) => {
-              setAppState((prev) =>
-                prev ? renameExercise(prev, exerciseId, name) : prev
-              );
-            }}
+          onAddExercise={(name, metadata) => {
+            setAppState((prev) =>
+              prev ? addExercise(prev, currentBlock.id, name, metadata) : prev
+            );
+          }}
+          onRenameExercise={(exerciseId, name, metadata) => {
+            setAppState((prev) =>
+              prev ? renameExercise(prev, exerciseId, name, metadata) : prev
+            );
+          }}
             onDeleteExercise={(exerciseId) => {
               setAppState((prev) =>
                 prev ? deleteExercise(prev, exerciseId) : prev
