@@ -8,6 +8,7 @@ import {
   addExerciseWithSets,
   addExerciseWithSetsResult,
   addLogEntry,
+  addNoteEntry,
   addSet,
   addSetsForExercise,
   addCardioEntry,
@@ -35,6 +36,7 @@ import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
+import { parseNoteText } from './src/features/notes';
 import { t } from './src/shared/i18n/i18n';
 import { formatExerciseLabel } from './src/shared/utils/exerciseLabel';
 import type { NavState, ScreenName } from './src/app/navigation/types';
@@ -101,6 +103,52 @@ function splitNameAndCodes(raw: string): { name: string; metadata: ExerciseMetad
       tags,
     },
   };
+}
+
+function logWorkoutsFromNote(state: AppState, noteText: string): AppState {
+  let parsedExercises;
+  try {
+    parsedExercises = parseNoteText(noteText);
+  } catch (e) {
+    console.warn('Failed to parse note text', e);
+    return state;
+  }
+
+  if (!parsedExercises.length) return state;
+
+  let next = state;
+
+  for (const entry of parsedExercises) {
+    const { name: parsedName, metadata } = splitNameAndCodes(entry.exerciseName);
+    const sets = entry.sets
+      .filter((s) => Number.isFinite(s.weight) && Number.isFinite(s.reps) && s.weight >= 0 && s.reps > 0)
+      .map((s) => ({ weight: s.weight, reps: s.reps }));
+    if (!parsedName || sets.length === 0) continue;
+
+    const existing =
+      findExerciseFuzzy(next, entry.exerciseName) ??
+      (parsedName !== entry.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
+
+    if (existing) {
+      const allBodyweight = entry.sets.every((s) => s.isBodyweight);
+      next = addSetsForExercise(next, existing.id, sets, allBodyweight ? { isBodyweight: true } : undefined);
+      continue;
+    }
+
+    const inferredBlock = inferBlockIdFromExercise(entry.exerciseName);
+    const allowedBlocks = new Set(next.blocks.map((b) => b.id));
+    const targetBlock =
+      (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
+        ?? next.blocks[0]?.id
+        ?? 'chest';
+
+    const createdResult = addExerciseWithSetsResult(next, targetBlock, parsedName, sets, metadata);
+    if (createdResult) {
+      next = createdResult.nextState;
+    }
+  }
+
+  return next;
 }
 
 function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
@@ -302,7 +350,10 @@ export default function App() {
   const handleAddNote = (text: string) => {
     setAppState((prev) => {
       if (!prev) return prev;
-      return addLogEntry(prev, text);
+      let next = addNoteEntry(prev, text);
+      next = addLogEntry(next, text);
+      next = logWorkoutsFromNote(next, text);
+      return next;
     });
   };
 

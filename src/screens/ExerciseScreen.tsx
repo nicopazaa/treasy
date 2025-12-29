@@ -21,6 +21,7 @@ import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from 
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
+import { Surface } from '../shared/ui/Surface';
 
 interface Props {
   language: AppLanguage;
@@ -295,6 +296,7 @@ export const ExerciseScreen: React.FC<Props> = ({
               keyboardType="numeric"
               value={editWeight}
               onChangeText={setEditWeight}
+              style={styles.inputField}
             />
             <LabeledInput
               label={t(language, 'reps')}
@@ -302,6 +304,7 @@ export const ExerciseScreen: React.FC<Props> = ({
               keyboardType="numeric"
               value={editReps}
               onChangeText={setEditReps}
+              style={styles.inputField}
             />
 
             {editError ? <Text style={styles.error}>{editError}</Text> : null}
@@ -352,11 +355,12 @@ const styles = StyleSheet.create({
   },
   inputCard: {
     marginTop: SPACING.lg,
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
     padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: '#1F2937',
+  },
+  inputField: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#0B1220',
   },
   lastSetRow: {
     marginBottom: SPACING.sm,
@@ -380,9 +384,7 @@ const styles = StyleSheet.create({
   aiBox: {
     marginTop: SPACING.lg,
     padding: SPACING.md,
-    backgroundColor: '#0F172A',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
+    gap: SPACING.sm,
   },
   aiTitle: {
     color: '#F9FAFB',
@@ -411,8 +413,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#111827',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
     minHeight: 52,
   },
   setInfo: {
@@ -596,7 +598,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
 }) => {
   return (
     <View>
-      <View style={styles.inputCard}>
+      <Surface style={styles.inputCard}>
         {lastSet ? (
           <View style={styles.lastSetRow}>
             <Text style={styles.lastSetText}>
@@ -611,6 +613,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
           keyboardType="numeric"
           value={weight}
           onChangeText={onChangeWeight}
+          style={styles.inputField}
         />
         <LabeledInput
           label={t(language, 'reps')}
@@ -618,6 +621,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
           keyboardType="numeric"
           value={reps}
           onChangeText={onChangeReps}
+          style={styles.inputField}
         />
 
         <TouchableOpacity
@@ -631,13 +635,13 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
             {t(language, 'copyPreviousSet')}
           </Text>
         </TouchableOpacity>
-      </View>
+      </Surface>
 
-      <View style={[styles.aiBox, { borderColor: toneAccent }]}>
+      <Surface style={styles.aiBox} variant="raised">
         <Text style={styles.aiTitle}>{t(language, 'aiSearchTitle')}</Text>
         <Text style={styles.aiText}>{t(language, 'aiSearchHint')}</Text>
         <PrimaryButton title={t(language, 'search')} onPress={onAskAIForExercise} />
-      </View>
+      </Surface>
 
       <Text style={styles.historyTitle}>{t(language, 'history')}</Text>
     </View>

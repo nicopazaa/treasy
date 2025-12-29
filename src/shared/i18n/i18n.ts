@@ -133,6 +133,7 @@ const STRINGS = {
     'appa.prompt.lastForExercise': 'What did I do last in {exercise}?',
 
     quickLogPlaceholder: 'Write: Bench 80x2, 70x5, 60x8',
+    'quicklog.placeholder.start': 'Start logging – type e.g. Bench press 80x2, or use quick picks below',
     quickLogSaved: 'Saved.',
     quickLogButton: 'Log',
     liveLogTitle: 'Log (today)',
@@ -327,6 +328,7 @@ const STRINGS = {
     'appa.prompt.lastForExercise': 'Hva tok jeg sist i {exercise}?',
 
     quickLogPlaceholder: 'Skriv: Benk 80x2, 70x5, 60x8',
+    'quicklog.placeholder.start': 'Start å logge – skriv f.eks: Benkpress 80x2, eller bruk hurtigvalg nedenfor',
     quickLogSaved: 'Lagret.',
     quickLogButton: 'Logg',
     liveLogTitle: 'Logg (i dag)',
@@ -521,6 +523,7 @@ const STRINGS = {
     'appa.prompt.lastForExercise': '¿Qué hice la última vez en {exercise}?',
 
     quickLogPlaceholder: 'Escribe: Press banca 80x2, 70x5, 60x8',
+    'quicklog.placeholder.start': 'Empieza a registrar – escribe por ejemplo: Press banca 80x2, o usa accesos rápidos abajo',
     quickLogSaved: 'Guardado.',
     quickLogButton: 'Registrar',
     liveLogTitle: 'Registro (hoy)',

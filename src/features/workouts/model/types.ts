@@ -17,6 +17,12 @@ export interface LogEntry {
   pinned?: boolean;
 }
 
+export interface NoteEntry {
+  id: string;
+  text: string;
+  createdAt: string; // ISO string
+}
+
 export interface TrainingBlock {
   id: TrainingBlockId | string;
   name: string;
@@ -81,4 +87,5 @@ export interface AppState {
   sets: SetEntry[];
   cardioEntries: CardioEntry[];
   logs?: LogEntry[];
+  notes?: NoteEntry[];
 }

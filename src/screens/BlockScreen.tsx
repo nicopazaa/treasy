@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   Modal,
   TextInput,
@@ -21,6 +20,8 @@ import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
+import { BlockExerciseItem } from '../features/workouts/ui/BlockExerciseItem';
+import { BlockExerciseList } from '../features/workouts/ui/BlockExerciseList';
 
 interface Props {
   language: AppLanguage;
@@ -199,8 +200,8 @@ export const BlockScreen: React.FC<Props> = ({
       return cur;
     }, null);
     if (!best) return null;
-    if (best.isBodyweight || best.weight === 0) return `BW x ${best.reps}`;
-    return `${best.weight} kg x ${best.reps}`;
+    if (best.isBodyweight || best.weight === 0) return `BW × ${best.reps}`;
+    return `${best.weight} kg × ${best.reps}`;
   };
 
   const reorderTo = (targetExerciseId: string) => {
@@ -226,58 +227,28 @@ export const BlockScreen: React.FC<Props> = ({
 
   const renderExercise = ({ item }: { item: Exercise }) => {
     const bestLabel = bestSetLabel(item.id);
+    const isMoving = movingExerciseId === item.id;
+
+    const handlePress = () => {
+      if (movingExerciseId) {
+        reorderTo(item.id);
+        return;
+      }
+      onSelectExercise(item.id);
+    };
 
     return (
-      <TouchableOpacity
-        style={[
-          styles.exerciseCard,
-          { borderColor: tone.accent, backgroundColor: tone.soft },
-          movingExerciseId === item.id && styles.exerciseCardMoving,
-        ]}
-        onPress={() => {
-          if (movingExerciseId) {
-            reorderTo(item.id);
-            return;
-          }
-          onSelectExercise(item.id);
-        }}
+      <BlockExerciseItem
+        exercise={item}
+        bestLabel={bestLabel}
+        isMoving={isMoving}
+        onPress={handlePress}
         onLongPress={() => setMovingExerciseId(item.id)}
-        delayLongPress={240}
-        activeOpacity={0.9}
-      >
-        <View style={styles.exerciseTitleRow}>
-          <Text style={styles.exerciseTitle} numberOfLines={1} ellipsizeMode="tail">
-            {formatExerciseLabel(item)}
-          </Text>
-        </View>
-
-        <View style={styles.exerciseMetaRow}>
-          <TouchableOpacity
-            style={styles.kebabButton}
-            onPress={(event) => {
-              event.stopPropagation?.();
-              openExerciseActions(item);
-            }}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.kebabText, { color: tone.accent }]}>{'...'}</Text>
-          </TouchableOpacity>
-
-          {bestLabel ? (
-            <View style={styles.bestSetRow}>
-              <Text style={styles.bestSetText} numberOfLines={1} ellipsizeMode="tail">
-                {bestLabel}
-              </Text>
-              <Text style={styles.bestSetEmoji} accessibilityLabel="Bestesett">
-                🌟
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </TouchableOpacity>
+        onPressMenu={() => openExerciseActions(item)}
+      />
     );
   };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -301,14 +272,14 @@ export const BlockScreen: React.FC<Props> = ({
         ) : null}
       </View>
 
-      <FlatList
-        data={exercises}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderExercise}
-        style={{ marginTop: SPACING.lg }}
-        contentContainerStyle={[styles.listContent, styles.listPadding]}
-        ListEmptyComponent={<Text style={styles.emptyText}>{t(language, 'noExercisesYet')}</Text>}
-      />
+      <View style={[styles.listPadding, styles.listWrapper]}>
+        <BlockExerciseList
+          data={exercises}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderExercise}
+          emptyText={t(language, 'noExercisesYet')}
+        />
+      </View>
 
       <Modal
         visible={Boolean(exerciseAction)}
@@ -542,79 +513,11 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: TEXT.sm,
   },
-  listContent: {
-    paddingBottom: STICKY_HEIGHT + SPACING.md,
-  },
   listPadding: {
     paddingHorizontal: SCREEN_PADDING,
   },
-  exerciseCard: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.md,
-    marginVertical: SPACING.xs,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 56,
-    gap: SPACING.md,
-  },
-  exerciseCardMoving: {
-    borderWidth: 2,
-    backgroundColor: '#0B1220',
-  },
-  exerciseTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.md,
-    fontWeight: '700',
-    flex: 1,
-  },
-  exerciseMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    justifyContent: 'flex-end',
-    flexShrink: 0,
-  },
-  exerciseTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bestSetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    maxWidth: 180,
-    flexShrink: 1,
-  },
-  bestSetText: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
-  bestSetEmoji: {
-    marginLeft: SPACING.xs,
-    fontSize: TEXT.md,
-    lineHeight: TEXT.md + 2,
-    color: COLORS.warning,
-  },
-  kebabButton: {
-    width: 40,
-    height: 40,
-    minWidth: 40,
-    minHeight: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  kebabText: {
-    fontSize: 22,
-    fontWeight: '800',
-    lineHeight: 22,
-    marginTop: -2,
+  listWrapper: {
+    marginTop: SPACING.lg,
   },
   moveBanner: {
     marginTop: SPACING.md,
@@ -633,11 +536,6 @@ const styles = StyleSheet.create({
   moveCancelText: {
     fontSize: TEXT.sm,
     fontWeight: '800',
-  },
-  emptyText: {
-    color: '#9CA3AF',
-    marginTop: SPACING.lg,
-    fontSize: TEXT.sm,
   },
   toastContainer: {
     position: 'absolute',

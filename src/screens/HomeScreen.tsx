@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,12 @@ import {
   Image,
   ImageSourcePropType,
   TextInput,
+  Animated,
+  AccessibilityInfo,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NavigationContext } from '@react-navigation/native';
 import { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
@@ -61,6 +65,8 @@ type LastWorkoutState =
   | {
       status: 'ready';
       dateLabel: string;
+      totalVolumeLabel: string;
+      examples: string[];
       exercise: {
         id: string;
         name: string;
@@ -71,15 +77,15 @@ type LastWorkoutState =
     };
 
 const lastWorkoutTitle = (language: AppState['language']): string => {
-  if (language === 'nb') return 'Siste økt';
-  if (language === 'es') return 'Última sesión';
-  return 'Last session';
+  if (language === 'nb') return 'Forrige økt';
+  if (language === 'es') return 'Sesión anterior';
+  return 'Previous session';
 };
 
 const openLogLabel = (language: AppState['language']): string => {
-  if (language === 'nb') return 'Åpne logg';
-  if (language === 'es') return 'Abrir registro';
-  return 'Open log';
+  if (language === 'nb') return 'Se tidligere økter';
+  if (language === 'es') return 'Ver sesiones previas';
+  return 'See previous sessions';
 };
 
 const formatLastWorkoutDate = (dateKey: string, language: AppState['language']): string => {
@@ -146,9 +152,69 @@ export const HomeScreen: React.FC<Props> = ({
   onAddNote,
 }) => {
   const language = appState.language ?? 'en';
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const isWideLayout = screenWidth >= 720;
+  const headerTopPadding = insets.top + 4; // headerTopPadding: safe area inset plus small offset
+  const headerBottomPadding = 8; // headerBottomPadding: space inside header below content
+  const headerToQuickLogGap = 8; // gap between header and the QuickLog card
   const [analysisOpen, setAnalysisOpen] = useState(true);
   const [noteText, setNoteText] = useState('');
-  const isWeb = Platform.OS === 'web';
+  const [notesFocused, setNotesFocused] = useState(false);
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+  const [analysisAnchorY, setAnalysisAnchorY] = useState<number | null>(null);
+  const [exampleIndex, setExampleIndex] = useState(0);
+  const exampleAnim = useMemo(() => new Animated.Value(1), []);
+  const [lastExampleIndex, setLastExampleIndex] = useState(0);
+  const lastExampleAnim = useMemo(() => new Animated.Value(1), []);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const tickerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const tickerAnimatingRef = useRef(false);
+  const lastExampleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastExampleAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const lastExampleAnimatingRef = useRef(false);
+  const navigationContext = useContext(NavigationContext);
+  const clearTickerInterval = useCallback(() => {
+    if (tickerIntervalRef.current) {
+      clearInterval(tickerIntervalRef.current);
+      tickerIntervalRef.current = null;
+    }
+  }, []);
+  const stopTickerAnimation = useCallback(() => {
+    if (tickerAnimationRef.current) {
+      tickerAnimationRef.current.stop();
+      tickerAnimationRef.current = null;
+    }
+  }, []);
+  const resetTicker = useCallback(() => {
+    stopTickerAnimation();
+    tickerAnimatingRef.current = false;
+    exampleAnim.stopAnimation(() => exampleAnim.setValue(1));
+  }, [exampleAnim, stopTickerAnimation]);
+  const clearLastExampleInterval = useCallback(() => {
+    if (lastExampleIntervalRef.current) {
+      clearInterval(lastExampleIntervalRef.current);
+      lastExampleIntervalRef.current = null;
+    }
+  }, []);
+  const stopLastExampleAnimation = useCallback(() => {
+    if (lastExampleAnimationRef.current) {
+      lastExampleAnimationRef.current.stop();
+      lastExampleAnimationRef.current = null;
+    }
+  }, []);
+  const resetLastExample = useCallback(() => {
+    stopLastExampleAnimation();
+    lastExampleAnimatingRef.current = false;
+    lastExampleAnim.stopAnimation(() => lastExampleAnim.setValue(1));
+  }, [lastExampleAnim, stopLastExampleAnimation]);
+  const notesPlaceholder =
+    language === 'nb'
+      ? 'F.eks: logg en øvelse, systemet parser for deg.\nDips 30x10, 30x8'
+      : language === 'es'
+        ? 'Ej.: registra un ejercicio, el sistema lo interpreta.\nFondos 30x10, 30x8'
+        : 'E.g.: log a lift, the system parses it.\nDips 30x10, 30x8';
 
   const { primaryBlocks, otherBlocks } = useMemo(() => {
     const byId: Record<string, TrainingBlock> = {};
@@ -165,6 +231,7 @@ export const HomeScreen: React.FC<Props> = ({
   }, [appState.blocks]);
 
   const nickname = appState.nickname?.trim() ?? '';
+  const quickLogExamples = useMemo(() => ['Benkpress 80x5, 90x3', 'Markløft 100x5'], []);
 
   const labelForBlock = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
@@ -226,6 +293,114 @@ export const HomeScreen: React.FC<Props> = ({
     };
   }, [analytics, language]);
 
+  useEffect(() => {
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (!cancelled) setReduceMotionEnabled(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener?.('reduceMotionChanged', (enabled) => {
+      setReduceMotionEnabled(enabled);
+    });
+    return () => {
+      cancelled = true;
+      subscription?.remove?.();
+    };
+  }, []);
+
+  const shouldUseNativeDriver = Platform.OS !== 'web' && !reduceMotionEnabled;
+
+  const momentumTitle = t(language, 'analysis.momentum.title');
+  const momentumBasedOn = t(language, 'analysis.momentum.basedOn7d');
+  const momentumMain = !analytics.hasData
+    ? t(language, 'analysis.empty')
+    : analytics.momentum === 'up'
+      ? t(language, 'analysis.momentum.up')
+      : analytics.momentum === 'down'
+        ? t(language, 'analysis.momentum.down')
+        : t(language, 'analysis.momentum.stable');
+  const momentumColor = !analytics.hasData
+    ? '#9CA3AF'
+    : analytics.momentum === 'up'
+      ? '#22C55E'
+      : analytics.momentum === 'down'
+        ? '#F97316'
+        : '#9CA3AF';
+
+  const scrollToAnalysis = useCallback(() => {
+    setAnalysisOpen(true);
+    if (analysisAnchorY == null) return;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(analysisAnchorY - 12, 0), animated: true });
+    });
+  }, [analysisAnchorY]);
+
+  const runTickerCycle = useCallback(() => {
+    if (reduceMotionEnabled) return;
+    if (tickerAnimatingRef.current) return;
+    tickerAnimatingRef.current = true;
+
+    stopTickerAnimation();
+    const fadeOut = Animated.timing(exampleAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: shouldUseNativeDriver,
+    });
+    tickerAnimationRef.current = fadeOut;
+    fadeOut.start(({ finished }) => {
+      if (!finished) {
+        tickerAnimatingRef.current = false;
+        return;
+      }
+
+      setExampleIndex((idx) => (idx + 1) % quickLogExamples.length);
+      exampleAnim.setValue(0);
+
+      const fadeIn = Animated.timing(exampleAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: shouldUseNativeDriver,
+      });
+      tickerAnimationRef.current = fadeIn;
+      fadeIn.start(({ finished: finishedIn }) => {
+        tickerAnimatingRef.current = false;
+        if (finishedIn) {
+          tickerAnimationRef.current = null;
+        }
+      });
+    });
+  }, [exampleAnim, quickLogExamples.length, reduceMotionEnabled, shouldUseNativeDriver, stopTickerAnimation]);
+
+  const startTicker = useCallback(() => {
+    clearTickerInterval();
+    resetTicker();
+    if (reduceMotionEnabled) return;
+    runTickerCycle();
+    tickerIntervalRef.current = setInterval(runTickerCycle, 3200);
+  }, [clearTickerInterval, resetTicker, reduceMotionEnabled, runTickerCycle]);
+
+  const stopTicker = useCallback(() => {
+    clearTickerInterval();
+    resetTicker();
+  }, [clearTickerInterval, resetTicker]);
+
+  useEffect(() => {
+    if (navigationContext?.addListener) {
+      const focusSub = navigationContext.addListener('focus', startTicker);
+      const blurSub = navigationContext.addListener('blur', stopTicker);
+      startTicker();
+      return () => {
+        focusSub?.remove();
+        blurSub?.remove();
+        stopTicker();
+      };
+    }
+
+    startTicker();
+    return () => {
+      stopTicker();
+    };
+  }, [navigationContext, startTicker, stopTicker]);
+
   const resolveBlockLabel = useMemo(() => {
     const known = new Set<string>([...ORDER, 'cardio']);
     const byId = new Map(appState.blocks.map((b) => [b.id, b.name] as const));
@@ -248,6 +423,8 @@ export const HomeScreen: React.FC<Props> = ({
     const id = blockId as TrainingBlockId;
     return BLOCK_ICONS[id] ?? null;
   };
+
+  
 
   const lastWorkout = useMemo<LastWorkoutState>(() => {
     const noWorkouts: LastWorkoutState = {
@@ -273,10 +450,43 @@ export const HomeScreen: React.FC<Props> = ({
     const name = mainExercise.exerciseLabel || mainExercise.exerciseName;
     const volume = calculateGroupVolume(mainExercise);
     const setsLabel = formatSetsLabel(language, mainExercise.sets);
+    const totalVolume = grouped.reduce((sum, g) => sum + calculateGroupVolume(g), 0);
+    const totalVolumeLabel = (() => {
+      const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
+      const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+      const unit = t(language ?? 'en', 'units.kg');
+      const title =
+        language === 'es' ? 'Volumen total' : language === 'nb' ? 'Total volum' : 'Total volume';
+      return `${title}: ${formatter.format(Math.round(totalVolume))} ${unit}`;
+    })();
 
-    return {
-      status: 'ready',
-      dateLabel: formatLastWorkoutDate(dateKey, language),
+    const examples = grouped
+      .map((g) => {
+        const title = g.exerciseLabel || g.exerciseName;
+        const primarySet =
+          g.sets.find(
+            (s) =>
+              s.setType !== 'cardio' && Number.isFinite(s.reps) && s.reps > 0 && Number.isFinite(s.weight)
+          ) ||
+          g.sets.find((s) => s.setType !== 'cardio' && Number.isFinite(s.reps) && s.reps > 0) ||
+          null;
+        if (primarySet && Number.isFinite(primarySet.weight) && primarySet.reps) {
+          const weight = Math.round(primarySet.weight ?? 0);
+          const reps = primarySet.reps;
+          return `${title}: ${weight}kg x ${reps}r`;
+        }
+        if (primarySet && primarySet.reps) {
+          return `${title}: ${primarySet.reps}r`;
+        }
+        return title || null;
+      })
+      .filter((v): v is string => Boolean(v));
+
+  return {
+    status: 'ready',
+    dateLabel: formatLastWorkoutDate(dateKey, language),
+    totalVolumeLabel,
+    examples,
       exercise: {
         id: mainExercise.id,
         name,
@@ -287,24 +497,96 @@ export const HomeScreen: React.FC<Props> = ({
     };
   }, [appState, language]);
 
+  useEffect(() => {
+    clearLastExampleInterval();
+    resetLastExample();
+    setLastExampleIndex(0);
+
+    if (reduceMotionEnabled) return;
+    if (lastWorkout.status !== 'ready') return;
+    const items = lastWorkout.examples;
+    if (!items.length) return;
+
+    const runCycle = () => {
+      if (lastExampleAnimatingRef.current) return;
+      lastExampleAnimatingRef.current = true;
+
+      stopLastExampleAnimation();
+      const fadeOut = Animated.timing(lastExampleAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: shouldUseNativeDriver,
+      });
+      lastExampleAnimationRef.current = fadeOut;
+      fadeOut.start(({ finished }) => {
+        if (!finished) {
+          lastExampleAnimatingRef.current = false;
+          return;
+        }
+        setLastExampleIndex((idx) => (idx + 1) % items.length);
+        lastExampleAnim.setValue(0);
+
+        const fadeIn = Animated.timing(lastExampleAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: shouldUseNativeDriver,
+        });
+        lastExampleAnimationRef.current = fadeIn;
+        fadeIn.start(({ finished: finishedIn }) => {
+          lastExampleAnimatingRef.current = false;
+          if (finishedIn) {
+            lastExampleAnimationRef.current = null;
+          }
+        });
+      });
+    };
+
+    runCycle();
+    if (items.length > 1) {
+      lastExampleIntervalRef.current = setInterval(runCycle, 3200);
+    }
+
+    return () => {
+      clearLastExampleInterval();
+      resetLastExample();
+    };
+  }, [
+    clearLastExampleInterval,
+    lastExampleAnim,
+    lastWorkout.examples,
+    lastWorkout.status,
+    reduceMotionEnabled,
+    resetLastExample,
+    shouldUseNativeDriver,
+    stopLastExampleAnimation,
+  ]);
+
   const lastWorkoutCard = (
     <View style={styles.lastWorkoutCard}>
-      <Text style={styles.lastWorkoutTitle}>{lastWorkoutTitle(language)}</Text>
       {lastWorkout.status === 'ready' ? (
         <>
           <Text style={styles.lastWorkoutDate}>{lastWorkout.dateLabel}</Text>
-          <View style={styles.lastWorkoutList}>
-            <View style={styles.lastWorkoutRow}>
-              <View style={[styles.lastDot, { backgroundColor: lastWorkout.exercise.tone.accent }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.lastWorkoutName}>{lastWorkout.exercise.name}</Text>
-                <Text style={styles.lastWorkoutDetail}>{lastWorkout.exercise.volumeLabel}</Text>
-                {lastWorkout.exercise.setsLabel ? (
-                  <Text style={styles.lastWorkoutDetail}>{lastWorkout.exercise.setsLabel}</Text>
-                ) : null}
-              </View>
-            </View>
-          </View>
+          <Text style={styles.lastWorkoutTitle}>{lastWorkoutTitle(language)}</Text>
+          <Text style={styles.lastWorkoutTotal}>{lastWorkout.totalVolumeLabel}</Text>
+          {lastWorkout.examples.length ? (
+            reduceMotionEnabled ? (
+              <Text style={styles.lastWorkoutExample}>{lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}</Text>
+            ) : (
+              <Animated.Text
+                style={[
+                  styles.lastWorkoutExample,
+                  {
+                    opacity: lastExampleAnim,
+                    transform: [
+                      { translateY: lastExampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) },
+                    ],
+                  },
+                ]}
+              >
+                {lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}
+              </Animated.Text>
+            )
+          ) : null}
         </>
       ) : (
         <Text style={styles.lastWorkoutEmpty}>{lastWorkout.message}</Text>
@@ -316,33 +598,29 @@ export const HomeScreen: React.FC<Props> = ({
   );
 
   return (
-    <SafeAreaView style={styles.root}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} bounces>
-        <View style={styles.headerRow}>
-          <View style={styles.brandColumn}>
-            <Image
-              source={require('../assets/treasy-logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-              accessibilityLabel="Treasy"
-            />
-            <Text style={styles.subtitle}>{t(language, 'homeSubtitle')}</Text>
-          </View>
-
+    <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        bounces
+      >
+        <View
+          style={[
+            styles.headerRow,
+            { paddingTop: headerTopPadding, paddingBottom: headerBottomPadding, marginBottom: headerToQuickLogGap },
+          ]}
+        >
+          <Image
+            source={require('../assets/treasy-logo.png')}
+            style={styles.heroLogo}
+            resizeMode="contain"
+            accessibilityLabel="Treasy"
+          />
           <View style={styles.profileColumn}>
             <View style={styles.headerButtonsRow}>
               <TouchableOpacity onPress={onOpenProfile} hitSlop={8} style={styles.profileButton}>
                 <Text style={styles.profileLink}>{t(language, 'profile')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={onOpenAI}
-                hitSlop={8}
-                style={styles.helpButton}
-                activeOpacity={0.85}
-                accessibilityLabel={t(language, 'home.help')}
-              >
-                <Text style={styles.helpIcon}>{'?'}</Text>
               </TouchableOpacity>
             </View>
             {nickname ? <Text style={styles.nickname}>{nickname}</Text> : null}
@@ -350,15 +628,77 @@ export const HomeScreen: React.FC<Props> = ({
         </View>
 
         <TouchableOpacity style={styles.quickLogCard} onPress={onOpenQuickLog} activeOpacity={0.9}>
-          <Text style={styles.quickLogTitle}>{t(language, 'home.quickLog.title')}</Text>
-          <Text style={styles.quickLogText}>{t(language, 'quickLogExample')}</Text>
+          <View style={styles.quickLogTopSection}>
+            <View style={styles.quickLogTitleRow}>
+              <View style={styles.quickLogTitleCluster}>
+                {language === 'nb' ? (
+                  <Text style={styles.quickLogTitle}>
+                    <Text style={styles.quickLogTitleYellow}>Hurtig</Text>
+                    <Text style={styles.quickLogTitleBlue}>logg</Text>
+                  </Text>
+                ) : (
+                  <Text style={styles.quickLogTitle}>{t(language, 'quickLogTitle')}</Text>
+                )}
+                <View style={styles.quickLogBrandInline}>
+                  <Text style={styles.quickLogBrandSubtitle}>{t(language, 'homeSubtitle')}</Text>
+                  <Image
+                    source={require('../assets/treasy-logo.png')}
+                    style={styles.quickLogBrandLogo}
+                    resizeMode="contain"
+                    accessibilityLabel="Treasy"
+                  />
+                </View>
+              </View>
+              <Text style={styles.quickLogEmoji}>{'📌'}</Text>
+            </View>
+            <Text style={styles.quickLogSubtitle}>
+              {language === 'nb' ? 'Trykk her for å komme i gang' : 'Press here to start'}
+            </Text>
+            {reduceMotionEnabled ? (
+              <Text style={styles.quickLogText}>
+                {(language === 'nb' ? 'Skriv: ' : language === 'es' ? 'Escribe: ' : 'Type: ') +
+                  quickLogExamples[exampleIndex]}
+              </Text>
+            ) : (
+              <Animated.Text
+                style={[
+                  styles.quickLogText,
+                  {
+                    opacity: exampleAnim,
+                    transform: [
+                      {
+                        translateY: exampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {(language === 'nb' ? 'Skriv: ' : language === 'es' ? 'Escribe: ' : 'Type: ') +
+                  quickLogExamples[exampleIndex]}
+              </Animated.Text>
+            )}
+          </View>
+
+          <View style={styles.quickLogMomentum}>
+            <Text style={styles.quickLogMomentumTitle}>{momentumTitle}</Text>
+            <Text style={[styles.quickLogMomentumMain, { color: momentumColor }]}>
+              {analytics.momentum === 'up' ? '↑ ' : analytics.momentum === 'down' ? '↓ ' : ''}
+              {momentumMain}
+            </Text>
+            <Text style={styles.quickLogMomentumSub}>{momentumBasedOn}</Text>
+            <TouchableOpacity onPress={scrollToAnalysis} hitSlop={8} activeOpacity={0.8}>
+              <Text style={styles.quickLogMomentumLink}>
+                {language === 'nb' ? 'Mer detaljer' : 'More details'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
 
         <View style={styles.groupsWrapper}>
           <Text style={styles.groupsTitle}>{t(language, 'muscleGroups')}</Text>
 
-          <View style={styles.groupsLayout}>
-            <View style={styles.groupsColumn}>
+          <View style={[styles.groupsLayout, isWideLayout ? styles.groupsLayoutWide : styles.groupsLayoutStack]}>
+            <View style={[styles.groupsColumn, isWideLayout ? styles.columnFlex : styles.columnFull]}>
               <View style={styles.groupsList}>
                 {primaryBlocks.map((block) => {
                   const tone = getBlockTone(block.id);
@@ -388,11 +728,7 @@ export const HomeScreen: React.FC<Props> = ({
                         style={[styles.groupIconWrap, { borderColor: '#1F2937', backgroundColor: '#0F172A' }]}
                       >
                         {icon ? (
-                          <Image
-                            source={icon}
-                            style={[styles.groupIcon, { tintColor: '#3B82F6' }]}
-                            resizeMode="contain"
-                          />
+                            <Image source={icon} style={styles.groupIcon} resizeMode="contain" tintColor="#3B82F6" />
                         ) : (
                           <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                         )}
@@ -423,11 +759,7 @@ export const HomeScreen: React.FC<Props> = ({
                             style={[styles.groupIconWrap, { borderColor: '#1F2937', backgroundColor: '#0F172A' }]}
                           >
                             {icon ? (
-                              <Image
-                                source={icon}
-                                style={[styles.groupIcon, { tintColor: '#3B82F6' }]}
-                                resizeMode="contain"
-                              />
+                          <Image source={icon} style={styles.groupIcon} resizeMode="contain" tintColor="#3B82F6" />
                             ) : (
                               <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                             )}
@@ -441,36 +773,43 @@ export const HomeScreen: React.FC<Props> = ({
               ) : null}
             </View>
 
-            {isWeb ? (
-              <View style={styles.sideColumn}>{lastWorkoutCard}</View>
-            ) : (
-              <View style={styles.sideColumn}>
-                {lastWorkoutCard}
+            <View style={[styles.sideColumn, isWideLayout ? styles.columnFlex : styles.columnFull]}>
+              {lastWorkoutCard}
 
-                <View style={styles.notesCard}>
-                  <Text style={styles.notesTitle}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
-                  <TextInput
-                    style={styles.notesInput}
-                    placeholder={language === 'nb' ? 'Benkpress 50x15' : 'Bench press 50x15'}
-                    placeholderTextColor="#6B7280"
-                    value={noteText}
-                    onChangeText={setNoteText}
-                    multiline
-                  />
-                  <TouchableOpacity
-                    style={[styles.notesButton, noteText.trim() ? null : styles.notesButtonDisabled]}
-                    onPress={() => {
-                      if (!noteText.trim()) return;
-                      onAddNote(noteText.trim());
-                      setNoteText('');
-                    }}
-                    activeOpacity={0.9}
-                  >
-                    <Text style={styles.notesButtonText}>{language === 'nb' ? 'Lagre' : 'Save'}</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.notesCard}>
+                <Text style={styles.notesTitle}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
+                <TextInput
+                  style={styles.notesInput}
+                  placeholder={notesFocused ? '' : notesPlaceholder}
+                  placeholderTextColor="#4B5563"
+                  value={noteText}
+                  onChangeText={setNoteText}
+                  onFocus={() => setNotesFocused(true)}
+                  onBlur={() => setNotesFocused(false)}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={[styles.notesButton, noteText.trim() ? null : styles.notesButtonDisabled]}
+                  onPress={() => {
+                    if (!noteText.trim()) return;
+                    onAddNote(noteText.trim());
+                    setNoteText('');
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.notesButtonText}>{language === 'nb' ? 'Lagre' : 'Save'}</Text>
+                </TouchableOpacity>
               </View>
-            )}
+              <TouchableOpacity
+                onPress={onOpenAI}
+                hitSlop={8}
+                style={[styles.helpButton, styles.helpButtonBelowNotes]}
+                activeOpacity={0.85}
+                accessibilityLabel={t(language, 'home.help')}
+              >
+                <Text style={styles.helpIcon}>{'?'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -479,6 +818,7 @@ export const HomeScreen: React.FC<Props> = ({
             style={styles.analysisHeaderRow}
             onPress={() => setAnalysisOpen((v) => !v)}
             activeOpacity={0.8}
+            onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}
           >
             <Text style={styles.analysisTitle}>{t(language, 'analysis.sectionTitle')}</Text>
             <Text style={styles.chevron}>{analysisOpen ? 'v' : '>'}</Text>
@@ -536,13 +876,17 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: SCREEN_PADDING,
-    paddingTop: Platform.OS === 'ios' ? SPACING.xs : SPACING.xxl,
+    paddingTop: 0,
+  },
+  heroLogo: {
+    width: 90,
+    height: 90,
+    flexShrink: 0,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: SPACING.xl,
   },
   brandColumn: {
     flex: 1,
@@ -569,13 +913,15 @@ const styles = StyleSheet.create({
     minWidth: 44,
     minHeight: 44,
     paddingHorizontal: SPACING.sm,
-    paddingTop: SPACING.xs,
+    paddingVertical: 0,
     alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   profileLink: {
     fontSize: TEXT.sm,
     color: '#60A5FA',
     fontWeight: '600',
+    lineHeight: TEXT.sm + 2,
   },
   nickname: {
     marginTop: 2,
@@ -592,6 +938,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  helpButtonBelowNotes: {
+    alignSelf: 'flex-end',
+    marginTop: SPACING.md,
   },
   helpIcon: {
     color: '#9CA3AF',
@@ -612,20 +962,109 @@ const styles = StyleSheet.create({
   quickLogCard: {
     backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.lg,
+    paddingTop: Platform.OS === 'web' ? 6 : 8,
+    paddingBottom: Platform.OS === 'web' ? 6 : SPACING.sm,
     paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    borderWidth: 1.25,
+    borderColor: 'rgba(234, 179, 8, 0.45)',
     marginBottom: SPACING.xxl,
+    ...Platform.select({
+      web: { minHeight: 140 },
+    }),
+  },
+  quickLogTopSection: {
+    flexGrow: 0,
+  },
+  quickLogTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+    marginTop: 0,
+    marginBottom: SPACING.xs,
+  },
+  quickLogTitleCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    alignSelf: 'flex-start',
+  },
+  quickLogBrandInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  quickLogBrandLogo: {
+    width: 24,
+    height: 24,
+  },
+  quickLogBrandSubtitle: {
+    fontSize: TEXT.sm,
+    color: '#6B7280',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 0,
+  },
+  quickLogMomentum: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    marginTop: 'auto',
+    marginBottom: 10,
+  },
+  quickLogMomentumTitle: {
+    color: '#E5E7EB',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  quickLogMomentumMain: {
+    color: '#22C55E',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  quickLogMomentumSub: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+  },
+  quickLogMomentumLink: {
+    color: '#60A5FA',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    marginTop: 6,
+    textDecorationLine: 'underline',
+  },
+  quickLogTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.lg,
+    fontWeight: '800',
+  },
+  quickLogTitleYellow: {
+    color: '#2563EB',
+  },
+  quickLogTitleBlue: {
+    color: '#2563EB',
   },
   quickLogTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.lg,
     fontWeight: '700',
+    marginBottom: 0,
+  },
+  quickLogEmoji: {
+    alignSelf: 'flex-start',
+    fontSize: TEXT.lg,
+    color: '#F9FAFB',
+  },
+  quickLogSubtitle: {
+    color: '#6B7280',
+    fontSize: TEXT.sm,
     marginBottom: SPACING.xs,
   },
   quickLogText: {
-    color: '#9CA3AF',
+    color: '#6B7280',
     fontSize: TEXT.sm,
   },
   blockButton: {
@@ -644,22 +1083,27 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xxl,
   },
   groupsLayout: {
-    gap: SPACING.lg,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: SPACING.lg,
-    rowGap: SPACING.lg,
     alignItems: 'flex-start',
   },
+  groupsLayoutWide: {
+    flexDirection: 'row',
+    columnGap: SPACING.lg,
+    rowGap: SPACING.lg,
+  },
+  groupsLayoutStack: {
+    flexDirection: 'column',
+    gap: SPACING.lg,
+  },
   groupsColumn: {
+    gap: SPACING.md,
+  },
+  columnFlex: {
     flex: 1,
-    minWidth: '58%',
-    maxWidth: '60%',
+  },
+  columnFull: {
+    width: '100%',
   },
   sideColumn: {
-    flex: 1,
-    minWidth: '36%',
-    maxWidth: '38%',
     gap: SPACING.md,
   },
   groupsTitle: {
@@ -740,9 +1184,13 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontSize: TEXT.md,
     fontWeight: '700',
+    borderBottomWidth: 1,
+    borderBottomColor: '#60A5FA',
+    paddingBottom: 4,
+    marginBottom: SPACING.xs,
   },
   lastWorkoutDate: {
-    color: '#9CA3AF',
+    color: '#60A5FA',
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
@@ -769,6 +1217,18 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: TEXT.xs,
     marginTop: 2,
+  },
+  lastWorkoutTotal: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
+  lastWorkoutExample: {
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
   },
   lastWorkoutEmpty: {
     color: '#9CA3AF',
@@ -884,10 +1344,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1F2A44',
     padding: SPACING.md,
-    shadowColor: '#0B1220',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
+    ...Platform.select({
+      web: { boxShadow: '0 8px 12px rgba(11, 18, 32, 0.35)' },
+      default: {
+        shadowColor: '#0B1220',
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 8 },
+      },
+    }),
   },
   analysisCard: {
     backgroundColor: '#0B1220',

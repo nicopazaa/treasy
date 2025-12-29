@@ -55,7 +55,6 @@ function formatSetParts(
   weightUnit: string;
   repsText: string | null;
   index: number;
-  indent: number;
 }> {
   return sets.map((s, idx) => ({
     weightValue:
@@ -71,7 +70,6 @@ function formatSetParts(
     weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
     repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
     index: idx + 1,
-    indent: idx,
   }));
 }
 
@@ -277,7 +275,7 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                             {formatSetParts(language, group.sets).map((line, idx) => (
                                               <Text
                                                 key={`${group.id}-set-${idx}`}
-                                                style={[styles.groupDetail, { marginLeft: SPACING.sm * (line.indent + 1) }]}
+                                                style={styles.groupDetail}
                                               >
                                                 <Text style={styles.indexText}>[{line.index}] </Text>
                                                 <Text style={styles.goldText}>{line.weightValue}</Text>
@@ -325,7 +323,7 @@ const styles = StyleSheet.create({
   },
   setList: {
     gap: SPACING.sm,
-    paddingLeft: SPACING.lg,
+    paddingLeft: SPACING.xl,
   },
   content: {
     paddingHorizontal: SCREEN_PADDING,

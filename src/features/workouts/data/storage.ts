@@ -30,6 +30,7 @@ export async function loadAppState(): Promise<AppState | null> {
       language: parsed.language ?? guessDeviceLanguage(),
       blocks: mergedBlocks,
       logs: parsed.logs ?? [],
+      notes: parsed.notes ?? [],
       theme: parsed.theme ?? 'dark',
     };
   } catch (e) {
@@ -45,4 +46,3 @@ export async function saveAppState(state: AppState): Promise<void> {
     console.warn('Failed to save app state', e);
   }
 }
-

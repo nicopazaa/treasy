@@ -63,5 +63,6 @@ export function createInitialState(options?: {
     sets: [],
     cardioEntries: [],
     logs: [],
+    notes: [],
   };
 }

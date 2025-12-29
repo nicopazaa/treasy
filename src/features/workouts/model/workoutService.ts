@@ -1,4 +1,4 @@
-import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEntry } from './types';
+import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEntry, NoteEntry } from './types';
 import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
 
 function generateId(prefix: string = 'id'): string {
@@ -77,6 +77,22 @@ export function addLogEntry(state: AppState, text: string, options?: { pinned?: 
   return {
     ...state,
     logs: [...(state.logs ?? []), entry],
+  };
+}
+
+export function addNoteEntry(state: AppState, text: string): AppState {
+  const trimmed = text.trim();
+  if (!trimmed) return state;
+
+  const entry: NoteEntry = {
+    id: generateId('note'),
+    text: trimmed,
+    createdAt: new Date().toISOString(),
+  };
+
+  return {
+    ...state,
+    notes: [...(state.notes ?? []), entry],
   };
 }
 

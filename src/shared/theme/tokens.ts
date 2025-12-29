@@ -52,6 +52,7 @@ export const COLORS = {
   success: PALETTE.GREEN_POSITIVE,
   warning: PALETTE.ORANGE_SOFT,
   neutral: '#94A3B8',
+  actionSecondary: '#8FB5FF',
 } as const;
 
 export const MUSCLE_ACCENT = {

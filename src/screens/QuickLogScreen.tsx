@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,15 @@ import {
   Pressable,
   ScrollView,
   Platform,
+  KeyboardAvoidingView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
-import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
-import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 
@@ -70,8 +71,8 @@ export const QuickLogScreen: React.FC<Props> = ({
   } | null>(null);
   const inputRef = useRef<TextInput | null>(null);
 
-  const [muscleGroupsOpen, setMuscleGroupsOpen] = useState(true);
-  const [exercisesOpen, setExercisesOpen] = useState(false);
+  const [isMuscleOpen, setIsMuscleOpen] = useState(false);
+  const [isExerciseOpen, setIsExerciseOpen] = useState(false);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [weightModalOpen, setWeightModalOpen] = useState(false);
@@ -84,6 +85,20 @@ export const QuickLogScreen: React.FC<Props> = ({
   const [durationText, setDurationText] = useState('');
   const [setError, setSetError] = useState<string | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+  const [showAllLogs, setShowAllLogs] = useState(false);
+  const placeholderOpacity = useRef(new Animated.Value(1)).current;
+  const [isFocused, setIsFocused] = useState(false);
+
+  const placeholderText = t(language, 'quicklog.placeholder.start');
+
+  useEffect(() => {
+    const target = input.length === 0 && !isFocused ? 1 : 0;
+    Animated.timing(placeholderOpacity, {
+      toValue: target,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [input, isFocused, placeholderOpacity]);
 
   const muscleGroupBlocks = useMemo(() => {
     const byId: Record<string, TrainingBlock> = {};
@@ -196,7 +211,7 @@ export const QuickLogScreen: React.FC<Props> = ({
 
   const startSetFlow = (exerciseId: string) => {
     setSelectedExerciseId(exerciseId);
-    setExercisesOpen(false);
+    setIsExerciseOpen(false);
     setWeightText('');
     setRepsText('');
     setSetError(null);
@@ -221,6 +236,157 @@ export const QuickLogScreen: React.FC<Props> = ({
 
   const showLocalNoticeLine = showLocalOnlyNotice && appState.authProvider === 'guest';
 
+  const quickLogInputSection = (
+    <View style={styles.inputCard}>
+      <Text style={styles.guidedTitle}>{t(language, 'home.quickLog.title')}</Text>
+      <View style={styles.inputWrapper}>
+        <View style={styles.placeholderWrapper} pointerEvents="none">
+          <Animated.Text
+            style={[styles.placeholderOverlay, { opacity: placeholderOpacity }]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {placeholderText}
+          </Animated.Text>
+        </View>
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          placeholder="" // handled by animated overlay
+          value={input}
+          onChangeText={setInput}
+          autoCapitalize="sentences"
+          multiline
+          returnKeyType="done"
+          onSubmitEditing={handleSave}
+          blurOnSubmit={false}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+        />
+      </View>
+    </View>
+  );
+
+  const muscleGroupSection = (
+    <View style={styles.selectBox}>
+      <TouchableOpacity
+        style={styles.selectHeaderRow}
+        onPress={() => setIsMuscleOpen((v) => !v)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.selectLabel}>{t(language, 'muscleGroups')}</Text>
+        <View style={styles.selectHeaderRight}>
+          <Text style={styles.selectHint}>{t(language, 'chooseMuscleGroup').replace(/:$/, '')}</Text>
+          <Text style={styles.selectStatus} numberOfLines={1} ellipsizeMode="tail">
+            {selectedBlock ? blockTitle(selectedBlock) : 'Velg'}
+          </Text>
+        </View>
+        <Text style={styles.chevron}>{isMuscleOpen ? 'v' : '>'}</Text>
+      </TouchableOpacity>
+
+      {isMuscleOpen && (
+        <>
+          <View style={[styles.selectList, styles.compactList]}>
+            <ScrollView nestedScrollEnabled>
+              {muscleGroupBlocks.map((block) => {
+                const tone = getBlockTone(block.id);
+                const selected = block.id === selectedBlockId;
+                return (
+                  <TouchableOpacity
+                    key={block.id}
+                    style={[styles.selectRow, selected && styles.selectRowSelected]}
+                    onPress={() => {
+                      setSelectedBlockId(block.id);
+                      setSelectedExerciseId(null);
+                      setIsExerciseOpen(true);
+                      setIsMuscleOpen(false);
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
+                    <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {otherBlocks.length > 0 ? (
+                <>
+                  <Text style={styles.otherLabel}>{t(language, 'otherSectionTitle')}</Text>
+                  {otherBlocks.map((block) => {
+                    const tone = getBlockTone(block.id);
+                    const selected = block.id === selectedBlockId;
+                    return (
+                      <TouchableOpacity
+                        key={block.id}
+                        style={[styles.selectRow, selected && styles.selectRowSelected]}
+                        onPress={() => {
+                          setSelectedBlockId(block.id);
+                          setSelectedExerciseId(null);
+                          setIsExerciseOpen(true);
+                          setIsMuscleOpen(false);
+                        }}
+                        activeOpacity={0.9}
+                      >
+                        <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
+                        <Text style={styles.selectRowText}>{block.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </>
+      )}
+    </View>
+  );
+
+  const exerciseSection = (
+    <View style={[styles.selectBox, { marginTop: SPACING.md }]}>
+      <TouchableOpacity
+        style={styles.selectHeaderRow}
+        onPress={() => selectedBlockId && setIsExerciseOpen((v) => !v)}
+        activeOpacity={selectedBlockId ? 0.8 : 1}
+      >
+        <Text style={styles.selectLabel}>{t(language, 'exercises')}</Text>
+        <View style={styles.selectHeaderRight}>
+          <Text style={styles.selectHint}>{t(language, 'enterExerciseName')}</Text>
+          <Text style={styles.selectStatus} numberOfLines={1} ellipsizeMode="tail">
+            {selectedExercise ? formatExerciseLabel(selectedExercise) : 'Søk'}
+          </Text>
+        </View>
+        <Text style={[styles.chevron, !selectedBlockId && styles.chevronDisabled]}>
+          {isExerciseOpen ? 'v' : '>'}
+        </Text>
+      </TouchableOpacity>
+
+      {isExerciseOpen && selectedBlockId ? (
+        exercisesForBlock.length === 0 ? (
+          <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
+        ) : (
+          <View style={[styles.selectList, styles.compactList]}>
+            <ScrollView nestedScrollEnabled>
+              {exercisesForBlock.map((ex) => {
+                const selected = ex.id === selectedExerciseId;
+                return (
+                  <TouchableOpacity
+                    key={ex.id}
+                    style={[styles.selectRow, selected && styles.selectRowSelected]}
+                    onPress={() => startSetFlow(ex.id)}
+                    activeOpacity={0.9}
+                  >
+                    <View style={[styles.dot, { backgroundColor: getDotColor(selectedBlockId) }]} />
+                    <Text style={styles.selectRowText}>{formatExerciseLabel(ex)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )
+      ) : null}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -235,170 +401,48 @@ export const QuickLogScreen: React.FC<Props> = ({
         ) : null}
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.guidedCard}>
-          <Text style={styles.guidedTitle}>{t(language, 'home.quickLog.title')}</Text>
-          <Text style={styles.guidedSubtitle}>{t(language, 'quickLogExample')}</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.guidedCard}>
+            {quickLogInputSection}
+            {muscleGroupSection}
+            {exerciseSection}
 
-          <View style={styles.selectBox}>
-            <TouchableOpacity
-              style={styles.selectHeaderRow}
-              onPress={() => setMuscleGroupsOpen((v) => !v)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.selectLabel}>{t(language, 'muscleGroups')}</Text>
-              <Text style={styles.selectValue}>
-                {selectedBlock ? blockTitle(selectedBlock) : t(language, 'chooseMuscleGroup').replace(/:$/, '')}
-              </Text>
-              <Text style={styles.chevron}>{muscleGroupsOpen ? 'v' : '>'}</Text>
-            </TouchableOpacity>
-
-            {muscleGroupsOpen && (
-              <>
-                <View style={styles.selectList}>
-                  {muscleGroupBlocks.map((block) => {
-                    const tone = getBlockTone(block.id);
-                    const selected = block.id === selectedBlockId;
-                    return (
-                      <TouchableOpacity
-                        key={block.id}
-                        style={[styles.selectRow, selected && styles.selectRowSelected]}
-                        onPress={() => {
-                          setSelectedBlockId(block.id);
-                          setSelectedExerciseId(null);
-                          setExercisesOpen(true);
-                          setMuscleGroupsOpen(false);
-                        }}
-                        activeOpacity={0.9}
-                      >
-                        <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
-                        <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {otherBlocks.length > 0 ? (
-                  <>
-                    <Text style={styles.otherLabel}>{t(language, 'otherSectionTitle')}</Text>
-                    <View style={styles.selectList}>
-                      {otherBlocks.map((block) => {
-                        const tone = getBlockTone(block.id);
-                        const selected = block.id === selectedBlockId;
-                        return (
-                          <TouchableOpacity
-                            key={block.id}
-                            style={[styles.selectRow, selected && styles.selectRowSelected]}
-                            onPress={() => {
-                              setSelectedBlockId(block.id);
-                              setSelectedExerciseId(null);
-                              setExercisesOpen(true);
-                              setMuscleGroupsOpen(false);
-                            }}
-                            activeOpacity={0.9}
-                          >
-                            <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
-                            <Text style={styles.selectRowText}>{block.name}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </>
-                ) : null}
-              </>
-            )}
-          </View>
-
-          <View style={[styles.selectBox, { marginTop: SPACING.md }]}>
-            <TouchableOpacity
-              style={styles.selectHeaderRow}
-              onPress={() => selectedBlockId && setExercisesOpen((v) => !v)}
-              activeOpacity={selectedBlockId ? 0.8 : 1}
-            >
-              <Text style={styles.selectLabel}>{t(language, 'exercises')}</Text>
-              <Text style={styles.selectValue}>
-                {selectedExercise ? formatExerciseLabel(selectedExercise) : t(language, 'enterExerciseName')}
-              </Text>
-              <Text style={[styles.chevron, !selectedBlockId && styles.chevronDisabled]}>
-                {exercisesOpen ? 'v' : '>'}
-              </Text>
-            </TouchableOpacity>
-
-            {exercisesOpen && selectedBlockId ? (
-              exercisesForBlock.length === 0 ? (
-                <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
-              ) : (
-                <View style={styles.selectList}>
-                  {exercisesForBlock.map((ex) => {
-                    const selected = ex.id === selectedExerciseId;
-                    return (
-                      <TouchableOpacity
-                        key={ex.id}
-                        style={[styles.selectRow, selected && styles.selectRowSelected]}
-                        onPress={() => startSetFlow(ex.id)}
-                        activeOpacity={0.9}
-                      >
-                        <View style={[styles.dot, { backgroundColor: getDotColor(selectedBlockId) }]} />
-                        <Text style={styles.selectRowText}>{formatExerciseLabel(ex)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )
-            ) : null}
-          </View>
-
-          {selectedExercise ? (
-            <View style={styles.quickActions}>
-              <TouchableOpacity
-                style={[styles.secondaryButton, styles.inlineButton]}
-                onPress={() => {
-                  setBodyweightMode(true);
-                  setWeightText('0');
-                  setWeightModalOpen(false);
-                  setRepsModalOpen(true);
-                }}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
-              </TouchableOpacity>
-
-              {selectedBlockId === 'cardio' ? (
+            {selectedExercise ? (
+              <View style={styles.quickActions}>
                 <TouchableOpacity
                   style={[styles.secondaryButton, styles.inlineButton]}
                   onPress={() => {
-                    setCardioModalOpen(true);
-                    setDistanceText('');
-                    setDurationText('');
+                    setBodyweightMode(true);
+                    setWeightText('0');
+                    setWeightModalOpen(false);
+                    setRepsModalOpen(true);
                   }}
                   activeOpacity={0.9}
                 >
-                  <Text style={styles.secondaryButtonText}>{t(language, 'logDistanceTime')}</Text>
+                  <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
                 </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
 
-        <View style={styles.inputCard}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            placeholder={t(language, 'quickLogPlaceholder')}
-            placeholderTextColor="#6B7280"
-            value={input}
-            onChangeText={setInput}
-            autoCapitalize="sentences"
-            multiline
-            returnKeyType="done"
-            onSubmitEditing={handleSave}
-            blurOnSubmit={false}
-          />
-        </View>
+                {selectedBlockId === 'cardio' ? (
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.inlineButton]}
+                    onPress={() => {
+                      setCardioModalOpen(true);
+                      setDistanceText('');
+                      setDurationText('');
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={styles.secondaryButtonText}>{t(language, 'logDistanceTime')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
 
         {suggestionItems.length > 0 && (
           <View style={styles.suggestionCard}>
@@ -448,26 +492,47 @@ export const QuickLogScreen: React.FC<Props> = ({
         {savedNotice ? <Text style={styles.savedNotice}>{savedNotice}</Text> : null}
 
         <View style={styles.actionBar}>
-          <PrimaryButton title={t(language, 'quickLogButton')} onPress={handleSave} />
+          <Pressable
+            onPress={handleSave}
+            style={({ pressed }) => [
+              styles.primaryActionButton,
+              pressed && styles.primaryActionButtonPressed,
+            ]}
+          >
+            <Text style={styles.primaryActionText}>{t(language, 'quickLogButton')}</Text>
+          </Pressable>
         </View>
 
-        <View style={styles.liveLogCard}>
+        <View style={[styles.liveLogCard, { marginTop: SPACING.md }]}>
           <Text style={styles.liveLogTitle}>{t(language, 'liveLogTitle')}</Text>
           {todayLogs.length === 0 ? (
             <Text style={styles.liveLogEmpty}>{t(language, 'liveLogEmpty')}</Text>
           ) : (
-            <View style={styles.liveLogList}>
-              {todayLogs.map((entry) => (
-                <View key={entry.id} style={styles.liveLogRow}>
-                  <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
-                  <Text style={styles.liveLogText}>{entry.text}</Text>
-                  <Text style={styles.liveLogPin}>{entry.pinned ? '📌' : ' '}</Text>
-                </View>
-              ))}
-            </View>
+            <>
+              <View style={styles.liveLogList}>
+                {(showAllLogs ? todayLogs : todayLogs.slice(0, 5)).map((entry) => (
+                  <View key={entry.id} style={styles.liveLogRow}>
+                    <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
+                    <Text style={styles.liveLogText}>{entry.text}</Text>
+                    <Text style={styles.liveLogPin}>{entry.pinned ? '📌' : ' '}</Text>
+                  </View>
+                ))}
+              </View>
+              {!showAllLogs && todayLogs.length > 5 ? (
+                <TouchableOpacity
+                  onPress={() => setShowAllLogs(true)}
+                  hitSlop={8}
+                  activeOpacity={0.85}
+                  style={styles.showAllRow}
+                >
+                  <Text style={styles.showAllText}>{'Vis alle'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={weightModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
@@ -672,7 +737,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#020617',
-    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.lg,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
@@ -722,6 +787,18 @@ const styles = StyleSheet.create({
     fontSize: TEXT.md,
     backgroundColor: '#020617',
   },
+  placeholderWrapper: {
+    position: 'absolute',
+    left: SPACING.md,
+    right: SPACING.md,
+    top: SPACING.sm,
+  },
+  placeholderOverlay: {
+    color: '#6B7280',
+    fontSize: TEXT.md,
+    fontWeight: '600',
+    opacity: 0.9,
+  },
   savedNotice: {
     marginTop: SPACING.sm,
     color: '#86EFAC',
@@ -729,6 +806,22 @@ const styles = StyleSheet.create({
   },
   actionBar: {
     marginTop: SPACING.md,
+  },
+  primaryActionButton: {
+    backgroundColor: COLORS.blue2,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    marginVertical: 6,
+  },
+  primaryActionButtonPressed: {
+    opacity: 0.85,
+  },
+  primaryActionText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: TEXT.md,
   },
   liveLogCard: {
     marginTop: SPACING.xl,
@@ -751,6 +844,16 @@ const styles = StyleSheet.create({
   liveLogList: {
     marginTop: SPACING.xs,
     gap: SPACING.xs,
+  },
+  showAllRow: {
+    marginTop: SPACING.xs,
+    alignItems: 'flex-start',
+    paddingVertical: SPACING.xs,
+  },
+  showAllText: {
+    color: '#60A5FA',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
   liveLogRow: {
     flexDirection: 'row',
@@ -789,9 +892,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: SPACING.xs,
   },
-  guidedSubtitle: {
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
+  inputWrapper: {
+    position: 'relative',
   },
   selectBox: {
     marginTop: SPACING.md,
@@ -808,6 +910,10 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     gap: SPACING.sm,
   },
+  selectHeaderRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
   selectLabel: {
     color: '#E5E7EB',
     fontSize: TEXT.sm,
@@ -819,9 +925,19 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
+  selectHint: {
+    color: COLORS.actionSecondary,
+    fontSize: TEXT.xs,
+  },
+  selectStatus: {
+    color: COLORS.actionSecondary,
+    fontSize: TEXT.sm,
+    maxWidth: 180,
+    textAlign: 'right',
+  },
   chevron: {
     fontSize: TEXT.md,
-    color: '#9CA3AF',
+    color: COLORS.actionSecondary,
     fontWeight: '700',
   },
   chevronDisabled: {
@@ -830,6 +946,10 @@ const styles = StyleSheet.create({
   selectList: {
     borderTopWidth: 1,
     borderTopColor: '#111827',
+  },
+  compactList: {
+    maxHeight: 260,
+    overflow: 'hidden',
   },
   selectRow: {
     flexDirection: 'row',
