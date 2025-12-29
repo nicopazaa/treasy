@@ -33,9 +33,12 @@ function parseDateKey(dateKey: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
-function formatSetSummary(language: AppState['language'], sets: Array<{ weight: number; reps: number }>): string {
+function formatSetLines(
+  language: AppState['language'],
+  sets: Array<{ weight: number; reps: number }>
+): string[] {
   const repsLabel = t(language ?? 'en', 'reps').toLowerCase();
-  return sets.map((s) => `${s.weight} kg x ${s.reps} ${repsLabel}`).join(', ');
+  return sets.map((s) => `${s.weight} kg x ${s.reps} ${repsLabel}`);
 }
 
 function buildDayNodes(appState: AppState, language: AppState['language']): DayNode[] {
@@ -135,7 +138,13 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
                                 </Text>
                               ) : null}
                               <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
-                              <Text style={styles.groupDetail}>{formatSetSummary(language, group.sets)}</Text>
+                              <View style={styles.setList}>
+                                {formatSetLines(language, group.sets).map((line, idx) => (
+                                  <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
+                                    {line}
+                                  </Text>
+                                ))}
+                              </View>
                             </View>
                             <Text style={styles.groupTime}>{group.time}</Text>
                           </View>
@@ -161,6 +170,9 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
+  },
+  setList: {
+    gap: SPACING.xs,
   },
   content: {
     paddingHorizontal: SCREEN_PADDING,
