@@ -14,6 +14,7 @@ import { AppState } from '../features/workouts/model/types';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { LANGUAGE_OPTIONS, t } from '../shared/i18n/i18n';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Props {
   appState: AppState;
@@ -32,6 +33,7 @@ export const ProfileScreen: React.FC<Props> = ({
   const [nickname, setNickname] = useState(appState.nickname ?? '');
   const [height, setHeight] = useState(appState.heightCm != null ? String(appState.heightCm) : '');
   const [weight, setWeight] = useState(appState.weightKg != null ? String(appState.weightKg) : '');
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   const handleSave = () => {
     const trimmedNickname = nickname.trim();
@@ -45,6 +47,63 @@ export const ProfileScreen: React.FC<Props> = ({
 
     onUpdate(next);
     onBack();
+  };
+
+  const buildBackupJson = (): string =>
+    JSON.stringify(
+      {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        state: appState,
+      },
+      null,
+      2
+    );
+
+  const handleDownloadBackup = async () => {
+    try {
+      if (Platform.OS !== 'web' || typeof window === 'undefined') {
+        setExportStatus(t(language, 'backupWebOnly'));
+        return;
+      }
+      const data = buildBackupJson();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `treasy-backup-${Date.now()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setExportStatus(t(language, 'backupDownloaded'));
+    } catch (e) {
+      setExportStatus(t(language, 'backupFailed'));
+    }
+  };
+
+  const handleSaveLocalBackup = async () => {
+    try {
+      const data = buildBackupJson();
+      await AsyncStorage.setItem('treasy_backup_export', data);
+      setExportStatus(t(language, 'backupSavedLocal'));
+    } catch (e) {
+      setExportStatus(t(language, 'backupFailed'));
+    }
+  };
+
+  const handleCopyBackup = async () => {
+    const data = buildBackupJson();
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(data);
+        setExportStatus(t(language, 'backupCopied'));
+      } else {
+        setExportStatus(t(language, 'backupCopyUnavailable'));
+      }
+    } catch {
+      setExportStatus(t(language, 'backupCopyUnavailable'));
+    }
   };
 
   const authLine =
@@ -133,6 +192,23 @@ export const ProfileScreen: React.FC<Props> = ({
           />
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.label}>{t(language, 'backupTitle')}</Text>
+          <Text style={styles.helper}>{t(language, 'backupInfo')}</Text>
+          <View style={styles.backupButtons}>
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleDownloadBackup} activeOpacity={0.9}>
+              <Text style={styles.secondaryButtonText}>{t(language, 'backupDownloadWeb')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleSaveLocalBackup} activeOpacity={0.9}>
+              <Text style={styles.secondaryButtonText}>{t(language, 'backupSaveLocal')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleCopyBackup} activeOpacity={0.9}>
+              <Text style={styles.secondaryButtonText}>{t(language, 'backupCopy')}</Text>
+            </TouchableOpacity>
+          </View>
+          {exportStatus ? <Text style={styles.helper}>{exportStatus}</Text> : null}
+        </View>
+
         <View style={styles.buttonWrap}>
           <PrimaryButton title={t(language, 'save')} onPress={handleSave} />
         </View>
@@ -194,6 +270,9 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: TEXT.xs,
     marginBottom: SPACING.sm,
+  },
+  backupButtons: {
+    gap: SPACING.xs,
   },
   input: {
     borderRadius: RADIUS.md,

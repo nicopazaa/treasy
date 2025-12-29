@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     paddingLeft: SPACING.xs,
   },
   date: {
-    color: '#F9FAFB',
+    color: '#3B82F6',
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '800',
     marginBottom: 2,

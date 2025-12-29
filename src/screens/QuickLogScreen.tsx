@@ -74,6 +74,7 @@ export const QuickLogScreen: React.FC<Props> = ({
   const [weightText, setWeightText] = useState('');
   const [repsText, setRepsText] = useState('');
   const [setError, setSetError] = useState<string | null>(null);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   const muscleGroupBlocks = useMemo(() => {
     const byId: Record<string, TrainingBlock> = {};
@@ -142,6 +143,32 @@ export const QuickLogScreen: React.FC<Props> = ({
     setSavedNotice(t(language, 'quickLogSaved'));
     setTimeout(() => setSavedNotice(null), 1600);
   };
+
+  const normalize = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9æøåáéíóúüñ\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const suggestionItems = useMemo(() => {
+    const term = normalize(input);
+    if (!term) return [];
+
+    return appState.exercises
+      .map((ex) => {
+        const label = formatExerciseLabel(ex);
+        const haystack = normalize(label);
+        const score =
+          haystack.startsWith(term) ? 3 :
+          haystack.includes(term) ? 2 :
+          0;
+        return { ex, score, label };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
+      .slice(0, 5);
+  }, [appState.exercises, input]);
 
   const resetSetFlow = () => {
     setWeightText('');
@@ -294,6 +321,51 @@ export const QuickLogScreen: React.FC<Props> = ({
             blurOnSubmit={false}
           />
         </View>
+
+        {suggestionItems.length > 0 && (
+          <View style={styles.suggestionCard}>
+            <TouchableOpacity
+              style={styles.suggestionHeader}
+              onPress={() => setSuggestionsOpen((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.suggestionTitle}>{t(language, 'quickLogSuggestions')}</Text>
+              <Text style={styles.chevron}>{suggestionsOpen ? 'v' : '>'}</Text>
+            </TouchableOpacity>
+            {suggestionsOpen && (
+              <View style={styles.suggestionList}>
+                {suggestionItems.map(({ ex, label }) => {
+                  const tone = getBlockTone(ex.blockId);
+                  const blk = muscleGroupBlocks.find((b) => b.id === ex.blockId);
+                  return (
+                    <TouchableOpacity
+                      key={ex.id}
+                      style={styles.suggestionRow}
+                      onPress={() => {
+                        setSelectedBlockId(ex.blockId);
+                        setSelectedExerciseId(ex.id);
+                        startSetFlow(ex.id);
+                        setInput(label + ' ');
+                      }}
+                      activeOpacity={0.9}
+                    >
+                      <View style={[styles.dot, { backgroundColor: tone.accent }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.suggestionLabel}>{label}</Text>
+                        <Text style={styles.suggestionMeta}>
+                          {blk ? blockTitle(blk) : ''}
+                        </Text>
+                      </View>
+                      <Text style={[styles.suggestionAction, { color: tone.accent }]}>
+                        {t(language, 'logSet')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
 
         {savedNotice ? <Text style={styles.savedNotice}>{savedNotice}</Text> : null}
 
@@ -635,6 +707,47 @@ const styles = StyleSheet.create({
     fontSize: TEXT.xs,
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
+  },
+  suggestionCard: {
+    backgroundColor: '#0B1220',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    padding: SPACING.md,
+    marginTop: SPACING.md,
+    gap: SPACING.sm,
+  },
+  suggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  suggestionTitle: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  suggestionList: {
+    gap: SPACING.xs,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  suggestionLabel: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  suggestionMeta: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+  },
+  suggestionAction: {
+    fontSize: TEXT.xs,
+    fontWeight: '800',
   },
 
   // Dialogs

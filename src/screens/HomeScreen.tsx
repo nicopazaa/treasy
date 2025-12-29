@@ -436,6 +436,15 @@ const styles = StyleSheet.create({
   },
   analysisCards: {
     gap: SPACING.md,
+    backgroundColor: '#0A1023',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1F2A44',
+    padding: SPACING.md,
+    shadowColor: '#0B1220',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
   },
   analysisCard: {
     backgroundColor: '#0B1220',
