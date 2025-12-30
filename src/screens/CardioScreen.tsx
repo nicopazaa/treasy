@@ -20,6 +20,7 @@ type Props = {
 };
 
 type SessionState = 'idle' | 'running' | 'paused' | 'summary';
+type IntervalId = ReturnType<typeof setInterval>;
 
 const formatTime = (ms: number) => {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -40,7 +41,7 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
   const [restSec, setRestSec] = useState('10');
   const [rounds, setRounds] = useState('10');
   const startRef = useRef<number | null>(null);
-  const timerRef = useRef<NodeJS.Timer | null>(null);
+  const timerRef = useRef<IntervalId | null>(null);
 
   const streakDays = useMemo(() => {
     const keys = new Set<string>();
@@ -58,8 +59,10 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
 
   useEffect(() => {
     if (state !== 'running') {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = null;
+      if (timerRef.current != null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       return;
     }
 
@@ -69,7 +72,10 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
     }, 250);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current != null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
   }, [state]);
 
@@ -83,7 +89,10 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
   const togglePause = () => {
     if (state === 'running') {
       setState('paused');
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current != null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     } else if (state === 'paused') {
       startRef.current = Date.now() - elapsedMs;
       setState('running');
@@ -91,7 +100,10 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
   };
 
   const finishSession = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current != null) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     setState('summary');
   };
 
@@ -196,7 +208,7 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
               <Text style={styles.hint}>f.eks 20s spurt / 10s pause x10</Text>
             </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={startSession} activeOpacity={0.9}>
+            <TouchableOpacity style={styles.primaryButton} onPress={() => startSession()} activeOpacity={0.9}>
               <Text style={styles.primaryButtonText}>Start cardio</Text>
             </TouchableOpacity>
             <Text style={styles.hint}>10 min er nok i dag</Text>

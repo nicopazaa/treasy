@@ -1,4 +1,5 @@
 import type { AppLanguage, AuthProvider, ThemeMode } from '../../../shared/types';
+export type { AppLanguage } from '../../../shared/types';
 
 export type TrainingBlockId =
   | 'chest'

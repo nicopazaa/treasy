@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NavigationContext, useFocusEffect } from '@react-navigation/native';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getSetsForExercise } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
@@ -34,6 +35,11 @@ interface RepMaxSection {
   blockId: string;
   data: RepMaxItem[];
 }
+
+const fallbackNavigation = {
+  addListener: () => () => {},
+  isFocused: () => true,
+};
 
 function pickBestSet(sets: SetEntry[]): SetEntry | null {
   if (!sets?.length) return null;
@@ -69,7 +75,7 @@ function labelForBlock(block: TrainingBlock, language: AppState['language']): st
   return block.name;
 }
 
-export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
+const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
 
@@ -109,28 +115,24 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
     return res;
   }, [appState, language]);
 
+  const sectionIds = useMemo(() => sections.map((section) => section.blockId), [sections]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setCollapsedBlocks(new Set(sectionIds));
+    }, [sectionIds])
+  );
+
   useEffect(() => {
     setCollapsedBlocks((prev) => {
-      if (sections.length === 0) return new Set();
-
-      const next = new Set(prev);
-      const sectionIds = sections.map((s) => s.blockId);
-
-      // Remove blocks that no longer exist
-      for (const id of Array.from(next)) {
-        if (!sectionIds.includes(id)) next.delete(id);
+      if (sectionIds.length === 0) return new Set();
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (sectionIds.includes(id)) next.add(id);
       }
-
-      // If nothing is set yet, collapse all but first block to reduce scroll
-      if (next.size === 0 && sections.length > 1) {
-        for (let i = 1; i < sections.length; i++) {
-          next.add(sections[i].blockId);
-        }
-      }
-
       return next;
     });
-  }, [sections]);
+  }, [sectionIds]);
 
   const toggleBlock = (blockId: string) => {
     setCollapsedBlocks((prev) => {
@@ -208,6 +210,18 @@ export const RepMaxScreen: React.FC<Props> = ({ appState, onBack }) => {
   );
 };
 
+export const RepMaxScreen: React.FC<Props> = (props) => {
+  const navigation = useContext(NavigationContext);
+  if (navigation) {
+    return <RepMaxScreenContent {...props} />;
+  }
+  return (
+    <NavigationContext.Provider value={fallbackNavigation as any}>
+      <RepMaxScreenContent {...props} />
+    </NavigationContext.Provider>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -237,10 +251,22 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     marginTop: SPACING.xs,
   },
+  badge: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F9FAFB',
+    marginTop: 2,
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
+  },
+  clip: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F9FAFB',
+    marginTop: 2,
   },
   subtitle: {
     marginTop: SPACING.xs,

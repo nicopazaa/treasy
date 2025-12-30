@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NavigationContext, useFocusEffect } from '@react-navigation/native';
 import { AppState } from '../features/workouts/model/types';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
@@ -26,6 +27,11 @@ type BlockGroup = {
   blockName?: string;
   time: string;
   exercises: GroupedDailySetView[];
+};
+
+const fallbackNavigation = {
+  addListener: () => () => {},
+  isFocused: () => true,
 };
 
 function parseDateKey(dateKey: string): Date | null {
@@ -113,25 +119,61 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
   });
 }
 
-export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey }) => {
+const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey }) => {
   const language = appState.language ?? 'en';
   const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
-  const firstKey = days.length > 0 ? days[0].dateKey : null;
-  const [expandedKey, setExpandedKey] = useState<string | null>(() => initialExpandedDateKey ?? firstKey);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
   const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (initialExpandedDateKey != null) {
-      setExpandedKey(initialExpandedDateKey);
+  const allBlockKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const day of days) {
+      for (const block of day.groups) {
+        keys.add(block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block');
+      }
     }
-  }, [initialExpandedDateKey]);
+    return Array.from(keys);
+  }, [days]);
+
+  const allExerciseIds = useMemo(() => {
+    const keys = new Set<string>();
+    for (const day of days) {
+      for (const block of day.groups) {
+        for (const group of block.exercises) {
+          keys.add(group.id);
+        }
+      }
+    }
+    return Array.from(keys);
+  }, [days]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setExpandedKey(null);
+      setCollapsedBlocks(new Set(allBlockKeys));
+      setCollapsedExercises(new Set(allExerciseIds));
+    }, [allBlockKeys, allExerciseIds])
+  );
 
   useEffect(() => {
-    if (expandedKey == null && firstKey != null) {
-      setExpandedKey(firstKey);
-    }
-  }, [expandedKey, firstKey]);
+    setCollapsedBlocks((prev) => {
+      if (allBlockKeys.length === 0) return new Set();
+      const next = new Set<string>();
+      for (const key of prev) {
+        if (allBlockKeys.includes(key)) next.add(key);
+      }
+      return next;
+    });
+    setCollapsedExercises((prev) => {
+      if (allExerciseIds.length === 0) return new Set();
+      const next = new Set<string>();
+      for (const key of prev) {
+        if (allExerciseIds.includes(key)) next.add(key);
+      }
+      return next;
+    });
+  }, [allBlockKeys, allExerciseIds]);
 
   const toggle = (key: string) => {
     setExpandedKey((prev) => (prev === key ? null : key));
@@ -312,6 +354,18 @@ export const HistoryScreen: React.FC<Props> = ({ appState, onBack, initialExpand
   );
 };
 
+export const HistoryScreen: React.FC<Props> = (props) => {
+  const navigation = useContext(NavigationContext);
+  if (navigation) {
+    return <HistoryScreenContent {...props} />;
+  }
+  return (
+    <NavigationContext.Provider value={fallbackNavigation as any}>
+      <HistoryScreenContent {...props} />
+    </NavigationContext.Provider>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -479,15 +533,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  exerciseRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-    paddingRight: SPACING.sm,
-    outlineStyle: 'none',
-    outlineWidth: 0,
-  },
+    exerciseRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: SPACING.sm,
+      paddingRight: SPACING.sm,
+      ...(Platform.OS === 'web' ? ({ outlineStyle: 'none', outlineWidth: 0 } as any) : {}),
+    },
   exerciseTitleColumn: {
     flexShrink: 1,
     alignSelf: 'flex-start',

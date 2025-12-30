@@ -60,6 +60,7 @@ const BLOCK_ICONS: Partial<Record<TrainingBlockId, ImageSourcePropType>> = {
   cardio: require('../assets/cardio.png'),
   bodyweight: require('../assets/bodyweight.png'),
 };
+const EMPTY_EXAMPLES: string[] = [];
 
 type LastWorkoutState =
   | { status: 'empty'; message: string }
@@ -163,7 +164,7 @@ export const HomeScreen: React.FC<Props> = ({
   const headerTopPadding = insets.top + 4; // headerTopPadding: safe area inset plus small offset
   const headerBottomPadding = 8; // headerBottomPadding: space inside header below content
   const headerToQuickLogGap = 8; // gap between header and the QuickLog card
-  const [analysisOpen, setAnalysisOpen] = useState(true);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [notesFocused, setNotesFocused] = useState(false);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
@@ -460,12 +461,12 @@ export const HomeScreen: React.FC<Props> = ({
 
   useEffect(() => {
     if (navigationContext?.addListener) {
-      const focusSub = navigationContext.addListener('focus', startTicker);
-      const blurSub = navigationContext.addListener('blur', stopTicker);
+      const unsubscribeFocus = navigationContext.addListener('focus', startTicker);
+      const unsubscribeBlur = navigationContext.addListener('blur', stopTicker);
       startTicker();
       return () => {
-        focusSub?.remove();
-        blurSub?.remove();
+        unsubscribeFocus?.();
+        unsubscribeBlur?.();
         stopTicker();
       };
     }
@@ -556,11 +557,11 @@ export const HomeScreen: React.FC<Props> = ({
       })
       .filter((v): v is string => Boolean(v));
 
-  return {
-    status: 'ready',
-    dateLabel: formatLastWorkoutDate(dateKey, language),
-    totalVolumeLabel,
-    examples,
+    return {
+      status: 'ready',
+      dateLabel: formatLastWorkoutDate(dateKey, language),
+      totalVolumeLabel,
+      examples,
       exercise: {
         id: mainExercise.id,
         name,
@@ -570,6 +571,7 @@ export const HomeScreen: React.FC<Props> = ({
       },
     };
   }, [appState, language]);
+  const lastWorkoutExamples = lastWorkout.status === 'ready' ? lastWorkout.examples : EMPTY_EXAMPLES;
 
   useEffect(() => {
     clearLastExampleInterval();
@@ -578,7 +580,7 @@ export const HomeScreen: React.FC<Props> = ({
 
     if (reduceMotionEnabled) return;
     if (lastWorkout.status !== 'ready') return;
-    const items = lastWorkout.examples;
+    const items = lastWorkoutExamples;
     if (!items.length) return;
 
     const runCycle = () => {
@@ -627,7 +629,7 @@ export const HomeScreen: React.FC<Props> = ({
   }, [
     clearLastExampleInterval,
     lastExampleAnim,
-    lastWorkout.examples,
+    lastWorkoutExamples,
     lastWorkout.status,
     reduceMotionEnabled,
     resetLastExample,
@@ -639,8 +641,8 @@ export const HomeScreen: React.FC<Props> = ({
     if (lastWorkout.status !== 'ready') {
       return <Text style={styles.lastWorkoutEmpty}>{lastWorkout.message}</Text>;
     }
-    const exampleText = lastWorkout.examples.length
-      ? lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]
+    const exampleText = lastWorkoutExamples.length
+      ? lastWorkoutExamples[lastExampleIndex % lastWorkoutExamples.length]
       : '';
     return (
       <>
@@ -653,7 +655,7 @@ export const HomeScreen: React.FC<Props> = ({
         >
           {lastWorkout.totalVolumeLabel}
         </Text>
-        {lastWorkout.examples.length ? (
+        {lastWorkoutExamples.length ? (
           reduceMotionEnabled || expanded ? (
             <Text
               style={styles.lastWorkoutExample}
@@ -987,15 +989,6 @@ export const HomeScreen: React.FC<Props> = ({
                   <Text style={styles.notesButtonText}>{language === 'nb' ? 'Lagre' : 'Save'}</Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={onOpenAI}
-                hitSlop={8}
-                style={[styles.helpButton, styles.helpButtonBelowNotes]}
-                activeOpacity={0.85}
-                accessibilityLabel={t(language, 'home.help')}
-              >
-                <Text style={styles.helpIcon}>{'?'}</Text>
-              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -1188,26 +1181,6 @@ const styles = StyleSheet.create({
     fontSize: TEXT.xs,
     fontWeight: '600',
   },
-  helpButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0B1220',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  helpButtonBelowNotes: {
-    alignSelf: 'flex-end',
-    marginTop: SPACING.md,
-  },
-  helpIcon: {
-    color: '#9CA3AF',
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 18,
-  },
   sectionTitle: {
     color: '#E5E7EB',
     fontSize: TEXT.sm,
@@ -1294,11 +1267,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 6,
     textDecorationLine: 'underline',
-  },
-  quickLogTitle: {
-    color: '#F9FAFB',
-    fontSize: TEXT.lg,
-    fontWeight: '800',
   },
   quickLogTitleYellow: {
     color: '#2563EB',
@@ -1396,8 +1364,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   groupIcon: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
   },
   groupDotSmall: {
     width: 10,

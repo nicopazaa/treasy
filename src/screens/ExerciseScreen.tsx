@@ -37,7 +37,7 @@ interface Props {
   onAskAIForExercise: () => void;
 }
 
-const STICKY_HEIGHT = 88;
+const STICKY_HEIGHT = 0;
 
 export const ExerciseScreen: React.FC<Props> = ({
   language,
@@ -187,6 +187,7 @@ export const ExerciseScreen: React.FC<Props> = ({
       onChangeHeartRate={setHeartRate}
       onChangeIntensity={setIntensity}
       onCopyLastSet={handleCopyLastSet}
+      onLogSet={handleAdd}
       onAskAIForExercise={onAskAIForExercise}
     />
   );
@@ -278,10 +279,6 @@ export const ExerciseScreen: React.FC<Props> = ({
           actionLabel={t(language, 'undo')}
           onAction={undoDeleteSet}
         />
-      </View>
-
-      <View style={styles.stickyBar}>
-        <PrimaryButton title={t(language, 'logSet')} onPress={handleAdd} style={styles.stickyButton} />
       </View>
 
       <Modal visible={Boolean(editingSet)} animationType="fade" transparent onRequestClose={closeEditSet}>
@@ -385,6 +382,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     padding: SPACING.md,
     gap: SPACING.sm,
+  },
+  logSetRow: {
+    marginTop: SPACING.lg,
   },
   aiTitle: {
     color: '#F9FAFB',
@@ -578,9 +578,22 @@ type ExerciseListHeaderProps = {
   lastSetLabel: string | null;
   weight: string;
   reps: string;
+  durationHour?: number;
+  durationMin?: number;
+  durationSec?: number;
+  distance?: string;
+  heartRate?: string;
+  intensity?: 'easy' | 'moderate' | 'hard' | null;
+  isCardio?: boolean;
   onChangeWeight: (value: string) => void;
   onChangeReps: (value: string) => void;
+  onChangeHour?: (value: number) => void;
+  onChangeMinute?: (value: number) => void;
+  onChangeDistance?: (value: string) => void;
+  onChangeHeartRate?: (value: string) => void;
+  onChangeIntensity?: (value: 'easy' | 'moderate' | 'hard' | null) => void;
   onCopyLastSet: () => void;
+  onLogSet: () => void;
   onAskAIForExercise: () => void;
 };
 
@@ -594,6 +607,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
   onChangeWeight,
   onChangeReps,
   onCopyLastSet,
+  onLogSet,
   onAskAIForExercise,
 }) => {
   return (
@@ -637,11 +651,9 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
         </TouchableOpacity>
       </Surface>
 
-      <Surface style={styles.aiBox} variant="raised">
-        <Text style={styles.aiTitle}>{t(language, 'aiSearchTitle')}</Text>
-        <Text style={styles.aiText}>{t(language, 'aiSearchHint')}</Text>
-        <PrimaryButton title={t(language, 'search')} onPress={onAskAIForExercise} />
-      </Surface>
+      <View style={styles.logSetRow}>
+        <PrimaryButton title={t(language, 'logSet')} onPress={onLogSet} style={styles.stickyButton} />
+      </View>
 
       <Text style={styles.historyTitle}>{t(language, 'history')}</Text>
     </View>

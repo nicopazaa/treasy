@@ -11,9 +11,9 @@ const makeTone = (accent: string): BlockTone => ({
 });
 
 const KNOWN_TONES: Record<string, BlockTone> = {
-  chest: makeTone(MUSCLE_ACCENT.chest),
+  chest: makeTone(MUSCLE_ACCENT.back),
   shoulders: makeTone(MUSCLE_ACCENT.shoulders),
-  back: makeTone(MUSCLE_ACCENT.back),
+  back: makeTone(MUSCLE_ACCENT.chest),
   arms: makeTone(MUSCLE_ACCENT.arms),
   core: makeTone(MUSCLE_ACCENT.core),
   legs: makeTone(MUSCLE_ACCENT.legs),
@@ -38,9 +38,9 @@ const FALLBACK_ACCENTS = [MUSCLE_ACCENT.chest, MUSCLE_ACCENT.core, MUSCLE_ACCENT
 const NEUTRAL_TONE = makeTone(COLORS.neutral);
 
 const DOT_MAP: Record<string, string> = {
-  chest: PALETTE.DOT_CHEST,
+  chest: PALETTE.DOT_BACK,
   shoulders: PALETTE.DOT_SHOULDERS,
-  back: PALETTE.DOT_BACK,
+  back: PALETTE.DOT_CHEST,
   arms: PALETTE.DOT_ARMS,
   core: PALETTE.DOT_CORE,
   legs: MUSCLE_ACCENT.legs,
