@@ -141,10 +141,30 @@ export const BlockScreen: React.FC<Props> = ({
     setModalMode(null);
   };
 
+  const showDeleteError = () => {
+    const title = language === 'nb' ? 'Kunne ikke slette øvelse' : language === 'es' ? 'No se pudo eliminar' : 'Delete failed';
+    const message =
+      language === 'nb'
+        ? 'Prøv igjen.'
+        : language === 'es'
+          ? 'Inténtalo de nuevo.'
+          : 'Please try again.';
+    Alert.alert(title, message);
+  };
+
   const handleDeleteExercise = (exercise: Exercise) => {
+    if (!exercise?.id) {
+      showDeleteError();
+      return;
+    }
     const index = exercises.findIndex((e) => e.id === exercise.id);
     const relatedSets = sets.filter((s) => s.exerciseId === exercise.id);
-    onDeleteExercise(exercise.id);
+    try {
+      onDeleteExercise(exercise.id);
+    } catch (error) {
+      showDeleteError();
+      return;
+    }
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     setDeletedExercise({
       exercise,
@@ -159,21 +179,6 @@ export const BlockScreen: React.FC<Props> = ({
     onRestoreExercise(deletedExercise.exercise, deletedExercise.sets, deletedExercise.index);
     setDeletedExercise(null);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-  };
-
-  const confirmDelete = (exercise: Exercise) => {
-    Alert.alert(
-      t(language, 'deleteExerciseTitle'),
-      t(language, 'deleteExerciseBody', { name: formatExerciseLabel(exercise) }),
-      [
-        { text: t(language, 'cancel'), style: 'cancel' },
-        {
-          text: t(language, 'delete'),
-          style: 'destructive',
-          onPress: () => handleDeleteExercise(exercise),
-        },
-      ]
-    );
   };
 
   const openExerciseActions = (exercise: Exercise) => {
@@ -321,7 +326,7 @@ export const BlockScreen: React.FC<Props> = ({
               onPress={() => {
                 const target = exerciseAction;
                 setExerciseAction(null);
-                if (target) confirmDelete(target);
+                if (target) handleDeleteExercise(target);
               }}
               activeOpacity={0.85}
             >

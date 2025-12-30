@@ -169,11 +169,20 @@ export const HomeScreen: React.FC<Props> = ({
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [analysisAnchorY, setAnalysisAnchorY] = useState<number | null>(null);
   const [compassOpen, setCompassOpen] = useState(false);
+  const [lastWorkoutPreviewVisible, setLastWorkoutPreviewVisible] = useState(false);
+  const [lastWorkoutPreviewLayout, setLastWorkoutPreviewLayout] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [exampleIndex, setExampleIndex] = useState(0);
   const exampleAnim = useMemo(() => new Animated.Value(1), []);
   const [lastExampleIndex, setLastExampleIndex] = useState(0);
   const lastExampleAnim = useMemo(() => new Animated.Value(1), []);
   const scrollRef = useRef<ScrollView | null>(null);
+  const lastWorkoutCardRef = useRef<View | null>(null);
+  const lastWorkoutPreviewAnim = useRef(new Animated.Value(0)).current;
   const tickerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const tickerAnimatingRef = useRef(false);
@@ -339,6 +348,33 @@ export const HomeScreen: React.FC<Props> = ({
       scrollRef.current?.scrollTo({ y: Math.max(analysisAnchorY - 12, 0), animated: true });
     });
   }, [analysisAnchorY]);
+
+  const openLastWorkoutPreview = useCallback(() => {
+    if (lastWorkoutPreviewVisible) return;
+    if (!lastWorkoutCardRef.current) return;
+    lastWorkoutCardRef.current.measureInWindow((x, y, width, height) => {
+      setLastWorkoutPreviewLayout({ x, y, width, height });
+      setLastWorkoutPreviewVisible(true);
+      lastWorkoutPreviewAnim.setValue(0);
+      Animated.spring(lastWorkoutPreviewAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [lastWorkoutPreviewAnim, lastWorkoutPreviewVisible]);
+
+  const closeLastWorkoutPreview = useCallback(() => {
+    if (!lastWorkoutPreviewVisible) return;
+    Animated.timing(lastWorkoutPreviewAnim, {
+      toValue: 0,
+      duration: 140,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setLastWorkoutPreviewVisible(false);
+    });
+  }, [lastWorkoutPreviewAnim, lastWorkoutPreviewVisible]);
 
   const closeCompass = useCallback(() => setCompassOpen(false), []);
 
@@ -599,46 +635,67 @@ export const HomeScreen: React.FC<Props> = ({
     stopLastExampleAnimation,
   ]);
 
+  const renderLastWorkoutBody = (expanded: boolean) => {
+    if (lastWorkout.status !== 'ready') {
+      return <Text style={styles.lastWorkoutEmpty}>{lastWorkout.message}</Text>;
+    }
+    const exampleText = lastWorkout.examples.length
+      ? lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]
+      : '';
+    return (
+      <>
+        <Text style={styles.lastWorkoutDate}>{lastWorkout.dateLabel}</Text>
+        <Text style={styles.lastWorkoutTitle}>{lastWorkoutTitle(language)}</Text>
+        <Text
+          style={styles.lastWorkoutTotal}
+          numberOfLines={expanded ? undefined : 1}
+          ellipsizeMode={expanded ? undefined : 'tail'}
+        >
+          {lastWorkout.totalVolumeLabel}
+        </Text>
+        {lastWorkout.examples.length ? (
+          reduceMotionEnabled || expanded ? (
+            <Text
+              style={styles.lastWorkoutExample}
+              numberOfLines={expanded ? undefined : 1}
+              ellipsizeMode={expanded ? undefined : 'tail'}
+            >
+              {exampleText}
+            </Text>
+          ) : (
+            <Animated.Text
+              style={[
+                styles.lastWorkoutExample,
+                {
+                  opacity: lastExampleAnim,
+                  transform: [
+                    { translateY: lastExampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) },
+                  ],
+                },
+              ]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {exampleText}
+            </Animated.Text>
+          )
+        ) : null}
+      </>
+    );
+  };
+
   const lastWorkoutCard = (
-    <View style={styles.lastWorkoutCard}>
-      {lastWorkout.status === 'ready' ? (
-        <>
-          <Text style={styles.lastWorkoutDate}>{lastWorkout.dateLabel}</Text>
-          <Text style={styles.lastWorkoutTitle}>{lastWorkoutTitle(language)}</Text>
-          <Text style={styles.lastWorkoutTotal} numberOfLines={1} ellipsizeMode="tail">
-            {lastWorkout.totalVolumeLabel}
-          </Text>
-          {lastWorkout.examples.length ? (
-            reduceMotionEnabled ? (
-              <Text style={styles.lastWorkoutExample} numberOfLines={1} ellipsizeMode="tail">
-                {lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}
-              </Text>
-            ) : (
-              <Animated.Text
-                style={[
-                  styles.lastWorkoutExample,
-                  {
-                    opacity: lastExampleAnim,
-                    transform: [
-                      { translateY: lastExampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) },
-                    ],
-                  },
-                ]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}
-              </Animated.Text>
-            )
-          ) : null}
-        </>
-      ) : (
-        <Text style={styles.lastWorkoutEmpty}>{lastWorkout.message}</Text>
-      )}
-      <TouchableOpacity onPress={onOpenHistory} activeOpacity={0.85} hitSlop={8}>
-        <Text style={styles.lastWorkoutLink}>{openLogLabel(language)}</Text>
-      </TouchableOpacity>
-    </View>
+    <Pressable onLongPress={openLastWorkoutPreview} onPressOut={closeLastWorkoutPreview} delayLongPress={220}>
+      <View
+        ref={lastWorkoutCardRef}
+        style={[styles.lastWorkoutCard, lastWorkoutPreviewVisible ? styles.lastWorkoutCardHidden : null]}
+      >
+        {renderLastWorkoutBody(false)}
+        <TouchableOpacity onPress={onOpenHistory} activeOpacity={0.85} hitSlop={8}>
+          <Text style={styles.lastWorkoutLink}>{openLogLabel(language)}</Text>
+        </TouchableOpacity>
+      </View>
+    </Pressable>
   );
 
   return (
@@ -671,11 +728,45 @@ export const HomeScreen: React.FC<Props> = ({
           </Pressable>
         </Pressable>
       </Modal>
+      {lastWorkoutPreviewVisible && lastWorkoutPreviewLayout ? (
+        <Modal transparent animationType="none" visible onRequestClose={closeLastWorkoutPreview}>
+          <Pressable style={styles.lastWorkoutPreviewBackdrop} onPress={closeLastWorkoutPreview}>
+            <Animated.View
+              style={[
+                styles.lastWorkoutPreviewDim,
+                {
+                  opacity: lastWorkoutPreviewAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.6] }),
+                },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.lastWorkoutPreviewCard,
+                {
+                  left: lastWorkoutPreviewLayout.x,
+                  top: lastWorkoutPreviewLayout.y,
+                  width: lastWorkoutPreviewLayout.width,
+                  transform: [
+                    {
+                      scale: lastWorkoutPreviewAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.3] }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {renderLastWorkoutBody(true)}
+              <Text style={styles.lastWorkoutLink}>{openLogLabel(language)}</Text>
+            </Animated.View>
+          </Pressable>
+        </Modal>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         bounces
+        scrollEnabled={!lastWorkoutPreviewVisible}
       >
         <View
           style={[
@@ -795,7 +886,9 @@ export const HomeScreen: React.FC<Props> = ({
                       activeOpacity={0.9}
                     >
                       <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
-                      <Text style={styles.groupRowText}>{labelForBlock(block)}</Text>
+                      <Text style={styles.groupRowText} numberOfLines={1} ellipsizeMode="tail">
+                        {labelForBlock(block)}
+                      </Text>
                       {block.id === 'cardio' ? (
                         <TouchableOpacity
                           onPress={(e) => {
@@ -822,7 +915,6 @@ export const HomeScreen: React.FC<Props> = ({
                           <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                         )}
                       </View>
-                      <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
                     </TouchableOpacity>
                   );
                 })}
@@ -843,7 +935,9 @@ export const HomeScreen: React.FC<Props> = ({
                           activeOpacity={0.9}
                         >
                           <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
-                          <Text style={styles.groupRowText}>{labelForBlock(block)}</Text>
+                          <Text style={styles.groupRowText} numberOfLines={1} ellipsizeMode="tail">
+                            {labelForBlock(block)}
+                          </Text>
                           <View
                             style={[styles.groupIconWrap, { borderColor: '#1F2937', backgroundColor: '#0F172A' }]}
                           >
@@ -858,7 +952,6 @@ export const HomeScreen: React.FC<Props> = ({
                               <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                             )}
                           </View>
-                          <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
                         </TouchableOpacity>
                       );
                     })}
@@ -1299,7 +1392,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: SPACING.md,
+    marginLeft: 'auto',
     borderWidth: 1,
   },
   groupIcon: {
@@ -1323,6 +1416,7 @@ const styles = StyleSheet.create({
     fontSize: TEXT.md,
     fontWeight: '700',
     marginHorizontal: SPACING.xs,
+    minWidth: 0,
   },
   groupAction: {
     paddingHorizontal: SPACING.md,
@@ -1343,6 +1437,9 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     gap: SPACING.sm,
     width: '100%',
+  },
+  lastWorkoutCardHidden: {
+    opacity: 0,
   },
   lastWorkoutTitle: {
     color: '#E5E7EB',
@@ -1403,6 +1500,17 @@ const styles = StyleSheet.create({
     color: '#60A5FA',
     fontSize: TEXT.sm,
     fontWeight: '700',
+  },
+  lastWorkoutPreviewBackdrop: {
+    flex: 1,
+  },
+  lastWorkoutPreviewDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#020617',
+  },
+  lastWorkoutPreviewCard: {
+    position: 'absolute',
+    zIndex: 2,
   },
   notesCard: {
     backgroundColor: '#0B1220',
