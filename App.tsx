@@ -33,6 +33,7 @@ import { CardioScreen } from './src/screens/CardioScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
+import { AnalysisScreen } from './src/screens/AnalysisScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
@@ -549,6 +550,7 @@ export default function App() {
             }}
             onOpenProgress={() => navigate('progress')}
             onOpenRepMax={() => navigate('repMax')}
+            onOpenAnalysis={() => navigate('analysis')}
             onStartCardio={handleStartCardio}
             onAddNote={handleAddNote}
           />
@@ -686,6 +688,10 @@ export default function App() {
 
         {nav.screen === 'progress' && (
           <ProgressScreen appState={appState} onBack={() => navigate('home')} />
+        )}
+
+        {nav.screen === 'analysis' && (
+          <AnalysisScreen language={appState.language ?? 'en'} onBack={() => navigate('home')} />
         )}
 
         {nav.screen === 'repMax' && (

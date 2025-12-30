@@ -11,7 +11,8 @@ export type ScreenName =
   | 'repMax'
   | 'profile'
   | 'quickLog'
-  | 'cardio';
+  | 'cardio'
+  | 'analysis';
 
 export interface NavState {
   screen: ScreenName;
