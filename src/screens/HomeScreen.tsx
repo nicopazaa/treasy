@@ -11,7 +11,8 @@ import {
   TextInput,
   Animated,
   AccessibilityInfo,
-  useWindowDimensions,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContext } from '@react-navigation/native';
@@ -80,6 +81,12 @@ const lastWorkoutTitle = (language: AppState['language']): string => {
   if (language === 'nb') return 'Forrige økt';
   if (language === 'es') return 'Sesión anterior';
   return 'Previous session';
+};
+
+const lastWorkoutTotalTitle = (language: AppState['language']): string => {
+  if (language === 'nb') return 'Total volum i forrige økt';
+  if (language === 'es') return 'Volumen total (sesión anterior)';
+  return 'Total volume (last session)';
 };
 
 const openLogLabel = (language: AppState['language']): string => {
@@ -153,8 +160,6 @@ export const HomeScreen: React.FC<Props> = ({
 }) => {
   const language = appState.language ?? 'en';
   const insets = useSafeAreaInsets();
-  const { width: screenWidth } = useWindowDimensions();
-  const isWideLayout = screenWidth >= 720;
   const headerTopPadding = insets.top + 4; // headerTopPadding: safe area inset plus small offset
   const headerBottomPadding = 8; // headerBottomPadding: space inside header below content
   const headerToQuickLogGap = 8; // gap between header and the QuickLog card
@@ -163,6 +168,7 @@ export const HomeScreen: React.FC<Props> = ({
   const [notesFocused, setNotesFocused] = useState(false);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [analysisAnchorY, setAnalysisAnchorY] = useState<number | null>(null);
+  const [compassOpen, setCompassOpen] = useState(false);
   const [exampleIndex, setExampleIndex] = useState(0);
   const exampleAnim = useMemo(() => new Animated.Value(1), []);
   const [lastExampleIndex, setLastExampleIndex] = useState(0);
@@ -334,6 +340,39 @@ export const HomeScreen: React.FC<Props> = ({
     });
   }, [analysisAnchorY]);
 
+  const closeCompass = useCallback(() => setCompassOpen(false), []);
+
+  const compassActions = useMemo(
+    () => [
+      {
+        id: 'progress',
+        label: language === 'nb' ? 'Åpne utvikling' : language === 'es' ? 'Abrir progreso' : 'Open progress',
+        onPress: onOpenProgress,
+      },
+      {
+        id: 'repMax',
+        label: language === 'nb' ? 'Åpne beste løft' : language === 'es' ? 'Abrir mejores levantamientos' : 'Open best lifts',
+        onPress: onOpenRepMax,
+      },
+      {
+        id: 'appa',
+        label: language === 'nb' ? 'Åpne Appa-AI' : language === 'es' ? 'Abrir Appa-AI' : 'Open Appa-AI',
+        onPress: onOpenAI,
+      },
+      {
+        id: 'analysis',
+        label:
+          language === 'nb'
+            ? 'Gå til analyseseksjonen'
+            : language === 'es'
+              ? 'Ir a la sección de análisis'
+              : 'Go to analysis section',
+        onPress: scrollToAnalysis,
+      },
+    ],
+    [language, onOpenAI, onOpenProgress, onOpenRepMax, scrollToAnalysis]
+  );
+
   const runTickerCycle = useCallback(() => {
     if (reduceMotionEnabled) return;
     if (tickerAnimatingRef.current) return;
@@ -455,8 +494,7 @@ export const HomeScreen: React.FC<Props> = ({
       const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
       const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
       const unit = t(language ?? 'en', 'units.kg');
-      const title =
-        language === 'es' ? 'Volumen total' : language === 'nb' ? 'Total volum' : 'Total volume';
+      const title = lastWorkoutTotalTitle(language);
       return `${title}: ${formatter.format(Math.round(totalVolume))} ${unit}`;
     })();
 
@@ -567,10 +605,14 @@ export const HomeScreen: React.FC<Props> = ({
         <>
           <Text style={styles.lastWorkoutDate}>{lastWorkout.dateLabel}</Text>
           <Text style={styles.lastWorkoutTitle}>{lastWorkoutTitle(language)}</Text>
-          <Text style={styles.lastWorkoutTotal}>{lastWorkout.totalVolumeLabel}</Text>
+          <Text style={styles.lastWorkoutTotal} numberOfLines={1} ellipsizeMode="tail">
+            {lastWorkout.totalVolumeLabel}
+          </Text>
           {lastWorkout.examples.length ? (
             reduceMotionEnabled ? (
-              <Text style={styles.lastWorkoutExample}>{lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}</Text>
+              <Text style={styles.lastWorkoutExample} numberOfLines={1} ellipsizeMode="tail">
+                {lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}
+              </Text>
             ) : (
               <Animated.Text
                 style={[
@@ -582,6 +624,8 @@ export const HomeScreen: React.FC<Props> = ({
                     ],
                   },
                 ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
               >
                 {lastWorkout.examples[lastExampleIndex % lastWorkout.examples.length]}
               </Animated.Text>
@@ -599,6 +643,34 @@ export const HomeScreen: React.FC<Props> = ({
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
+      <Modal visible={compassOpen} transparent animationType="fade" onRequestClose={closeCompass}>
+        <Pressable style={styles.compassSheetBackdrop} onPress={closeCompass}>
+          <Pressable style={styles.compassSheetCard} onPress={() => {}}>
+            <View style={styles.compassSheetHeader}>
+              <Text style={styles.compassSheetTitle}>
+                {language === 'nb' ? 'Hurtigvalg' : language === 'es' ? 'Atajos' : 'Shortcuts'}
+              </Text>
+            </View>
+            {compassActions.map((action, index) => (
+              <Pressable
+                key={action.id}
+                style={({ pressed }) => [
+                  styles.compassAction,
+                  index > 0 ? styles.compassActionDivider : null,
+                  pressed ? styles.compassActionPressed : null,
+                ]}
+                onPress={() => {
+                  closeCompass();
+                  action.onPress();
+                }}
+              >
+                <Text style={styles.compassActionText}>{action.label}</Text>
+                <Text style={styles.compassActionChevron}>{'>'}</Text>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
@@ -617,6 +689,18 @@ export const HomeScreen: React.FC<Props> = ({
             resizeMode="contain"
             accessibilityLabel="Treasy"
           />
+          <TouchableOpacity
+            onPress={() => setCompassOpen(true)}
+            style={styles.compassButton}
+            activeOpacity={0.85}
+            accessibilityLabel="Compass shortcuts"
+          >
+            <Image
+              source={require('../assets/compass.png')}
+              style={styles.compassIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
           <View style={styles.profileColumn}>
             <View style={styles.headerButtonsRow}>
               <TouchableOpacity onPress={onOpenProfile} hitSlop={8} style={styles.profileButton}>
@@ -697,8 +781,8 @@ export const HomeScreen: React.FC<Props> = ({
         <View style={styles.groupsWrapper}>
           <Text style={styles.groupsTitle}>{t(language, 'muscleGroups')}</Text>
 
-          <View style={[styles.groupsLayout, isWideLayout ? styles.groupsLayoutWide : styles.groupsLayoutStack]}>
-            <View style={[styles.groupsColumn, isWideLayout ? styles.columnFlex : styles.columnFull]}>
+          <View style={styles.twoColumnRow}>
+            <View style={[styles.groupsColumn, styles.leftColumn]}>
               <View style={styles.groupsList}>
                 {primaryBlocks.map((block) => {
                   const tone = getBlockTone(block.id);
@@ -728,7 +812,12 @@ export const HomeScreen: React.FC<Props> = ({
                         style={[styles.groupIconWrap, { borderColor: '#1F2937', backgroundColor: '#0F172A' }]}
                       >
                         {icon ? (
-                            <Image source={icon} style={styles.groupIcon} resizeMode="contain" tintColor="#3B82F6" />
+                          <Image
+                            source={icon}
+                            style={styles.groupIcon}
+                            resizeMode="contain"
+                            tintColor="#3B82F6"
+                          />
                         ) : (
                           <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                         )}
@@ -759,7 +848,12 @@ export const HomeScreen: React.FC<Props> = ({
                             style={[styles.groupIconWrap, { borderColor: '#1F2937', backgroundColor: '#0F172A' }]}
                           >
                             {icon ? (
-                          <Image source={icon} style={styles.groupIcon} resizeMode="contain" tintColor="#3B82F6" />
+                              <Image
+                                source={icon}
+                                style={styles.groupIcon}
+                                resizeMode="contain"
+                                tintColor="#3B82F6"
+                              />
                             ) : (
                               <View style={[styles.groupDot, { backgroundColor: '#3B82F6' }]} />
                             )}
@@ -773,7 +867,7 @@ export const HomeScreen: React.FC<Props> = ({
               ) : null}
             </View>
 
-            <View style={[styles.sideColumn, isWideLayout ? styles.columnFlex : styles.columnFull]}>
+            <View style={[styles.sideColumn, styles.rightColumn]}>
               {lastWorkoutCard}
 
               <View style={styles.notesCard}>
@@ -887,6 +981,78 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  compassButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compassIcon: {
+    width: 52,
+    height: 52,
+  },
+  compassSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+  },
+  compassSheetCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0A111F',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    paddingBottom: SPACING.xs,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
+  },
+  compassSheetHeader: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1E293B',
+  },
+  compassSheetTitle: {
+    color: '#E5E7EB',
+    fontSize: TEXT.md,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  compassAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+  },
+  compassActionDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#1E293B',
+  },
+  compassActionPressed: {
+    backgroundColor: 'rgba(96, 165, 250, 0.08)',
+  },
+  compassActionText: {
+    color: '#E2E8F0',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  compassActionChevron: {
+    color: '#64748B',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
   brandColumn: {
     flex: 1,
@@ -1082,29 +1248,27 @@ const styles = StyleSheet.create({
   groupsWrapper: {
     marginBottom: SPACING.xxl,
   },
-  groupsLayout: {
-    alignItems: 'flex-start',
-  },
-  groupsLayoutWide: {
+  twoColumnRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     columnGap: SPACING.lg,
     rowGap: SPACING.lg,
-  },
-  groupsLayoutStack: {
-    flexDirection: 'column',
-    gap: SPACING.lg,
+    width: '100%',
   },
   groupsColumn: {
     gap: SPACING.md,
   },
-  columnFlex: {
-    flex: 1,
-  },
-  columnFull: {
-    width: '100%',
+  leftColumn: {
+    flex: 1.2,
+    maxWidth: 180,
+    minWidth: 0,
   },
   sideColumn: {
     gap: SPACING.md,
+  },
+  rightColumn: {
+    flex: 1.4,
+    minWidth: 0,
   },
   groupsTitle: {
     color: '#E5E7EB',
