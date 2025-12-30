@@ -328,7 +328,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                         activeOpacity={0.9}
                       >
                         <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
-                        <Text style={styles.selectRowText}>{block.name}</Text>
+                        <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
                       </TouchableOpacity>
                     );
                   })}

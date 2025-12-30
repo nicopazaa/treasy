@@ -51,6 +51,7 @@ export interface SetEntry {
   isBodyweight?: boolean;
   distanceKm?: number | null;
   durationMin?: number | null;
+  pauseSec?: number | null;
   setType?: 'weighted' | 'bodyweight' | 'cardio';
 }
 

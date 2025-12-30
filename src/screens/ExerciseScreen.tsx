@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { Exercise, SetEntry, CardioEntry } from '../features/workouts/model/types';
+import { Exercise, SetEntry } from '../features/workouts/model/types';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { UndoToast } from '../shared/ui/UndoToast';
@@ -23,15 +23,38 @@ import { t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { Surface } from '../shared/ui/Surface';
 
+const parseOptionalNumber = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed.replace(',', '.'));
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
+const formatCardioSet = (language: AppLanguage, set: SetEntry): string => {
+  const parts: string[] = [];
+  if (set.distanceKm != null) parts.push(`${set.distanceKm} km`);
+  if (set.durationMin != null) parts.push(`${set.durationMin} min`);
+  if (set.pauseSec != null) parts.push(`${t(language, 'pauseShort')} ${set.pauseSec}s`);
+  return parts.length ? parts.join(' / ') : `${set.weight} kg x ${set.reps}`;
+};
+
 interface Props {
   language: AppLanguage;
   exercise: Exercise;
   sets: SetEntry[];
-  cardioEntries?: CardioEntry[];
   onBack: () => void;
-  onAddSet: (weight: number, reps: number) => void;
-  onAddCardio?: (options: { durationMin: number | null; distanceKm: number | null; heartRate?: number | null; intensity?: 'easy' | 'moderate' | 'hard' | null }) => void;
-  onUpdateSet: (setId: string, weight: number, reps: number) => void;
+  onAddSet: (
+    weight: number,
+    reps: number,
+    meta?: { distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null; isBodyweight?: boolean }
+  ) => void;
+  onUpdateSet: (
+    setId: string,
+    weight: number,
+    reps: number,
+    meta?: { distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null; isBodyweight?: boolean }
+  ) => void;
   onDeleteSet: (setId: string) => void;
   onRestoreSet: (set: SetEntry) => void;
   onAskAIForExercise: () => void;
@@ -49,19 +72,18 @@ export const ExerciseScreen: React.FC<Props> = ({
   onDeleteSet,
   onRestoreSet,
   onAskAIForExercise,
-  cardioEntries = [],
-  onAddCardio,
 }) => {
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
-  const [durationMin, setDurationMin] = useState(10);
-  const [durationHour, setDurationHour] = useState(0);
-  const [distance, setDistance] = useState('');
-  const [heartRate, setHeartRate] = useState('');
-  const [intensity, setIntensity] = useState<'easy' | 'moderate' | 'hard' | null>(null);
+  const [durationText, setDurationText] = useState('');
+  const [distanceText, setDistanceText] = useState('');
+  const [pauseText, setPauseText] = useState('');
   const [editingSet, setEditingSet] = useState<SetEntry | null>(null);
   const [editWeight, setEditWeight] = useState('');
   const [editReps, setEditReps] = useState('');
+  const [editDuration, setEditDuration] = useState('');
+  const [editDistance, setEditDistance] = useState('');
+  const [editPause, setEditPause] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [setActions, setSetActions] = useState<SetEntry | null>(null);
   const [deletedSet, setDeletedSet] = useState<SetEntry | null>(null);
@@ -75,6 +97,8 @@ export const ExerciseScreen: React.FC<Props> = ({
     const dt = new Date(lastSet.createdAt);
     return formatRelativeDayLabel(dt, new Date(), language) ?? formatShortDate(dt);
   }, [language, lastSet]);
+  const lastSetSummary =
+    lastSet && isCardio ? formatCardioSet(language, lastSet) : lastSet ? `${lastSet.weight} kg x ${lastSet.reps}` : null;
 
   useEffect(
     () => () => {
@@ -85,12 +109,14 @@ export const ExerciseScreen: React.FC<Props> = ({
 
   const handleAdd = () => {
     if (isCardio) {
-      const totalMinutes = durationHour * 60 + durationMin;
-      const km = distance.trim() ? Number(distance.replace(',', '.')) : null;
-      const hr = heartRate.trim() ? Number(heartRate.replace(',', '.')) : null;
-      if (onAddCardio) {
-        onAddCardio({ durationMin: totalMinutes, distanceKm: km, heartRate: hr, intensity });
-      }
+      const distanceKm = parseOptionalNumber(distanceText);
+      const durationMin = parseOptionalNumber(durationText);
+      const pauseSec = parseOptionalNumber(pauseText);
+      if (distanceKm == null && durationMin == null && pauseSec == null) return;
+      onAddSet(0, 1, { distanceKm, durationMin, pauseSec });
+      setDistanceText('');
+      setDurationText('');
+      setPauseText('');
       return;
     }
     const weightText = weight.trim();
@@ -109,9 +135,20 @@ export const ExerciseScreen: React.FC<Props> = ({
   const openEditSet = (set: SetEntry) => {
     setSetActions(null);
     setEditingSet(set);
+    setEditError(null);
+    if (set.setType === 'cardio') {
+      setEditDistance(set.distanceKm != null ? String(set.distanceKm) : '');
+      setEditDuration(set.durationMin != null ? String(set.durationMin) : '');
+      setEditPause(set.pauseSec != null ? String(set.pauseSec) : '');
+      setEditWeight('');
+      setEditReps('');
+      return;
+    }
     setEditWeight(String(set.weight));
     setEditReps(String(set.reps));
-    setEditError(null);
+    setEditDistance('');
+    setEditDuration('');
+    setEditPause('');
   };
 
   const closeEditSet = () => {
@@ -121,6 +158,19 @@ export const ExerciseScreen: React.FC<Props> = ({
 
   const handleUpdateSet = () => {
     if (!editingSet) return;
+
+    if (editingSet.setType === 'cardio') {
+      const distanceKm = parseOptionalNumber(editDistance);
+      const durationMin = parseOptionalNumber(editDuration);
+      const pauseSec = parseOptionalNumber(editPause);
+      if (distanceKm == null && durationMin == null && pauseSec == null) {
+        setEditError(t(language, 'cardioInvalid'));
+        return;
+      }
+      onUpdateSet(editingSet.id, 0, 1, { distanceKm, durationMin, pauseSec });
+      closeEditSet();
+      return;
+    }
 
     const weightText = editWeight.trim();
     const repsText = editReps.trim();
@@ -160,7 +210,13 @@ export const ExerciseScreen: React.FC<Props> = ({
   const closeSetActions = () => setSetActions(null);
 
   const handleCopyLastSet = () => {
-    if (!lastSet || isCardio) return;
+    if (!lastSet) return;
+    if (isCardio) {
+      setDistanceText(lastSet.distanceKm != null ? String(lastSet.distanceKm) : '');
+      setDurationText(lastSet.durationMin != null ? String(lastSet.durationMin) : '');
+      setPauseText(lastSet.pauseSec != null ? String(lastSet.pauseSec) : '');
+      return;
+    }
     setWeight(String(lastSet.weight));
     setReps(String(lastSet.reps));
   };
@@ -171,21 +227,18 @@ export const ExerciseScreen: React.FC<Props> = ({
       toneAccent={tone.accent}
       lastSet={lastSet}
       lastSetLabel={lastSetLabel}
+      lastSetSummary={lastSetSummary}
       weight={weight}
       reps={reps}
-      durationHour={durationHour}
-      durationMin={durationMin}
-      distance={distance}
-      heartRate={heartRate}
-      intensity={intensity}
+      durationText={durationText}
+      distanceText={distanceText}
+      pauseText={pauseText}
       isCardio={isCardio}
       onChangeWeight={setWeight}
       onChangeReps={setReps}
-      onChangeHour={setDurationHour}
-      onChangeMinute={setDurationMin}
-      onChangeDistance={setDistance}
-      onChangeHeartRate={setHeartRate}
-      onChangeIntensity={setIntensity}
+      onChangeDuration={setDurationText}
+      onChangeDistance={setDistanceText}
+      onChangePause={setPauseText}
       onCopyLastSet={handleCopyLastSet}
       onLogSet={handleAdd}
       onAskAIForExercise={onAskAIForExercise}
@@ -212,7 +265,9 @@ export const ExerciseScreen: React.FC<Props> = ({
           <View style={styles.setRow}>
             <TouchableOpacity style={styles.setInfo} onPress={() => openEditSet(item)} activeOpacity={0.85}>
               <Text style={styles.setText}>
-                {item.weight} kg x {item.reps} {t(language, 'reps').toLowerCase()}
+                {item.setType === 'cardio'
+                  ? formatCardioSet(language, item)
+                  : `${item.weight} kg x ${item.reps} ${t(language, 'reps').toLowerCase()}`}
               </Text>
               <Text style={styles.setDate}>{formatRelativeDateTime(new Date(item.createdAt), new Date(), language)}</Text>
             </TouchableOpacity>
@@ -241,7 +296,11 @@ export const ExerciseScreen: React.FC<Props> = ({
         <Pressable style={styles.sheetBackdrop} onPress={closeSetActions}>
           <Pressable style={styles.sheetCard} onPress={() => {}}>
             <Text style={styles.sheetTitle}>
-              {setActions ? `${setActions.weight} kg x ${setActions.reps}` : ''}
+              {setActions
+                ? setActions.setType === 'cardio'
+                  ? formatCardioSet(language, setActions)
+                  : `${setActions.weight} kg x ${setActions.reps}`
+                : ''}
             </Text>
             <TouchableOpacity
               style={styles.sheetAction}
@@ -287,22 +346,53 @@ export const ExerciseScreen: React.FC<Props> = ({
             <Text style={styles.modalTitle}>{t(language, 'editSetTitle')}</Text>
             <Text style={styles.modalSubtitle}>{t(language, 'editSetSubtitle')}</Text>
 
-            <LabeledInput
-              label={t(language, 'weightKg')}
-              placeholder="0"
-              keyboardType="numeric"
-              value={editWeight}
-              onChangeText={setEditWeight}
-              style={styles.inputField}
-            />
-            <LabeledInput
-              label={t(language, 'reps')}
-              placeholder="1"
-              keyboardType="numeric"
-              value={editReps}
-              onChangeText={setEditReps}
-              style={styles.inputField}
-            />
+            {editingSet?.setType === 'cardio' ? (
+              <>
+                <LabeledInput
+                  label={t(language, 'durationLabel')}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={editDuration}
+                  onChangeText={setEditDuration}
+                  style={styles.inputField}
+                />
+                <LabeledInput
+                  label={t(language, 'distanceLabel')}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={editDistance}
+                  onChangeText={setEditDistance}
+                  style={styles.inputField}
+                />
+                <LabeledInput
+                  label={t(language, 'pauseLabel')}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={editPause}
+                  onChangeText={setEditPause}
+                  style={styles.inputField}
+                />
+              </>
+            ) : (
+              <>
+                <LabeledInput
+                  label={t(language, 'weightKg')}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={editWeight}
+                  onChangeText={setEditWeight}
+                  style={styles.inputField}
+                />
+                <LabeledInput
+                  label={t(language, 'reps')}
+                  placeholder="1"
+                  keyboardType="numeric"
+                  value={editReps}
+                  onChangeText={setEditReps}
+                  style={styles.inputField}
+                />
+              </>
+            )}
 
             {editError ? <Text style={styles.error}>{editError}</Text> : null}
 
@@ -576,22 +666,18 @@ type ExerciseListHeaderProps = {
   toneAccent: string;
   lastSet: SetEntry | null;
   lastSetLabel: string | null;
+  lastSetSummary: string | null;
   weight: string;
   reps: string;
-  durationHour?: number;
-  durationMin?: number;
-  durationSec?: number;
-  distance?: string;
-  heartRate?: string;
-  intensity?: 'easy' | 'moderate' | 'hard' | null;
-  isCardio?: boolean;
+  durationText: string;
+  distanceText: string;
+  pauseText: string;
+  isCardio: boolean;
   onChangeWeight: (value: string) => void;
   onChangeReps: (value: string) => void;
-  onChangeHour?: (value: number) => void;
-  onChangeMinute?: (value: number) => void;
-  onChangeDistance?: (value: string) => void;
-  onChangeHeartRate?: (value: string) => void;
-  onChangeIntensity?: (value: 'easy' | 'moderate' | 'hard' | null) => void;
+  onChangeDuration: (value: string) => void;
+  onChangeDistance: (value: string) => void;
+  onChangePause: (value: string) => void;
   onCopyLastSet: () => void;
   onLogSet: () => void;
   onAskAIForExercise: () => void;
@@ -602,10 +688,18 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
   toneAccent,
   lastSet,
   lastSetLabel,
+  lastSetSummary,
   weight,
   reps,
+  durationText,
+  distanceText,
+  pauseText,
+  isCardio,
   onChangeWeight,
   onChangeReps,
+  onChangeDuration,
+  onChangeDistance,
+  onChangePause,
   onCopyLastSet,
   onLogSet,
   onAskAIForExercise,
@@ -616,27 +710,58 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
         {lastSet ? (
           <View style={styles.lastSetRow}>
             <Text style={styles.lastSetText}>
-              {t(language, 'last')}: {lastSet.weight} kg x {lastSet.reps} ({lastSetLabel})
+              {t(language, 'last')}: {lastSetSummary ?? ''} ({lastSetLabel})
             </Text>
           </View>
         ) : null}
 
-        <LabeledInput
-          label={t(language, 'weightKg')}
-          placeholder="0"
-          keyboardType="numeric"
-          value={weight}
-          onChangeText={onChangeWeight}
-          style={styles.inputField}
-        />
-        <LabeledInput
-          label={t(language, 'reps')}
-          placeholder="1"
-          keyboardType="numeric"
-          value={reps}
-          onChangeText={onChangeReps}
-          style={styles.inputField}
-        />
+        {isCardio ? (
+          <>
+            <LabeledInput
+              label={t(language, 'durationLabel')}
+              placeholder="0"
+              keyboardType="numeric"
+              value={durationText}
+              onChangeText={onChangeDuration}
+              style={styles.inputField}
+            />
+            <LabeledInput
+              label={t(language, 'distanceLabel')}
+              placeholder="0"
+              keyboardType="numeric"
+              value={distanceText}
+              onChangeText={onChangeDistance}
+              style={styles.inputField}
+            />
+            <LabeledInput
+              label={t(language, 'pauseLabel')}
+              placeholder="0"
+              keyboardType="numeric"
+              value={pauseText}
+              onChangeText={onChangePause}
+              style={styles.inputField}
+            />
+          </>
+        ) : (
+          <>
+            <LabeledInput
+              label={t(language, 'weightKg')}
+              placeholder="0"
+              keyboardType="numeric"
+              value={weight}
+              onChangeText={onChangeWeight}
+              style={styles.inputField}
+            />
+            <LabeledInput
+              label={t(language, 'reps')}
+              placeholder="1"
+              keyboardType="numeric"
+              value={reps}
+              onChangeText={onChangeReps}
+              style={styles.inputField}
+            />
+          </>
+        )}
 
         <TouchableOpacity
           onPress={onCopyLastSet}

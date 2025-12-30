@@ -83,7 +83,7 @@ export const BlockScreen: React.FC<Props> = ({
   const tone = getBlockTone(block.id);
   const blockTitle = useMemo(() => {
     const id = block.id as TrainingBlockId;
-    return (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'] as string[]).includes(id)
+    return (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]).includes(id)
       ? blockLabel(id, language)
       : block.name;
   }, [block.id, block.name, language]);
@@ -368,7 +368,7 @@ export const BlockScreen: React.FC<Props> = ({
                 .map((b) => {
                   const tone = getBlockTone(b.id);
                   const selected = b.id === moveExerciseTarget?.blockId;
-                  const isKnown = (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio'] as string[]).includes(
+                  const isKnown = (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]).includes(
                     b.id
                   );
                   const label = isKnown ? blockLabel(b.id as TrainingBlockId, language) : b.name;

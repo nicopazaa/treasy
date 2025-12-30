@@ -85,9 +85,9 @@ const lastWorkoutTitle = (language: AppState['language']): string => {
 };
 
 const lastWorkoutTotalTitle = (language: AppState['language']): string => {
-  if (language === 'nb') return 'Total volum i forrige økt';
-  if (language === 'es') return 'Volumen total (sesión anterior)';
-  return 'Total volume (last session)';
+  if (language === 'nb') return 'Total volum';
+  if (language === 'es') return 'Volumen total';
+  return 'Total volume';
 };
 
 const openLogLabel = (language: AppState['language']): string => {
@@ -251,7 +251,8 @@ export const HomeScreen: React.FC<Props> = ({
 
   const labelForBlock = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
-    return ORDER.includes(id) ? blockLabel(id, language) : block.name;
+    const known = [...ORDER, 'cardio', 'bodyweight'] as TrainingBlockId[];
+    return known.includes(id) ? blockLabel(id, language) : block.name;
   };
 
   const analytics = useMemo(() => {
@@ -478,7 +479,7 @@ export const HomeScreen: React.FC<Props> = ({
   }, [navigationContext, startTicker, stopTicker]);
 
   const resolveBlockLabel = useMemo(() => {
-    const known = new Set<string>([...ORDER, 'cardio']);
+    const known = new Set<string>([...ORDER, 'cardio', 'bodyweight']);
     const byId = new Map(appState.blocks.map((b) => [b.id, b.name] as const));
     return (blockId: string | null): string | null => {
       if (!blockId) return null;

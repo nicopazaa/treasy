@@ -69,7 +69,7 @@ function pickBestSet(sets: SetEntry[]): SetEntry | null {
 function labelForBlock(block: TrainingBlock, language: AppState['language']): string {
   const lang = language ?? 'en';
   const id = block.id as TrainingBlockId;
-  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs'].includes(id)) {
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'bodyweight'].includes(id)) {
     return blockLabel(id, lang);
   }
   return block.name;

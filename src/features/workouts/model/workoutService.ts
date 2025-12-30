@@ -32,11 +32,15 @@ type SetMeta = {
   isBodyweight?: boolean;
   distanceKm?: number | null;
   durationMin?: number | null;
+  pauseSec?: number | null;
   setType?: 'weighted' | 'bodyweight' | 'cardio';
 };
 
 function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
-  const isCardio = Number.isFinite(meta?.distanceKm) || Number.isFinite(meta?.durationMin);
+  const isCardio =
+    Number.isFinite(meta?.distanceKm) ||
+    Number.isFinite(meta?.durationMin) ||
+    Number.isFinite(meta?.pauseSec);
   const isBw = meta?.isBodyweight || (!isCardio && weight === 0);
   if (isCardio) {
     return {
@@ -52,6 +56,7 @@ function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
       setType: 'bodyweight',
       distanceKm: null,
       durationMin: null,
+      pauseSec: null,
     };
   }
   return {
@@ -60,6 +65,7 @@ function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
     setType: 'weighted',
     distanceKm: null,
     durationMin: null,
+    pauseSec: null,
   };
 }
 
@@ -356,6 +362,7 @@ export function addSet(
     isBodyweight: resolvedMeta.isBodyweight,
     distanceKm: resolvedMeta.distanceKm ?? null,
     durationMin: resolvedMeta.durationMin ?? null,
+    pauseSec: resolvedMeta.pauseSec ?? null,
     setType: resolvedMeta.setType,
   };
 
@@ -388,11 +395,12 @@ export function addSetsForExercise(
     weight: s.weight,
     reps: s.reps,
     createdAt,
-    isBodyweight: resolvedMeta.isBodyweight,
-    distanceKm: resolvedMeta.distanceKm ?? null,
-    durationMin: resolvedMeta.durationMin ?? null,
-    setType: resolvedMeta.setType,
-  }));
+      isBodyweight: resolvedMeta.isBodyweight,
+      distanceKm: resolvedMeta.distanceKm ?? null,
+      durationMin: resolvedMeta.durationMin ?? null,
+      pauseSec: resolvedMeta.pauseSec ?? null,
+      setType: resolvedMeta.setType,
+    }));
 
   return {
     ...state,
@@ -400,7 +408,13 @@ export function addSetsForExercise(
   };
 }
 
-export function updateSet(state: AppState, setId: string, weight: number, reps: number): AppState {
+export function updateSet(
+  state: AppState,
+  setId: string,
+  weight: number,
+  reps: number,
+  meta?: SetMeta
+): AppState {
   if (!Number.isFinite(weight) || !Number.isFinite(reps) || weight < 0 || reps <= 0) {
     return state;
   }
@@ -408,7 +422,22 @@ export function updateSet(state: AppState, setId: string, weight: number, reps: 
   return {
     ...state,
     sets: state.sets.map((s) =>
-      s.id === setId ? { ...s, weight, reps } : s
+      s.id === setId
+        ? (() => {
+            if (!meta) return { ...s, weight, reps };
+            const resolvedMeta = resolveSetMeta(weight, meta);
+            return {
+              ...s,
+              weight,
+              reps,
+              isBodyweight: resolvedMeta.isBodyweight,
+              distanceKm: resolvedMeta.distanceKm ?? null,
+              durationMin: resolvedMeta.durationMin ?? null,
+              pauseSec: resolvedMeta.pauseSec ?? null,
+              setType: resolvedMeta.setType,
+            };
+          })()
+        : s
     ),
   };
 }
@@ -462,6 +491,7 @@ export interface DailySetView {
   isBodyweight?: boolean;
   distanceKm?: number | null;
   durationMin?: number | null;
+  pauseSec?: number | null;
   setType?: 'weighted' | 'bodyweight' | 'cardio';
 }
 
@@ -489,6 +519,7 @@ export function getDailyWorkout(state: AppState, dateKey: string): DailySetView[
       isBodyweight: s.isBodyweight,
       distanceKm: s.distanceKm ?? null,
       durationMin: s.durationMin ?? null,
+      pauseSec: s.pauseSec ?? null,
       setType: s.setType,
     });
   }
@@ -510,6 +541,7 @@ export interface GroupedDailySetView {
     isBodyweight?: boolean;
     distanceKm?: number | null;
     durationMin?: number | null;
+    pauseSec?: number | null;
     setType?: 'weighted' | 'bodyweight' | 'cardio';
   }>;
 }
@@ -536,6 +568,7 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
           isBodyweight: set.isBodyweight,
           distanceKm: set.distanceKm,
           durationMin: set.durationMin,
+          pauseSec: set.pauseSec,
           setType: set.setType,
         },
       ],
@@ -549,6 +582,7 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
       isBodyweight: set.isBodyweight,
       distanceKm: set.distanceKm,
       durationMin: set.durationMin,
+      pauseSec: set.pauseSec,
       setType: set.setType,
     });
     existing.time = set.time;

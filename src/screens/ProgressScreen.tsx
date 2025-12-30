@@ -30,7 +30,7 @@ function estimateOneRm(weight: number, reps: number): number {
 
 function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
   const id = block.id as TrainingBlockId;
-  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs'].includes(id)) {
+  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'bodyweight'].includes(id)) {
     return blockLabel(id, language);
   }
   return block.name;

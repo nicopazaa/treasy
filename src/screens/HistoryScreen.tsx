@@ -2,12 +2,12 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContext, useFocusEffect } from '@react-navigation/native';
-import { AppState } from '../features/workouts/model/types';
+import { AppState, TrainingBlockId } from '../features/workouts/model/types';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
-import { t } from '../shared/i18n/i18n';
+import { blockLabel, t } from '../shared/i18n/i18n';
 
 type Props = {
   appState: AppState;
@@ -54,6 +54,7 @@ function formatSetParts(
     isBodyweight?: boolean;
     distanceKm?: number | null;
     durationMin?: number | null;
+    pauseSec?: number | null;
     setType?: 'weighted' | 'bodyweight' | 'cardio';
   }>
 ): Array<{
@@ -62,21 +63,25 @@ function formatSetParts(
   repsText: string | null;
   index: number;
 }> {
-  return sets.map((s, idx) => ({
-    weightValue:
-      s.setType === 'cardio'
-        ? s.distanceKm != null
-          ? `${s.distanceKm} km`
-          : s.durationMin != null
-            ? `${s.durationMin} min`
+  return sets.map((s, idx) => {
+    const cardioParts: string[] = [];
+    if (s.distanceKm != null) cardioParts.push(`${s.distanceKm} km`);
+    if (s.durationMin != null) cardioParts.push(`${s.durationMin} min`);
+    if (s.pauseSec != null) cardioParts.push(`${t(language ?? 'en', 'pauseShort')} ${s.pauseSec}s`);
+    return {
+      weightValue:
+        s.setType === 'cardio'
+          ? cardioParts.length
+            ? cardioParts.join(' / ')
             : `${s.weight}`
-        : s.isBodyweight
-          ? 'BW'
-          : `${s.weight}`,
-    weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
-    repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
-    index: idx + 1,
-  }));
+          : s.isBodyweight
+            ? 'BW'
+            : `${s.weight}`,
+      weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
+      repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
+      index: idx + 1,
+    };
+  });
 }
 
 function groupByBlock(groups: GroupedDailySetView[]): BlockGroup[] {
@@ -247,16 +252,23 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                         const blockKey = block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block';
                         const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
                         const isBlockCollapsed = collapsedBlocks.has(blockKey);
+                        const blockId = block.blockId as TrainingBlockId | undefined;
+                        const isKnownBlock =
+                          blockId &&
+                          (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]).includes(
+                            blockId
+                          );
+                        const blockTitle = isKnownBlock ? blockLabel(blockId, language ?? 'en') : block.blockName;
                         return (
                           <View key={blockKey} style={styles.blockGroup}>
-                            {block.blockName ? (
+                            {blockTitle ? (
                               <TouchableOpacity
                                 style={styles.blockHeaderRow}
                                 onPress={() => toggleBlockCollapsed(blockKey)}
                                 activeOpacity={0.85}
                               >
                                 <Text style={[styles.blockLabel, { color: dotColor }]}>
-                                  {block.blockName}
+                                  {blockTitle}
                                 </Text>
                                 <Text style={styles.blockSummary}>
                                   Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}

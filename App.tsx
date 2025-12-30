@@ -616,14 +616,14 @@ export default function App() {
                 selectedExerciseId: currentExercise.id,
               })
             }
-          onAddSet={(weight, reps) => {
+          onAddSet={(weight, reps, meta) => {
             setAppState((prev) =>
-              prev ? addSet(prev, currentExercise.id, weight, reps, {}) : prev
+              prev ? addSet(prev, currentExercise.id, weight, reps, meta) : prev
             );
           }}
-            onUpdateSet={(setId, weight, reps) => {
+            onUpdateSet={(setId, weight, reps, meta) => {
               setAppState((prev) =>
-                prev ? updateSet(prev, setId, weight, reps) : prev
+                prev ? updateSet(prev, setId, weight, reps, meta) : prev
               );
             }}
             onDeleteSet={(setId) => {
