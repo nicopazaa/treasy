@@ -63,7 +63,7 @@ function formatSetParts(
   repsText: string | null;
   index: number;
 }> {
-  return sets.map((s, idx) => {
+  const parts = sets.map((s, idx) => {
     const cardioParts: string[] = [];
     if (s.distanceKm != null) cardioParts.push(`${s.distanceKm} km`);
     if (s.durationMin != null) cardioParts.push(`${s.durationMin} min`);
@@ -82,6 +82,7 @@ function formatSetParts(
       index: idx + 1,
     };
   });
+  return parts.reverse();
 }
 
 function groupByBlock(groups: GroupedDailySetView[]): BlockGroup[] {
@@ -437,6 +438,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: SCREEN_PADDING,
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.xxxl,
   },
   row: {

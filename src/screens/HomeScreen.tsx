@@ -1086,12 +1086,6 @@ export const HomeScreen: React.FC<Props> = ({
                 )}
               </View>
 
-              <TouchableOpacity style={styles.analysisNavRow} onPress={onOpenAnalysis} activeOpacity={0.9}>
-                <Text style={styles.analysisNavText}>
-                  {language === 'nb' ? 'Analyset' : language === 'es' ? 'Análisis' : 'Analysis'}
-                </Text>
-                <Text style={styles.analysisNavChevron}>{'>'}</Text>
-              </TouchableOpacity>
             </View>
 
             <View style={[styles.sideColumn, styles.rightColumn]}>
@@ -1130,7 +1124,20 @@ export const HomeScreen: React.FC<Props> = ({
               ) : null}
 
               {lastWorkoutCard}
+            </View>
+          </View>
 
+          <View style={[styles.twoColumnRow, styles.twoColumnRowSectionGap]}>
+            <View style={[styles.groupsColumn, styles.leftColumn]}>
+              <TouchableOpacity style={styles.analysisNavRow} onPress={onOpenAnalysis} activeOpacity={0.9}>
+                <Text style={styles.analysisNavText}>
+                  {language === 'nb' ? 'Analyse' : language === 'es' ? 'Análisis' : 'Analysis'}
+                </Text>
+                <Text style={styles.analysisNavChevron}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.sideColumn, styles.rightColumn]}>
               <View style={styles.notesCard}>
                 <Text style={styles.notesTitle}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
                 <TextInput
@@ -1215,6 +1222,7 @@ const styles = StyleSheet.create({
   heroLogo: {
     width: 80,
     height: 80,
+    marginTop: 4,
     flexShrink: 0,
   },
   headerRow: {
@@ -1231,6 +1239,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 4,
   },
   compassIcon: {
     width: 52,
@@ -1473,6 +1482,9 @@ const styles = StyleSheet.create({
     rowGap: SPACING.lg,
     width: '100%',
   },
+  twoColumnRowSectionGap: {
+    marginTop: SPACING.md,
+  },
   groupsColumn: {
     gap: SPACING.md,
   },
@@ -1564,7 +1576,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   logSearchTitle: {
-    color: '#E5E7EB',
+    color: '#60A5FA',
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -1625,7 +1637,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   analysisNavText: {
-    color: '#F9FAFB',
+    color: '#60A5FA',
     fontSize: TEXT.md,
     fontWeight: '800',
   },
@@ -1648,7 +1660,7 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   lastWorkoutTitle: {
-    color: '#E5E7EB',
+    color: '#60A5FA',
     fontSize: TEXT.md,
     fontWeight: '700',
     borderBottomWidth: 1,
@@ -1730,7 +1742,7 @@ const styles = StyleSheet.create({
     minHeight: 180,
   },
   notesTitle: {
-    color: '#E5E7EB',
+    color: '#60A5FA',
     fontSize: TEXT.md,
     fontWeight: '700',
   },
