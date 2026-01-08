@@ -10,6 +10,7 @@ export type ScreenName =
   | 'progress'
   | 'repMax'
   | 'profile'
+  | 'settings'
   | 'quickLog'
   | 'cardio'
   | 'analysis';

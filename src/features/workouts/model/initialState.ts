@@ -58,6 +58,7 @@ export function createInitialState(options?: {
     weightKg: null,
     theme: 'dark',
     language,
+    massUnit: 'kg',
     blocks: DEFAULT_BLOCKS,
     exercises: [],
     sets: [],

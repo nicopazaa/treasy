@@ -22,6 +22,7 @@ import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/t
 import { t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { Surface } from '../shared/ui/Surface';
+import { fromKg, formatWeight, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
 
 const parseOptionalNumber = (value: string): number | null => {
   const trimmed = value.trim();
@@ -36,11 +37,12 @@ const formatCardioSet = (language: AppLanguage, set: SetEntry): string => {
   if (set.distanceKm != null) parts.push(`${set.distanceKm} km`);
   if (set.durationMin != null) parts.push(`${set.durationMin} min`);
   if (set.pauseSec != null) parts.push(`${t(language, 'pauseShort')} ${set.pauseSec}s`);
-  return parts.length ? parts.join(' / ') : `${set.weight} kg x ${set.reps}`;
+  return parts.length ? parts.join(' / ') : `${set.weight} x ${set.reps}`;
 };
 
 interface Props {
   language: AppLanguage;
+  massUnit: MassUnit;
   exercise: Exercise;
   sets: SetEntry[];
   onBack: () => void;
@@ -64,6 +66,7 @@ const STICKY_HEIGHT = 0;
 
 export const ExerciseScreen: React.FC<Props> = ({
   language,
+  massUnit,
   exercise,
   sets,
   onBack,
@@ -73,6 +76,7 @@ export const ExerciseScreen: React.FC<Props> = ({
   onRestoreSet,
   onAskAIForExercise,
 }) => {
+  const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [durationText, setDurationText] = useState('');
@@ -90,6 +94,27 @@ export const ExerciseScreen: React.FC<Props> = ({
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tone = getBlockTone(exercise.blockId);
   const isCardio = exercise.blockId === 'cardio';
+  const formatInputWeight = (valueKg: number): string => {
+    if (!Number.isFinite(valueKg) || valueKg < 0) return '';
+    const converted = fromKg(valueKg, massUnit);
+    const rounded = roundForDisplay(converted, massUnit);
+    const raw = massUnit === 'lb' ? String(Math.round(rounded)) : String(rounded);
+    return language === 'nb' || language === 'es' ? raw.replace('.', ',') : raw;
+  };
+
+  const formatSetSummary = (set: SetEntry): string => {
+    if (set.setType === 'cardio') return formatCardioSet(language, set);
+    if (set.isBodyweight || set.setType === 'bodyweight' || set.weight === 0) return `BW x ${set.reps}`;
+    return `${formatWeight(set.weight, massUnit, language)} x ${set.reps}`;
+  };
+
+  const formatSetListLabel = (set: SetEntry): string => {
+    if (set.setType === 'cardio') return formatCardioSet(language, set);
+    if (set.isBodyweight || set.setType === 'bodyweight' || set.weight === 0) {
+      return `BW x ${set.reps} ${t(language, 'reps').toLowerCase()}`;
+    }
+    return `${formatWeight(set.weight, massUnit, language)} x ${set.reps} ${t(language, 'reps').toLowerCase()}`;
+  };
 
   const lastSet = sets[0] ?? null;
   const lastSetLabel = useMemo(() => {
@@ -97,8 +122,7 @@ export const ExerciseScreen: React.FC<Props> = ({
     const dt = new Date(lastSet.createdAt);
     return formatRelativeDayLabel(dt, new Date(), language) ?? formatShortDate(dt);
   }, [language, lastSet]);
-  const lastSetSummary =
-    lastSet && isCardio ? formatCardioSet(language, lastSet) : lastSet ? `${lastSet.weight} kg x ${lastSet.reps}` : null;
+  const lastSetSummary = lastSet ? formatSetSummary(lastSet) : null;
 
   useEffect(
     () => () => {
@@ -123,11 +147,12 @@ export const ExerciseScreen: React.FC<Props> = ({
     const repsText = reps.trim();
     if (!weightText || !repsText) return;
 
-    const w = Number(weightText.replace(',', '.'));
+    const inputW = Number(weightText.replace(',', '.'));
     const r = Number(repsText);
-    if (!Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) return;
+    const wKg = toKg(inputW, massUnit);
+    if (!Number.isFinite(wKg) || !Number.isFinite(r) || wKg < 0 || r <= 0) return;
 
-    onAddSet(w, r);
+    onAddSet(wKg, r);
     setWeight('');
     setReps('');
   };
@@ -144,7 +169,7 @@ export const ExerciseScreen: React.FC<Props> = ({
       setEditReps('');
       return;
     }
-    setEditWeight(String(set.weight));
+    setEditWeight(formatInputWeight(set.weight));
     setEditReps(String(set.reps));
     setEditDistance('');
     setEditDuration('');
@@ -174,15 +199,16 @@ export const ExerciseScreen: React.FC<Props> = ({
 
     const weightText = editWeight.trim();
     const repsText = editReps.trim();
-    const w = Number(weightText.replace(',', '.'));
+    const inputW = Number(weightText.replace(',', '.'));
     const r = Number(repsText);
+    const wKg = toKg(inputW, massUnit);
 
-    if (!weightText || !repsText || !Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) {
+    if (!weightText || !repsText || !Number.isFinite(wKg) || !Number.isFinite(r) || wKg < 0 || r <= 0) {
       setEditError(t(language, 'invalidWeightReps'));
       return;
     }
 
-    onUpdateSet(editingSet.id, w, r);
+    onUpdateSet(editingSet.id, wKg, r);
     closeEditSet();
   };
 
@@ -217,7 +243,7 @@ export const ExerciseScreen: React.FC<Props> = ({
       setPauseText(lastSet.pauseSec != null ? String(lastSet.pauseSec) : '');
       return;
     }
-    setWeight(String(lastSet.weight));
+    setWeight(formatInputWeight(lastSet.weight));
     setReps(String(lastSet.reps));
   };
 
@@ -228,6 +254,7 @@ export const ExerciseScreen: React.FC<Props> = ({
       lastSet={lastSet}
       lastSetLabel={lastSetLabel}
       lastSetSummary={lastSetSummary}
+      weightLabel={t(language, 'weightKg', { unit: unitLabel })}
       weight={weight}
       reps={reps}
       durationText={durationText}
@@ -267,7 +294,7 @@ export const ExerciseScreen: React.FC<Props> = ({
               <Text style={styles.setText}>
                 {item.setType === 'cardio'
                   ? formatCardioSet(language, item)
-                  : `${item.weight} kg x ${item.reps} ${t(language, 'reps').toLowerCase()}`}
+                  : formatSetListLabel(item)}
               </Text>
               <Text style={styles.setDate}>{formatRelativeDateTime(new Date(item.createdAt), new Date(), language)}</Text>
             </TouchableOpacity>
@@ -299,7 +326,7 @@ export const ExerciseScreen: React.FC<Props> = ({
               {setActions
                 ? setActions.setType === 'cardio'
                   ? formatCardioSet(language, setActions)
-                  : `${setActions.weight} kg x ${setActions.reps}`
+                  : formatSetSummary(setActions)
                 : ''}
             </Text>
             <TouchableOpacity
@@ -376,7 +403,7 @@ export const ExerciseScreen: React.FC<Props> = ({
             ) : (
               <>
                 <LabeledInput
-                  label={t(language, 'weightKg')}
+                  label={t(language, 'weightKg', { unit: unitLabel })}
                   placeholder="0"
                   keyboardType="numeric"
                   value={editWeight}
@@ -667,6 +694,7 @@ type ExerciseListHeaderProps = {
   lastSet: SetEntry | null;
   lastSetLabel: string | null;
   lastSetSummary: string | null;
+  weightLabel: string;
   weight: string;
   reps: string;
   durationText: string;
@@ -689,6 +717,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
   lastSet,
   lastSetLabel,
   lastSetSummary,
+  weightLabel,
   weight,
   reps,
   durationText,
@@ -745,7 +774,7 @@ const ExerciseListHeader: React.FC<ExerciseListHeaderProps> = ({
         ) : (
           <>
             <LabeledInput
-              label={t(language, 'weightKg')}
+              label={weightLabel}
               placeholder="0"
               keyboardType="numeric"
               value={weight}

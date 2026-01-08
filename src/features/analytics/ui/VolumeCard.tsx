@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, LayoutA
 import type { AppLanguage } from '../../../shared/types';
 import { SPACING, TEXT as TEXT_TOKENS, RADIUS, COLORS } from '../../../shared/theme/tokens';
 import { t } from '../../../shared/i18n/i18n';
+import { fromKg, type MassUnit } from '../../../shared/utils/units';
 
 export type VolumeByMuscleRow = {
   id: string;
@@ -13,6 +14,7 @@ export type VolumeByMuscleRow = {
 
 type Props = {
   language: AppLanguage;
+  massUnit: MassUnit;
   hasData: boolean;
   totalLabel: string;
   changePct: number;
@@ -38,11 +40,11 @@ function formatChange(language: AppLanguage, pctChange: number): { text: string;
   return { text: '↓', color: COLORS.warning };
 }
 
-export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, changePct, volumeLabel, rows }) => {
+export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, totalLabel, changePct, volumeLabel, rows }) => {
   const [open, setOpen] = useState(false);
 
   const items = useMemo(() => rows.slice(), [rows]);
-  const unit = t(language, 'units.kg');
+  const unit = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const changeDisplay = formatChange(language, changePct);
 
   const toggle = () => {
@@ -77,7 +79,7 @@ export const VolumeCard: React.FC<Props> = ({ language, hasData, totalLabel, cha
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent} nestedScrollEnabled>
               {items.map((item) => {
-                const volumeText = `${formatNumber(language, item.volume7d)} ${unit}`;
+                const volumeText = `${formatNumber(language, fromKg(item.volume7d, massUnit))} ${unit}`;
                 const changeText = formatChange(language, item.pctChange);
                 return (
                   <View key={item.id} style={styles.itemRow}>

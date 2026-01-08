@@ -17,6 +17,7 @@ import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { COLORS } from '../shared/theme/tokens';
+import { formatWeight } from '../shared/utils/units';
 
 interface Props {
   appState: AppState;
@@ -77,6 +78,7 @@ function labelForBlock(block: TrainingBlock, language: AppState['language']): st
 
 const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
 
   const sections: RepMaxSection[] = useMemo(() => {
@@ -92,7 +94,7 @@ const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
         if (!best) continue;
 
         const isWeighted = best.setType !== 'bodyweight' && best.setType !== 'cardio' && best.weight > 0;
-        const bestText = isWeighted ? `${best.weight} kg` : `${best.reps} reps`;
+        const bestText = isWeighted ? formatWeight(best.weight, massUnit, language) : `${best.reps} reps`;
         items.push({
           id: ex.id,
           exerciseName: formatExerciseLabel(ex),

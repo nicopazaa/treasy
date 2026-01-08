@@ -35,6 +35,7 @@ export interface Exercise {
   name: string;
   shortCode?: string | null;
   tags?: string[];
+  isCustom?: boolean;
 }
 
 export interface ExerciseMetadataInput {
@@ -82,6 +83,7 @@ export interface AppState {
   weightKg?: number | null;
   theme?: ThemeMode; // lagres, kan brukes til theming senere
   language?: AppLanguage;
+  massUnit?: 'kg' | 'lb';
 
   // Treningsdata
   blocks: TrainingBlock[];

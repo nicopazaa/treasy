@@ -15,6 +15,7 @@ import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { LANGUAGE_OPTIONS, t } from '../shared/i18n/i18n';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fromKg, roundForDisplay, toKg } from '../shared/utils/units';
 
 interface Props {
   appState: AppState;
@@ -30,19 +31,39 @@ export const ProfileScreen: React.FC<Props> = ({
   onOpenLogin,
 }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
+  const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const [nickname, setNickname] = useState(appState.nickname ?? '');
   const [height, setHeight] = useState(appState.heightCm != null ? String(appState.heightCm) : '');
-  const [weight, setWeight] = useState(appState.weightKg != null ? String(appState.weightKg) : '');
+  const [weight, setWeight] = useState(() => {
+    if (appState.weightKg == null) return '';
+    const converted = fromKg(appState.weightKg, massUnit);
+    const rounded = roundForDisplay(converted, massUnit);
+    const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
+    try {
+      return new Intl.NumberFormat(locale, {
+        maximumFractionDigits: massUnit === 'lb' ? 0 : 1,
+        minimumFractionDigits: 0,
+        useGrouping: false,
+      }).format(rounded);
+    } catch {
+      const raw = massUnit === 'lb' ? String(Math.round(rounded)) : String(rounded);
+      return language === 'nb' || language === 'es' ? raw.replace('.', ',') : raw;
+    }
+  });
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   const handleSave = () => {
     const trimmedNickname = nickname.trim();
+    const parsedWeight = weight.trim() ? Number(weight.trim().replace(',', '.')) : null;
+    const weightKg =
+      parsedWeight != null && Number.isFinite(parsedWeight) && parsedWeight > 0 ? toKg(parsedWeight, massUnit) : null;
 
     const next: AppState = {
       ...appState,
       nickname: trimmedNickname || null,
       heightCm: height ? Number(height) || null : null,
-      weightKg: weight ? Number(weight) || null : null,
+      weightKg: weightKg != null && Number.isFinite(weightKg) ? weightKg : null,
     };
 
     onUpdate(next);
@@ -181,7 +202,7 @@ export const ProfileScreen: React.FC<Props> = ({
             onChangeText={setHeight}
           />
 
-          <Text style={[styles.label, { marginTop: SPACING.md }]}>{t(language, 'weightKg')}</Text>
+          <Text style={[styles.label, { marginTop: SPACING.md }]}>{t(language, 'weightKg', { unit: unitLabel })}</Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"

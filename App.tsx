@@ -36,10 +36,12 @@ import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { AnalysisScreen } from './src/screens/AnalysisScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
 import { parseNoteText } from './src/features/notes';
 import { t } from './src/shared/i18n/i18n';
 import { formatExerciseLabel } from './src/shared/utils/exerciseLabel';
+import { toKg } from './src/shared/utils/units';
 import type { NavState, ScreenName } from './src/app/navigation/types';
 
 type NavHistoryState = {
@@ -118,12 +120,13 @@ function logWorkoutsFromNote(state: AppState, noteText: string): AppState {
   if (!parsedExercises.length) return state;
 
   let next = state;
+  const unit = state.massUnit ?? 'kg';
 
   for (const entry of parsedExercises) {
     const { name: parsedName, metadata } = splitNameAndCodes(entry.exerciseName);
     const sets = entry.sets
       .filter((s) => Number.isFinite(s.weight) && Number.isFinite(s.reps) && s.weight >= 0 && s.reps > 0)
-      .map((s) => ({ weight: s.weight, reps: s.reps }));
+      .map((s) => ({ weight: toKg(s.weight, unit), reps: s.reps }));
     if (!parsedName || sets.length === 0) continue;
 
     const existing =
@@ -163,6 +166,7 @@ function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
     name: 'Cardio',
     shortCode: 'CARDIO',
     tags: [],
+    isCustom: false,
   };
 
   return {
@@ -393,19 +397,21 @@ export default function App() {
 
     setAppState((prev) => {
       if (!prev) return prev;
+      const unit = prev.massUnit ?? 'kg';
 
       const blockHint = options?.blockId ?? null;
       let next = addLogEntry(prev, text, { pinned: false });
       const parsed = parseQuickLog(text);
 
       if (parsed) {
+        const sets = parsed.sets.map((s) => ({ ...s, weight: toKg(s.weight, unit) }));
         const { name: parsedName, metadata } = splitNameAndCodes(parsed.exerciseName);
         const existing =
           findExerciseFuzzy(next, parsed.exerciseName) ??
           (parsedName !== parsed.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
 
         if (existing) {
-          next = addSetsForExercise(next, existing.id, parsed.sets);
+          next = addSetsForExercise(next, existing.id, sets);
         } else {
           const inferredBlock = inferBlockIdFromExercise(parsed.exerciseName);
           const allowedBlocks = new Set(next.blocks.map((b) => b.id));
@@ -418,7 +424,7 @@ export default function App() {
             next,
             targetBlock,
             parsedName,
-            parsed.sets,
+            sets,
             metadata
           );
           if (createdResult) {
@@ -540,6 +546,7 @@ export default function App() {
             onOpenAI={() => navigate('ai')}
             onOpenQuickLog={() => navigate('quickLog')}
             onOpenProfile={() => navigate('profile')}
+            onOpenSettings={() => navigate('settings')}
             onOpenHistory={() => {
               setHistoryInitialDateKey(null);
               navigate('history');
@@ -559,6 +566,7 @@ export default function App() {
         {nav.screen === 'block' && currentBlock && (
           <BlockScreen
             language={appState.language ?? 'en'}
+            massUnit={appState.massUnit ?? 'kg'}
             block={currentBlock}
             exercises={appState.exercises.filter(
               (ex) => ex.blockId === currentBlock.id
@@ -608,6 +616,7 @@ export default function App() {
         {nav.screen === 'exercise' && currentExercise && (
           <ExerciseScreen
             language={appState.language ?? 'en'}
+            massUnit={appState.massUnit ?? 'kg'}
             exercise={currentExercise}
             sets={appState.sets
               .filter((s) => s.exerciseId === currentExercise.id)
@@ -719,6 +728,14 @@ export default function App() {
             onBack={() => navigate('home')}
             onUpdate={(next: AppState) => setAppState(next)}
             onOpenLogin={() => navigate('login')}
+          />
+        )}
+
+        {nav.screen === 'settings' && (
+          <SettingsScreen
+            appState={appState}
+            onBack={() => navigate('home')}
+            onUpdate={(next: AppState) => setAppState(next)}
           />
         )}
       </View>

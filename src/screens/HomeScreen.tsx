@@ -23,6 +23,7 @@ import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
+import { fromKg, formatWeight } from '../shared/utils/units';
 import {
   buildWorkoutTimeline,
   calcPctChange,
@@ -48,6 +49,7 @@ type Props = {
   onOpenRepMax: () => void;
   onOpenAnalysis: () => void;
   onOpenProfile: () => void;
+  onOpenSettings: () => void;
   onStartCardio: () => void;
   onAddNote: (text: string) => void;
 };
@@ -134,11 +136,12 @@ const calculateGroupVolume = (group: GroupedDailySetView): number => {
   }, 0);
 };
 
-const formatVolumeLabel = (language: AppState['language'], volume: number): string => {
+const formatVolumeLabel = (language: AppState['language'], volumeKg: number, massUnit: 'kg' | 'lb'): string => {
   const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-  const unit = t(language ?? 'en', 'units.kg');
-  return `${t(language ?? 'en', 'analysis.volume.title')}: ${formatter.format(Math.round(volume))} ${unit}`;
+  const unit = t(language ?? 'en', massUnit === 'lb' ? 'units.lb' : 'units.kg');
+  const converted = fromKg(volumeKg, massUnit);
+  return `${t(language ?? 'en', 'analysis.volume.title')}: ${formatter.format(Math.round(converted))} ${unit}`;
 };
 
 const formatSetsLabel = (
@@ -169,10 +172,13 @@ export const HomeScreen: React.FC<Props> = ({
   onOpenRepMax,
   onOpenAnalysis,
   onOpenProfile,
+  onOpenSettings,
   onStartCardio,
   onAddNote,
 }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
+  const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const insets = useSafeAreaInsets();
   const headerTopPadding = insets.top + 4; // headerTopPadding: safe area inset plus small offset
   const headerBottomPadding = 8; // headerBottomPadding: space inside header below content
@@ -261,11 +267,16 @@ export const HomeScreen: React.FC<Props> = ({
 
   const nickname = appState.nickname?.trim() ?? '';
   const quickLogExamples = useMemo(() => ['Benkpress 80x5, 90x3', 'Markløft 100x5'], []);
-  const logSearchWeightFormatter = useMemo(() => {
-    const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
-    return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
-  }, [language]);
-  const kgUnit = t(language, 'units.kg');
+  const formatWeightCompact = useCallback(
+    (weightKg: number): string => {
+      if (!Number.isFinite(weightKg)) return `0${unitLabel}`;
+      const formatted = formatWeight(weightKg, massUnit, language);
+      const lastSpace = formatted.lastIndexOf(' ');
+      if (lastSpace <= 0) return formatted;
+      return `${formatted.slice(0, lastSpace)}${formatted.slice(lastSpace + 1)}`;
+    },
+    [language, massUnit, unitLabel]
+  );
 
   const labelForBlock = (block: TrainingBlock): string => {
     const id = block.id as TrainingBlockId;
@@ -300,11 +311,12 @@ export const HomeScreen: React.FC<Props> = ({
           ? 'Ukjent øvelse'
           : 'Unknown exercise';
       const blockId = exercise?.blockId ?? null;
+      const weightInUnit = fromKg(set.weight, massUnit);
 
       const matches = isNumericQuery
-        ? matchesNumber(set.weight) || matchesNumber(set.reps)
+        ? matchesNumber(weightInUnit) || matchesNumber(set.reps)
         : exerciseLabel.toLowerCase().includes(lowered) ||
-          String(set.weight).includes(lowered) ||
+          formatWeightCompact(set.weight).toLowerCase().includes(lowered) ||
           String(set.reps).includes(lowered);
 
       if (!matches) continue;
@@ -321,7 +333,7 @@ export const HomeScreen: React.FC<Props> = ({
 
     hits.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     return hits;
-  }, [appState.exercises, appState.sets, language, logSearchQuery]);
+  }, [appState.exercises, appState.sets, formatWeightCompact, logSearchQuery, massUnit]);
 
   const analytics = useMemo(() => {
     const { current, previous } = getLastDaysRangesUtc(7, new Date());
@@ -358,9 +370,8 @@ export const HomeScreen: React.FC<Props> = ({
   const volumeCardProps = useMemo(() => {
     const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
     const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-    const unit = t(language, 'units.kg');
-
-    const volumeLabel = `${formatter.format(Math.round(analytics.volume7d))} ${unit}`;
+    const converted = fromKg(analytics.volume7d, massUnit);
+    const volumeLabel = `${formatter.format(Math.round(converted))} ${unitLabel}`;
 
     const rows: VolumeByMuscleRow[] = ORDER.map((id) => {
       const label = blockLabel(id, language);
@@ -376,7 +387,7 @@ export const HomeScreen: React.FC<Props> = ({
       volumeLabel,
       rows,
     };
-  }, [analytics, language]);
+  }, [analytics, language, massUnit, unitLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -598,9 +609,9 @@ export const HomeScreen: React.FC<Props> = ({
     const totalVolumeLabel = (() => {
       const locale = language === 'nb' ? 'nb-NO' : language === 'es' ? 'es-ES' : 'en-US';
       const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-      const unit = t(language ?? 'en', 'units.kg');
       const title = lastWorkoutTotalTitle(language);
-      return `${title}: ${formatter.format(Math.round(totalVolume))} ${unit}`;
+      const converted = fromKg(totalVolume, massUnit);
+      return `${title}: ${formatter.format(Math.round(converted))} ${unitLabel}`;
     })();
 
     const examples = grouped
@@ -614,9 +625,9 @@ export const HomeScreen: React.FC<Props> = ({
           g.sets.find((s) => s.setType !== 'cardio' && Number.isFinite(s.reps) && s.reps > 0) ||
           null;
         if (primarySet && Number.isFinite(primarySet.weight) && primarySet.reps) {
-          const weight = Math.round(primarySet.weight ?? 0);
+          const weight = formatWeightCompact(primarySet.weight ?? 0);
           const reps = primarySet.reps;
-          return `${title}: ${weight}kg x ${reps}r`;
+          return `${title}: ${weight} x ${reps}r`;
         }
         if (primarySet && primarySet.reps) {
           return `${title}: ${primarySet.reps}r`;
@@ -633,12 +644,12 @@ export const HomeScreen: React.FC<Props> = ({
       exercise: {
         id: mainExercise.id,
         name,
-        volumeLabel: formatVolumeLabel(language, volume),
+        volumeLabel: formatVolumeLabel(language, volume, massUnit),
         setsLabel,
         tone,
       },
     };
-  }, [appState, language]);
+  }, [appState, formatWeightCompact, language, massUnit, unitLabel]);
   const lastWorkoutExamples = lastWorkout.status === 'ready' ? lastWorkout.examples : EMPTY_EXAMPLES;
 
   useEffect(() => {
@@ -867,6 +878,15 @@ export const HomeScreen: React.FC<Props> = ({
               <TouchableOpacity onPress={onOpenProfile} hitSlop={8} style={styles.profileButton}>
                 <Text style={styles.profileLink}>{t(language, 'profile')}</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onOpenSettings}
+                hitSlop={8}
+                style={styles.settingsButton}
+                activeOpacity={0.85}
+                accessibilityLabel={t(language, 'settings.title')}
+              >
+                <Text style={styles.settingsIcon}>⚙️</Text>
+              </TouchableOpacity>
             </View>
             {nickname ? <Text style={styles.nickname}>{nickname}</Text> : null}
           </View>
@@ -1039,15 +1059,13 @@ export const HomeScreen: React.FC<Props> = ({
                         const dateLabel = Number.isFinite(date.getTime())
                           ? formatRelativeDateTime(date, new Date(), language)
                           : null;
-                        const weightLabel = Number.isFinite(hit.weight)
-                          ? logSearchWeightFormatter.format(hit.weight)
-                          : '0';
+                        const weightLabel = Number.isFinite(hit.weight) ? formatWeightCompact(hit.weight) : `0${unitLabel}`;
                         const repsLabel = Number.isFinite(hit.reps) ? String(hit.reps) : '0';
                         const repsUnit = language === 'nb' ? 'r' : 'reps';
                         const setLabel =
                           language === 'nb'
-                            ? `${weightLabel}${kgUnit} x ${repsLabel}${repsUnit}`
-                            : `${weightLabel}${kgUnit} x ${repsLabel} ${repsUnit}`;
+                            ? `${weightLabel} x ${repsLabel}${repsUnit}`
+                            : `${weightLabel} x ${repsLabel} ${repsUnit}`;
                         const metaLabel = dateLabel ? `${dateLabel} • ${setLabel}` : setLabel;
 
                         return (
@@ -1137,7 +1155,7 @@ export const HomeScreen: React.FC<Props> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.sideColumn, styles.rightColumn]}>
+            <View style={[styles.sideColumn, styles.rightColumn, styles.notesColumn]}>
               <View style={styles.notesCard}>
                 <Text style={styles.notesTitle}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
                 <TextInput
@@ -1177,6 +1195,7 @@ export const HomeScreen: React.FC<Props> = ({
 
             <VolumeCard
               language={language}
+              massUnit={massUnit}
               hasData={analytics.hasData}
               totalLabel={volumeCardProps.totalLabel}
               changePct={volumeCardProps.changePct}
@@ -1337,6 +1356,18 @@ const styles = StyleSheet.create({
     color: '#60A5FA',
     fontWeight: '600',
     lineHeight: TEXT.sm + 2,
+  },
+  settingsButton: {
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsIcon: {
+    fontSize: TEXT.md + 2,
+    lineHeight: TEXT.md + 2,
   },
   nickname: {
     marginTop: 2,
@@ -1499,6 +1530,11 @@ const styles = StyleSheet.create({
   rightColumn: {
     flex: 1.4,
     minWidth: 0,
+  },
+  notesColumn: {
+    height: 48,
+    justifyContent: 'flex-end',
+    overflow: 'visible',
   },
   groupsTitle: {
     color: '#E5E7EB',

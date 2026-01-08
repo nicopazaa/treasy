@@ -9,6 +9,7 @@ import {
 import type { AppLanguage } from '../../../shared/types';
 import { blockLabel } from '../../../shared/i18n/i18n';
 import { formatRelativeDayLabel, formatShortDate } from '../../../shared/utils/dateLabels';
+import { formatWeight, fromKg, toKg, type MassUnit } from '../../../shared/utils/units';
 
 type DailyGroup = ReturnType<typeof groupDailySets>[number];
 
@@ -39,10 +40,14 @@ function formatDayLabel(date: Date, language: AppLanguage): string {
 }
 
 function extractWeight(question: string): number | null {
-  const match = question.match(/(\d+(?:[.,]\d+)?)\s*(kg|kilo|kilos|kilogram|kilograms)/i);
+  const match = question.match(/(\d+(?:[.,]\d+)?)\s*(kg|kilo|kilos|kilogram|kilograms|lb|lbs|pound|pounds)/i);
   if (!match) return null;
   const v = Number(String(match[1]).replace(',', '.'));
-  return Number.isFinite(v) ? v : null;
+  if (!Number.isFinite(v)) return null;
+  const unitToken = String(match[2] ?? '').toLowerCase();
+  const unit: MassUnit = unitToken.startsWith('l') || unitToken.startsWith('p') ? 'lb' : 'kg';
+  const valueKg = toKg(v, unit);
+  return Number.isFinite(valueKg) ? valueKg : null;
 }
 
 function parseTimeWindow(question: string, language: AppLanguage): Date | null {
@@ -366,8 +371,10 @@ function calcTotalVolume(sets: SetEntry[]): number {
   return total;
 }
 
-function formatSetLine(language: AppLanguage, set: SetEntry, exerciseName?: string): string {
-  const base = `${set.weight} kg x ${set.reps} ${language === 'es' ? 'reps' : language === 'en' ? 'reps' : 'reps'}`;
+function formatSetLine(language: AppLanguage, set: SetEntry, massUnit: MassUnit, exerciseName?: string): string {
+  const base = `${formatWeight(set.weight, massUnit, language)} x ${set.reps} ${
+    language === 'es' ? 'reps' : language === 'en' ? 'reps' : 'reps'
+  }`;
   const namePart = exerciseName ? `${exerciseName}: ` : '';
   const time = new Date(set.createdAt).toLocaleString(localeForLanguage(language), {
     hour: '2-digit',
@@ -385,6 +392,7 @@ export function answerAiQuestion(
   contextExerciseId?: string | null
 ): string {
   const language: AppLanguage = appState.language ?? 'en';
+  const massUnit: MassUnit = appState.massUnit ?? 'kg';
   const trimmed = rawQuestion.trim();
   if (!trimmed) {
     if (language === 'es') return 'Escribe una pregunta primero.';
@@ -437,7 +445,7 @@ export function answerAiQuestion(
     const lines = (grouped as DailyGroup[]).map((group) => {
       const blockLabel = group.blockName ? ` (${group.blockName})` : '';
       const setSummary = group.sets
-        .map((set: { weight: number; reps: number }) => `${set.weight} kg x ${set.reps}`)
+        .map((set: { weight: number; reps: number }) => `${formatWeight(set.weight, massUnit, language)} x ${set.reps}`)
         .join(', ');
       return `- ${group.exerciseName}${blockLabel}: ${setSummary} ${atWord} ${group.time}`;
     });
@@ -467,8 +475,8 @@ export function answerAiQuestion(
 
     const filtered = filterSetsSince(appState.sets, limit);
     const total = calcTotalVolume(filtered);
-    const formatted = formatNumber(language, total);
-    const unit = 'kg';
+    const formatted = formatNumber(language, fromKg(total, massUnit));
+    const unit = massUnit;
     const windowLabel = describeWindow(language, limit);
 
     if (language === 'es') return `Volumen total${windowLabel}: ${formatted} ${unit}`;
@@ -527,7 +535,7 @@ export function answerAiQuestion(
       if (language === 'en') return `I can't find sets for ${exercise.name}.`;
       return `Jeg finner ingen sett for ${exercise.name}.`;
     }
-    return formatSetLine(language, last, exercise.name);
+    return formatSetLine(language, last, massUnit, exercise.name);
   }
 
   if (
@@ -541,7 +549,7 @@ export function answerAiQuestion(
       if (language === 'en') return `I can't find sets for ${exercise.name}.`;
       return `Jeg finner ingen sett for ${exercise.name}.`;
     }
-    return formatSetLine(language, best, exercise.name);
+    return formatSetLine(language, best, massUnit, exercise.name);
   }
 
   if (exercise) {
@@ -568,9 +576,10 @@ export function answerAiQuestion(
         return `Ingen sett å beregne maks for i ${exercise.name}.`;
       }
       const label = formatDayLabel(new Date(best.createdAt), language);
-      if (language === 'es') return `Mejor serie en ${exercise.name}: ${best.weight} kg x ${best.reps} (${label}).`;
-      if (language === 'en') return `Best set in ${exercise.name}: ${best.weight} kg x ${best.reps} (${label}).`;
-      return `Beste sett i ${exercise.name}: ${best.weight} kg x ${best.reps} (${label}).`;
+      const bestLabel = `${formatWeight(best.weight, massUnit, language)} x ${best.reps}`;
+      if (language === 'es') return `Mejor serie en ${exercise.name}: ${bestLabel} (${label}).`;
+      if (language === 'en') return `Best set in ${exercise.name}: ${bestLabel} (${label}).`;
+      return `Beste sett i ${exercise.name}: ${bestLabel} (${label}).`;
     }
 
     // Hvor mange reps pa X kg
@@ -594,17 +603,18 @@ export function answerAiQuestion(
         if (!limit) return true;
         return new Date(s.createdAt) >= limit && new Date(s.createdAt) <= now;
       });
+      const weightLabel = formatWeight(weight, massUnit, language);
 
       if (filtered.length === 0) {
-        if (language === 'es') return `No encontré series a ${weight} kg en ${exercise.name} en el período seleccionado.`;
-        if (language === 'en') return `I found no sets at ${weight} kg in ${exercise.name} in the selected time window.`;
-        return `Jeg fant ingen sett på ${weight} kg i ${exercise.name} i valgt tidsrom.`;
+        if (language === 'es') return `No encontré series a ${weightLabel} en ${exercise.name} en el período seleccionado.`;
+        if (language === 'en') return `I found no sets at ${weightLabel} in ${exercise.name} in the selected time window.`;
+        return `Jeg fant ingen sett på ${weightLabel} i ${exercise.name} i valgt tidsrom.`;
       }
 
       const totalReps = filtered.reduce((sum, s) => sum + s.reps, 0);
-      if (language === 'es') return `${totalReps} reps a ${weight} kg en ${exercise.name}.`;
-      if (language === 'en') return `${totalReps} reps at ${weight} kg in ${exercise.name}.`;
-      return `${totalReps} reps på ${weight} kg i ${exercise.name}.`;
+      if (language === 'es') return `${totalReps} reps a ${weightLabel} en ${exercise.name}.`;
+      if (language === 'en') return `${totalReps} reps at ${weightLabel} in ${exercise.name}.`;
+      return `${totalReps} reps på ${weightLabel} i ${exercise.name}.`;
     }
 
     // Siste sett i ovelsen
@@ -620,18 +630,20 @@ export function answerAiQuestion(
         return `Ingen sett for ${exercise.name} enda.`;
       }
       const label = formatDayLabel(new Date(last.createdAt), language);
-      if (language === 'es') return `Última serie registrada en ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
-      if (language === 'en') return `Last logged set in ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
-      return `Sist logget sett i ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
+      const lastLabel = `${formatWeight(last.weight, massUnit, language)} x ${last.reps}`;
+      if (language === 'es') return `Última serie registrada en ${exercise.name}: ${lastLabel} (${label}).`;
+      if (language === 'en') return `Last logged set in ${exercise.name}: ${lastLabel} (${label}).`;
+      return `Sist logget sett i ${exercise.name}: ${lastLabel} (${label}).`;
     }
 
     // Fallback for ovelse
     const last = getLastSetForExercise(appState, exercise.id);
     if (last) {
       const label = formatDayLabel(new Date(last.createdAt), language);
-      if (language === 'es') return `Última serie en ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
-      if (language === 'en') return `Latest set in ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
-      return `Siste sett i ${exercise.name}: ${last.weight} kg x ${last.reps} (${label}).`;
+      const lastLabel = `${formatWeight(last.weight, massUnit, language)} x ${last.reps}`;
+      if (language === 'es') return `Última serie en ${exercise.name}: ${lastLabel} (${label}).`;
+      if (language === 'en') return `Latest set in ${exercise.name}: ${lastLabel} (${label}).`;
+      return `Siste sett i ${exercise.name}: ${lastLabel} (${label}).`;
     }
   }
 

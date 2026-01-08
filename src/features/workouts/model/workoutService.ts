@@ -158,6 +158,7 @@ export function addExercise(
     name: trimmed,
     shortCode: meta.shortCode ?? undefined,
     tags: meta.tags,
+    isCustom: true,
   };
 
   return {
@@ -202,6 +203,7 @@ export function addExerciseWithSetsResult(
     name: trimmed,
     shortCode: meta.shortCode ?? undefined,
     tags: meta.tags,
+    isCustom: true,
   };
   const createdAt = new Date().toISOString();
   const newSets: SetEntry[] = validSets.map((s) => ({
@@ -589,4 +591,22 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
   }
 
   return Array.from(map.values());
+}
+
+export function deleteAllLoggedSets(state: AppState): AppState {
+  if (!state.sets.length) return state;
+  return { ...state, sets: [] };
+}
+
+export function deleteAllCustomExercises(state: AppState): AppState {
+  const customExerciseIds = new Set(
+    state.exercises.filter((ex) => ex.isCustom !== false).map((ex) => ex.id)
+  );
+  if (customExerciseIds.size === 0) return state;
+
+  return {
+    ...state,
+    exercises: state.exercises.filter((ex) => !customExerciseIds.has(ex.id)),
+    sets: state.sets.filter((s) => !customExerciseIds.has(s.exerciseId)),
+  };
 }

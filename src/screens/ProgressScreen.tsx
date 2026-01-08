@@ -8,6 +8,7 @@ import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
+import { formatWeight } from '../shared/utils/units';
 
 interface Props {
   appState: AppState;
@@ -38,6 +39,7 @@ function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
 
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
   const initialBlockId = appState.blocks.find((b) => b.id !== 'cardio')?.id ?? null;
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(initialBlockId);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
@@ -180,9 +182,9 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
               {progressRows.map((r) => (
                 <View key={r.id} style={styles.row}>
                   <Text style={[styles.cell, styles.cellDate]}>{r.dateLabel}</Text>
-                  <Text style={[styles.cell, styles.cellWeight]}>{r.weight} kg</Text>
+                  <Text style={[styles.cell, styles.cellWeight]}>{formatWeight(r.weight, massUnit, language)}</Text>
                   <Text style={[styles.cell, styles.cellReps]}>{r.reps}</Text>
-                  <Text style={[styles.cell, styles.cellOneRm]}>{r.oneRm} kg</Text>
+                  <Text style={[styles.cell, styles.cellOneRm]}>{formatWeight(r.oneRm, massUnit, language)}</Text>
                 </View>
               ))}
             </View>

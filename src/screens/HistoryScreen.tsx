@@ -8,6 +8,7 @@ import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { formatWeight, type MassUnit } from '../shared/utils/units';
 
 type Props = {
   appState: AppState;
@@ -48,6 +49,7 @@ function parseDateKey(dateKey: string): Date | null {
 
 function formatSetParts(
   language: AppState['language'],
+  massUnit: MassUnit,
   sets: Array<{
     weight: number;
     reps: number;
@@ -63,11 +65,16 @@ function formatSetParts(
   repsText: string | null;
   index: number;
 }> {
+  const lang = language ?? 'en';
   const parts = sets.map((s, idx) => {
     const cardioParts: string[] = [];
     if (s.distanceKm != null) cardioParts.push(`${s.distanceKm} km`);
     if (s.durationMin != null) cardioParts.push(`${s.durationMin} min`);
     if (s.pauseSec != null) cardioParts.push(`${t(language ?? 'en', 'pauseShort')} ${s.pauseSec}s`);
+    const formattedWeight = formatWeight(s.weight ?? 0, massUnit, lang);
+    const lastSpace = formattedWeight.lastIndexOf(' ');
+    const weightValue = lastSpace > 0 ? formattedWeight.slice(0, lastSpace) : formattedWeight;
+    const weightUnit = lastSpace > 0 ? formattedWeight.slice(lastSpace + 1) : '';
     return {
       weightValue:
         s.setType === 'cardio'
@@ -76,8 +83,8 @@ function formatSetParts(
             : `${s.weight}`
           : s.isBodyweight
             ? 'BW'
-            : `${s.weight}`,
-      weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : 'kg',
+            : weightValue,
+      weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : weightUnit,
       repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
       index: idx + 1,
     };
@@ -127,6 +134,7 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
 
 const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
   const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
@@ -327,7 +335,7 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                                         </TouchableOpacity>
                                         {!isExerciseCollapsed && (
                                           <View style={styles.setList}>
-                                            {formatSetParts(language, group.sets).map((line, idx) => (
+                                            {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
                                               <Text
                                                 key={`${group.id}-set-${idx}`}
                                                 style={styles.groupDetail}

@@ -22,9 +22,11 @@ import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { BlockExerciseItem } from '../features/workouts/ui/BlockExerciseItem';
 import { BlockExerciseList } from '../features/workouts/ui/BlockExerciseList';
+import { formatWeight, type MassUnit } from '../shared/utils/units';
 
 interface Props {
   language: AppLanguage;
+  massUnit: MassUnit;
   block: TrainingBlock;
   exercises: Exercise[];
   sets: SetEntry[];
@@ -44,6 +46,7 @@ const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'ar
 
 export const BlockScreen: React.FC<Props> = ({
   language,
+  massUnit,
   block,
   exercises,
   sets,
@@ -206,7 +209,7 @@ export const BlockScreen: React.FC<Props> = ({
     }, null);
     if (!best) return null;
     if (best.isBodyweight || best.weight === 0) return `BW × ${best.reps}`;
-    return `${best.weight} kg × ${best.reps}`;
+    return `${formatWeight(best.weight, massUnit, language)} × ${best.reps}`;
   };
 
   const reorderTo = (targetExerciseId: string) => {

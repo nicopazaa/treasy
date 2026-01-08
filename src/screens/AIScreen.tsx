@@ -34,6 +34,8 @@ function makeId(prefix: string): string {
 
 export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, initialExerciseId }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
+  const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const ctxExerciseId = initialExerciseId ?? null;
 
   const [draft, setDraft] = useState('');
@@ -43,16 +45,16 @@ export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, i
 
   const scenarios = useMemo(
     () => [
-      t(language, 'appa.scenario.lastWorkout'),
-      t(language, 'appa.scenario.workouts7d'),
-      t(language, 'appa.scenario.volume7d'),
-      t(language, 'appa.scenario.bestSet'),
-      t(language, 'appa.scenario.repsAtWeight'),
-      t(language, 'appa.scenario.blockInMonth'),
-      t(language, 'appa.scenario.lastSetExercise'),
-      t(language, 'appa.scenario.bestSetExercise'),
+      t(language, 'appa.scenario.lastWorkout', { unit: unitLabel }),
+      t(language, 'appa.scenario.workouts7d', { unit: unitLabel }),
+      t(language, 'appa.scenario.volume7d', { unit: unitLabel }),
+      t(language, 'appa.scenario.bestSet', { unit: unitLabel }),
+      t(language, 'appa.scenario.repsAtWeight', { unit: unitLabel }),
+      t(language, 'appa.scenario.blockInMonth', { unit: unitLabel }),
+      t(language, 'appa.scenario.lastSetExercise', { unit: unitLabel }),
+      t(language, 'appa.scenario.bestSetExercise', { unit: unitLabel }),
     ],
-    [language]
+    [language, unitLabel]
   );
 
   const scrollToBottom = () => {

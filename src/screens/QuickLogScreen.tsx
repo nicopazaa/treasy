@@ -20,6 +20,7 @@ import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
+import { toKg } from '../shared/utils/units';
 
 type Props = {
   appState: AppState;
@@ -63,6 +64,8 @@ export const QuickLogScreen: React.FC<Props> = ({
   showLocalOnlyNotice = false,
 }) => {
   const language = appState.language ?? 'en';
+  const massUnit = appState.massUnit ?? 'kg';
+  const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const [input, setInput] = useState('');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [pendingExercise, setPendingExercise] = useState<{
@@ -540,7 +543,7 @@ export const QuickLogScreen: React.FC<Props> = ({
             <Text style={styles.dialogTitle}>
               {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
             </Text>
-            <Text style={styles.dialogSubtitle}>{t(language, 'weightKg')}</Text>
+            <Text style={styles.dialogSubtitle}>{t(language, 'weightKg', { unit: unitLabel })}</Text>
             <TextInput
               style={styles.dialogInput}
               placeholder="0"
@@ -569,15 +572,17 @@ export const QuickLogScreen: React.FC<Props> = ({
                 <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.primarySmallButton}
-                onPress={() => {
-                  const w = Number(weightText.trim().replace(',', '.'));
-                  if (!Number.isFinite(w) || w < 0) {
-                    setSetError(t(language, 'invalidWeightReps'));
-                    return;
-                  }
-                  setSetError(null);
-                  setWeightModalOpen(false);
+                  style={styles.primarySmallButton}
+                  onPress={() => {
+                    const unit = appState.massUnit ?? 'kg';
+                    const inputW = Number(weightText.trim().replace(',', '.'));
+                    const wKg = toKg(inputW, unit);
+                    if (!Number.isFinite(wKg) || wKg < 0) {
+                      setSetError(t(language, 'invalidWeightReps'));
+                      return;
+                    }
+                    setSetError(null);
+                    setWeightModalOpen(false);
                   setRepsModalOpen(true);
                 }}
               >
@@ -612,20 +617,22 @@ export const QuickLogScreen: React.FC<Props> = ({
                 <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.primarySmallButton}
-                onPress={() => {
-                  const w = Number(weightText.trim().replace(',', '.'));
-                  const r = Number(repsText.trim());
-                  if (!Number.isFinite(w) || !Number.isFinite(r) || w < 0 || r <= 0) {
-                    setSetError(t(language, 'invalidWeightReps'));
-                    return;
-                  }
-                  if (selectedExercise) {
-                    onLogSet(selectedExercise.id, w, r, { bodyweight: bodyweightMode });
-                    flashSaved();
-                  }
-                  resetSetFlow();
-                }}
+                  style={styles.primarySmallButton}
+                  onPress={() => {
+                    const unit = appState.massUnit ?? 'kg';
+                    const inputW = Number(weightText.trim().replace(',', '.'));
+                    const wKg = toKg(inputW, unit);
+                    const r = Number(repsText.trim());
+                    if (!Number.isFinite(wKg) || !Number.isFinite(r) || wKg < 0 || r <= 0) {
+                      setSetError(t(language, 'invalidWeightReps'));
+                      return;
+                    }
+                    if (selectedExercise) {
+                      onLogSet(selectedExercise.id, wKg, r, { bodyweight: bodyweightMode });
+                      flashSaved();
+                    }
+                    resetSetFlow();
+                  }}
               >
                 <Text style={styles.primarySmallButtonText}>{t(language, 'logSet')}</Text>
               </TouchableOpacity>

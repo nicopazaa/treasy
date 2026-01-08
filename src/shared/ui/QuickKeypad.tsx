@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-nativ
 import { RADIUS, SPACING, TEXT } from '../theme/tokens';
 
 type Props = {
-  value: string;
+  value?: string | null;
   onChange: (next: string) => void;
   rows: string[][];
   style?: ViewStyle;
@@ -14,8 +14,11 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
   const press = (key: string) => {
     if (disabled) return;
 
-    if (key === 'ƒO®') {
-      onChange(value.slice(0, -1));
+    const currentValue = value ?? '';
+
+    if (key === '⌫' || key === 'ƒO®') {
+      if (!currentValue) return;
+      onChange(currentValue.slice(0, -1));
       return;
     }
 
@@ -24,7 +27,7 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
       return;
     }
 
-    onChange(value + key);
+    onChange(currentValue + key);
   };
 
   return (
@@ -34,7 +37,7 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
           {row.map((key) => (
             <TouchableOpacity
               key={key}
-              style={[styles.key, (key === 'ƒO®' || key === 'C') && styles.keySecondary]}
+              style={[styles.key, (key === '⌫' || key === 'ƒO®' || key === 'C') && styles.keySecondary]}
               onPress={() => press(key)}
               activeOpacity={0.8}
             >
@@ -76,4 +79,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
