@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContext, useFocusEffect } from '@react-navigation/native';
 import { AppState, TrainingBlockId } from '../features/workouts/model/types';
@@ -18,6 +18,7 @@ type Props = {
 
 type DayNode = {
   dateKey: string;
+  dateMs: number;
   dateLabel: string;
   dayLabel: string;
   groups: BlockGroup[];
@@ -30,10 +31,91 @@ type BlockGroup = {
   exercises: GroupedDailySetView[];
 };
 
+type HistoryRange = 'all' | '7d' | '30d' | '90d';
+type SetTypeFilter = 'all' | 'weighted' | 'bodyweight' | 'cardio';
+
+type BlockFilterOption = {
+  key: string;
+  label: string;
+  accent: string;
+  dotColor: string;
+};
+
 const fallbackNavigation = {
   addListener: () => () => {},
   isFocused: () => true,
 };
+
+const KNOWN_BLOCK_IDS: TrainingBlockId[] = [
+  'chest',
+  'shoulders',
+  'back',
+  'arms',
+  'core',
+  'legs',
+  'cardio',
+  'bodyweight',
+];
+
+function isKnownBlockId(value?: string): value is TrainingBlockId {
+  return Boolean(value && KNOWN_BLOCK_IDS.includes(value as TrainingBlockId));
+}
+
+function blockKeyForGroup(block: BlockGroup): string {
+  return block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block';
+}
+
+function blockTitleForGroup(block: BlockGroup, language: AppState['language']): string {
+  const id = isKnownBlockId(block.blockId) ? block.blockId : undefined;
+  if (id) return blockLabel(id, language ?? 'en');
+  return block.blockName ?? block.blockId ?? '';
+}
+
+function stripDiacritics(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizeSearch(text: string): string {
+  return stripDiacritics(text)
+    .toLowerCase()
+    .replace(/[.,!?;:()\\[\\]\"']/g, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function tokenize(query: string): string[] {
+  const normalized = normalizeSearch(query);
+  return normalized ? normalized.split(' ').filter(Boolean) : [];
+}
+
+function matchesAllTokens(haystack: string, tokens: string[]): boolean {
+  if (tokens.length === 0) return true;
+  const h = normalizeSearch(haystack);
+  return tokens.every((token) => h.includes(token));
+}
+
+function daysForRange(range: HistoryRange): number | null {
+  if (range === '7d') return 7;
+  if (range === '30d') return 30;
+  if (range === '90d') return 90;
+  return null;
+}
+
+function inferSetType(set: {
+  weight: number;
+  reps: number;
+  isBodyweight?: boolean;
+  distanceKm?: number | null;
+  durationMin?: number | null;
+  pauseSec?: number | null;
+  setType?: 'weighted' | 'bodyweight' | 'cardio';
+}): Exclude<SetTypeFilter, 'all'> {
+  if (set.setType) return set.setType;
+  const isCardio = set.distanceKm != null || set.durationMin != null || set.pauseSec != null;
+  if (isCardio) return 'cardio';
+  if (set.isBodyweight || set.weight === 0) return 'bodyweight';
+  return 'weighted';
+}
 
 function parseDateKey(dateKey: string): Date | null {
   const parts = dateKey.split('-');
@@ -120,6 +202,7 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
     const dt = parseDateKey(key);
     let dateLabel = key;
     let dayLabel = '';
+    const dateMs = dt ? dt.getTime() : 0;
 
     if (dt) {
       const relative = formatRelativeDayLabel(dt, new Date(), language ?? 'en');
@@ -128,7 +211,7 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
     }
 
     const groups = groupByBlock(groupDailySets(getDailyWorkout(appState, key)));
-    return { dateKey: key, dateLabel, dayLabel, groups };
+    return { dateKey: key, dateMs, dateLabel, dayLabel, groups };
   });
 }
 
@@ -136,15 +219,112 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
   const days = useMemo(() => buildDayNodes(appState, language), [appState, language]);
+  const [range, setRange] = useState<HistoryRange>('all');
+  const [blockFilterKey, setBlockFilterKey] = useState<string>('all');
+  const [setTypeFilter, setSetTypeFilter] = useState<SetTypeFilter>('all');
+  const [query, setQuery] = useState('');
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
   const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set());
+
+  const queryTokens = useMemo(() => tokenize(query), [query]);
+
+  const daysInRange = useMemo(() => {
+    const windowDays = daysForRange(range);
+    if (!windowDays) return days;
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (windowDays - 1));
+    const cutoffMs = cutoff.getTime();
+    return days.filter((day) => day.dateMs >= cutoffMs);
+  }, [days, range]);
+
+  const blockOptions = useMemo<BlockFilterOption[]>(() => {
+    const map = new Map<string, BlockFilterOption>();
+    for (const day of daysInRange) {
+      for (const block of day.groups) {
+        const key = blockKeyForGroup(block);
+        if (!key || map.has(key)) continue;
+        const label = blockTitleForGroup(block, language);
+        if (!label) continue;
+
+        const toneKey = block.blockId ?? block.blockName ?? '';
+        const tone = getBlockTone(toneKey);
+        map.set(key, {
+          key,
+          label,
+          accent: tone.accent,
+          dotColor: getDotColor(toneKey),
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [daysInRange, language]);
+
+  useEffect(() => {
+    if (blockFilterKey === 'all') return;
+    const exists = blockOptions.some((opt) => opt.key === blockFilterKey);
+    if (!exists) setBlockFilterKey('all');
+  }, [blockFilterKey, blockOptions]);
+
+  const hasActiveFilters =
+    range !== 'all' || blockFilterKey !== 'all' || setTypeFilter !== 'all' || queryTokens.length > 0;
+
+  const resetFilters = () => {
+    setRange('all');
+    setBlockFilterKey('all');
+    setSetTypeFilter('all');
+    setQuery('');
+  };
+
+  const visibleDays = useMemo<DayNode[]>(() => {
+    const res: DayNode[] = [];
+
+    for (const day of daysInRange) {
+      const nextGroups: BlockGroup[] = [];
+
+      for (const block of day.groups) {
+        const key = blockKeyForGroup(block);
+        if (blockFilterKey !== 'all' && key !== blockFilterKey) continue;
+
+        const blockTitle = blockTitleForGroup(block, language);
+        const blockMatchesQuery = matchesAllTokens(blockTitle, queryTokens);
+
+        const nextExercises: GroupedDailySetView[] = [];
+        let minTime = block.time;
+
+        for (const group of block.exercises) {
+          const filteredSets =
+            setTypeFilter === 'all'
+              ? group.sets
+              : group.sets.filter((s) => inferSetType(s) === setTypeFilter);
+
+          if (filteredSets.length === 0) continue;
+
+          if (queryTokens.length > 0 && !blockMatchesQuery && !matchesAllTokens(group.exerciseLabel, queryTokens)) {
+            continue;
+          }
+
+          nextExercises.push({ ...group, sets: filteredSets });
+          if (group.time < minTime) minTime = group.time;
+        }
+
+        if (nextExercises.length === 0) continue;
+        nextGroups.push({ ...block, time: minTime, exercises: nextExercises });
+      }
+
+      if (nextGroups.length === 0) continue;
+      res.push({ ...day, groups: nextGroups });
+    }
+
+    return res;
+  }, [blockFilterKey, daysInRange, language, queryTokens, setTypeFilter]);
 
   const allBlockKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const day of days) {
       for (const block of day.groups) {
-        keys.add(block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block');
+        keys.add(blockKeyForGroup(block));
       }
     }
     return Array.from(keys);
@@ -228,148 +408,249 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
           <Text style={styles.emptyText}>{t(language, 'historyEmptyText')}</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {days.map((day, index) => {
-            const isLast = index === days.length - 1;
-            const isExpanded = expandedKey === day.dateKey;
+        <>
+          <View style={[styles.content, styles.filterWrapper]}>
+            <View style={styles.filterCard}>
+              <View style={styles.searchRow}>
+                <Text style={styles.searchIcon}>{'🔎'}</Text>
+                <TextInput
+                  style={styles.searchInput}
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={t(language, 'historyFilterPlaceholder')}
+                  placeholderTextColor="#6B7280"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {query.trim() ? (
+                  <TouchableOpacity onPress={() => setQuery('')} activeOpacity={0.85} hitSlop={8} style={styles.clearButton}>
+                    <Text style={styles.clearText}>×</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
 
-            return (
-              <View key={day.dateKey} style={styles.row}>
-                <View style={styles.timelineColumn}>
-                  <View style={styles.timelineDot} />
-                  {!isLast && <View style={styles.timelineLine} />}
+              <View style={styles.filterRow}>
+                <View style={styles.segment}>
+                  {(['all', '7d', '30d', '90d'] as HistoryRange[]).map((r) => {
+                    const selected = range === r;
+                    const label = r === 'all' ? t(language, 'progress.range.all') : r;
+                    return (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
+                        onPress={() => setRange(r)}
+                        activeOpacity={0.9}
+                      >
+                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
 
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => toggle(day.dateKey)}
-                  style={[styles.card, isExpanded && styles.cardExpanded]}
-                >
-                  <View style={styles.cardHeader}>
-                    <View>
-                      <Text style={styles.dayLabel}>{day.dayLabel}</Text>
-                      <Text style={styles.dateLabel}>{day.dateLabel}</Text>
-                    </View>
-                    <Text style={styles.chevron}>{isExpanded ? 'v' : '>'}</Text>
-                  </View>
-
-                  {isExpanded && (
-                    <View style={styles.groupList}>
-                      {day.groups.map((block) => {
-                        const tone = getBlockTone(block.blockId ?? block.blockName ?? '');
-                        const dotColor = getDotColor(block.blockId ?? block.blockName ?? '');
-                        const blockKey = block.blockId ?? block.blockName ?? block.exercises[0]?.id ?? 'block';
-                        const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-                        const isBlockCollapsed = collapsedBlocks.has(blockKey);
-                        const blockId = block.blockId as TrainingBlockId | undefined;
-                        const isKnownBlock =
-                          blockId &&
-                          (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]).includes(
-                            blockId
-                          );
-                        const blockTitle = isKnownBlock ? blockLabel(blockId, language ?? 'en') : block.blockName;
-                        return (
-                          <View key={blockKey} style={styles.blockGroup}>
-                            {blockTitle ? (
-                              <TouchableOpacity
-                                style={styles.blockHeaderRow}
-                                onPress={() => toggleBlockCollapsed(blockKey)}
-                                activeOpacity={0.85}
-                              >
-                                <Text style={[styles.blockLabel, { color: dotColor }]}>
-                                  {blockTitle}
-                                </Text>
-                                <Text style={styles.blockSummary}>
-                                  Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}
-                                </Text>
-                              </TouchableOpacity>
-                            ) : null}
-                            {!isBlockCollapsed && (
-                              <View style={styles.blockExercises}>
-                                {block.exercises.map((group) => {
-                                  const isExerciseCollapsed = collapsedExercises.has(group.id);
-                                  return (
-                                    <View key={group.id} style={styles.groupRow}>
-                                      <View
-                                        style={[
-                                          styles.blockLine,
-                                          {
-                                            backgroundColor: tone.soft,
-                                            top: SPACING.xs * -1,
-                                            bottom:
-                                              group === block.exercises[block.exercises.length - 1]
-                                                ? 16
-                                                : -SPACING.xs,
-                                          },
-                                        ]}
-                                      />
-                                      {group === block.exercises[block.exercises.length - 1] ? (
-                                        <View
-                                          style={[
-                                            styles.blockLineEnd,
-                                            { backgroundColor: tone.soft },
-                                          ]}
-                                        />
-                                      ) : null}
-                                      <View style={styles.groupTextColumn}>
-                                        <TouchableOpacity
-                                          onPress={() => toggleExerciseCollapsed(group.id)}
-                                          activeOpacity={0.85}
-                                          style={styles.exerciseRow}
-                                        >
-                                          <View style={styles.exerciseTitleColumn}>
-                                            <View style={styles.exerciseTitleRow}>
-                                              <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
-                                              <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
-                                            </View>
-                                            <View
-                                              style={[
-                                                styles.exerciseDivider,
-                                                { backgroundColor: dotColor },
-                                              ]}
-                                            />
-                                          </View>
-                                          <Text style={styles.exerciseSummary}>
-                                            Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
-                                          </Text>
-                                        </TouchableOpacity>
-                                        {!isExerciseCollapsed && (
-                                          <View style={styles.setList}>
-                                            {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
-                                              <Text
-                                                key={`${group.id}-set-${idx}`}
-                                                style={styles.groupDetail}
-                                              >
-                                                <Text style={styles.indexText}>[{line.index}] </Text>
-                                                <Text style={styles.goldText}>{line.weightValue}</Text>
-                                                {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
-                                                {line.repsText ? (
-                                                  <>
-                                                    <Text style={styles.mutedText}> x </Text>
-                                                    <Text style={styles.goldText}>{line.repsText}</Text>
-                                                  </>
-                                                ) : null}
-                                              </Text>
-                                            ))}
-                                          </View>
-                                        )}
-                                      </View>
-                                      <Text style={styles.groupTime}>{group.time}</Text>
-                                    </View>
-                                  );
-                                })}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.segment}>
+                  {[
+                    { key: 'all' as const, label: t(language, 'progress.range.all') },
+                    { key: 'weighted' as const, label: t(language, 'weight') },
+                    { key: 'bodyweight' as const, label: blockLabel('bodyweight', language) },
+                    { key: 'cardio' as const, label: blockLabel('cardio', language) },
+                  ].map((opt) => {
+                    const selected = setTypeFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
+                        onPress={() => setSetTypeFilter(opt.key)}
+                        activeOpacity={0.9}
+                      >
+                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]} numberOfLines={1}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-            );
-          })}
-        </ScrollView>
+
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[styles.chip, blockFilterKey === 'all' ? styles.chipSelected : null]}
+                  onPress={() => setBlockFilterKey('all')}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.chipText, blockFilterKey === 'all' ? styles.chipTextSelected : null]}>
+                    {t(language, 'progress.range.all')}
+                  </Text>
+                </TouchableOpacity>
+                {blockOptions.map((opt) => {
+                  const selected = opt.key === blockFilterKey;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[
+                        styles.chip,
+                        {
+                          borderColor: selected ? opt.accent : '#1F2937',
+                          backgroundColor: selected ? getBlockTone(opt.key).soft : '#020617',
+                        },
+                      ]}
+                      onPress={() => setBlockFilterKey(opt.key)}
+                      activeOpacity={0.9}
+                    >
+                      <View style={[styles.chipDot, { backgroundColor: opt.dotColor }]} />
+                      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]} numberOfLines={1}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.filterFooter}>
+                <Text style={styles.filterMeta}>{t(language, 'historyFilterResults', { count: visibleDays.length })}</Text>
+                {hasActiveFilters ? (
+                  <TouchableOpacity onPress={resetFilters} activeOpacity={0.9} style={styles.resetButton}>
+                    <Text style={styles.resetText}>{t(language, 'historyFilterReset')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          {visibleDays.length === 0 ? (
+            <View style={[styles.emptyContainer, styles.content]}>
+              <Text style={styles.emptyTitle}>{t(language, 'historyFilterNoResultsTitle')}</Text>
+              <Text style={styles.emptyText}>{t(language, 'historyFilterNoResultsText')}</Text>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+              {visibleDays.map((day, index) => {
+                const isLast = index === visibleDays.length - 1;
+                const isExpanded = expandedKey === day.dateKey;
+
+                return (
+                  <View key={day.dateKey} style={styles.row}>
+                    <View style={styles.timelineColumn}>
+                      <View style={styles.timelineDot} />
+                      {!isLast && <View style={styles.timelineLine} />}
+                    </View>
+
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => toggle(day.dateKey)}
+                      style={[styles.card, isExpanded && styles.cardExpanded]}
+                    >
+                      <View style={styles.cardHeader}>
+                        <View>
+                          <Text style={styles.dayLabel}>{day.dayLabel}</Text>
+                          <Text style={styles.dateLabel}>{day.dateLabel}</Text>
+                        </View>
+                        <Text style={styles.chevron}>{isExpanded ? 'v' : '>'}</Text>
+                      </View>
+
+                      {isExpanded && (
+                        <View style={styles.groupList}>
+                          {day.groups.map((block) => {
+                            const toneKey = block.blockId ?? block.blockName ?? '';
+                            const tone = getBlockTone(toneKey);
+                            const dotColor = getDotColor(toneKey);
+                            const blockKey = blockKeyForGroup(block);
+                            const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+                            const isBlockCollapsed = collapsedBlocks.has(blockKey);
+                            const blockTitle = blockTitleForGroup(block, language);
+                            return (
+                              <View key={blockKey} style={styles.blockGroup}>
+                                {blockTitle ? (
+                                  <TouchableOpacity
+                                    style={styles.blockHeaderRow}
+                                    onPress={() => toggleBlockCollapsed(blockKey)}
+                                    activeOpacity={0.85}
+                                  >
+                                    <Text style={[styles.blockLabel, { color: dotColor }]}>
+                                      {blockTitle}
+                                    </Text>
+                                    <Text style={styles.blockSummary}>
+                                      Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : null}
+                                {!isBlockCollapsed && (
+                                  <View style={styles.blockExercises}>
+                                    {block.exercises.map((group) => {
+                                      const isExerciseCollapsed = collapsedExercises.has(group.id);
+                                      return (
+                                        <View key={group.id} style={styles.groupRow}>
+                                          <View
+                                            style={[
+                                              styles.blockLine,
+                                              {
+                                                backgroundColor: tone.soft,
+                                                top: SPACING.xs * -1,
+                                                bottom:
+                                                  group === block.exercises[block.exercises.length - 1]
+                                                    ? 16
+                                                    : -SPACING.xs,
+                                              },
+                                            ]}
+                                          />
+                                          {group === block.exercises[block.exercises.length - 1] ? (
+                                            <View style={[styles.blockLineEnd, { backgroundColor: tone.soft }]} />
+                                          ) : null}
+                                          <View style={styles.groupTextColumn}>
+                                            <TouchableOpacity
+                                              onPress={() => toggleExerciseCollapsed(group.id)}
+                                              activeOpacity={0.85}
+                                              style={styles.exerciseRow}
+                                            >
+                                              <View style={styles.exerciseTitleColumn}>
+                                                <View style={styles.exerciseTitleRow}>
+                                                  <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
+                                                  <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                                </View>
+                                                <View style={[styles.exerciseDivider, { backgroundColor: dotColor }]} />
+                                              </View>
+                                              <Text style={styles.exerciseSummary}>
+                                                Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
+                                              </Text>
+                                            </TouchableOpacity>
+                                            {!isExerciseCollapsed && (
+                                              <View style={styles.setList}>
+                                                {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
+                                                  <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
+                                                    <Text style={styles.indexText}>[{line.index}] </Text>
+                                                    <Text style={styles.goldText}>{line.weightValue}</Text>
+                                                    {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
+                                                    {line.repsText ? (
+                                                      <>
+                                                        <Text style={styles.mutedText}> x </Text>
+                                                        <Text style={styles.goldText}>{line.repsText}</Text>
+                                                      </>
+                                                    ) : null}
+                                                  </Text>
+                                                ))}
+                                              </View>
+                                            )}
+                                          </View>
+                                          <Text style={styles.groupTime}>{group.time}</Text>
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+        </>
       )}
     </SafeAreaView>
   );
@@ -429,6 +710,146 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: TEXT.sm,
     marginBottom: SPACING.xl,
+  },
+  filterWrapper: {
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  filterCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    backgroundColor: '#0B1220',
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    backgroundColor: '#020617',
+    paddingHorizontal: SPACING.sm,
+    minHeight: 44,
+    gap: SPACING.xs,
+  },
+  searchIcon: {
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    paddingVertical: 0,
+  },
+  clearButton: {
+    minWidth: 32,
+    minHeight: 32,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearText: {
+    color: '#9CA3AF',
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  segment: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#020617',
+    overflow: 'hidden',
+  },
+  segmentButton: {
+    minHeight: 34,
+    paddingHorizontal: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentButtonSelected: {
+    backgroundColor: '#0B1220',
+  },
+  segmentText: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  segmentTextSelected: {
+    color: '#F9FAFB',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -SPACING.xs,
+  },
+  chip: {
+    margin: SPACING.xs,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#020617',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  chipSelected: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+  },
+  chipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  chipText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  chipTextSelected: {
+    color: '#F9FAFB',
+  },
+  filterFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+  },
+  filterMeta: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  resetButton: {
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#020617',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetText: {
+    color: '#93C5FD',
+    fontSize: TEXT.xs,
+    fontWeight: '900',
   },
   emptyContainer: {
     marginTop: SPACING.xxl,
