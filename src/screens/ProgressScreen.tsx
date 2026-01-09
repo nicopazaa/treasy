@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, LayoutAnimation, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, LayoutAnimation, PanResponder } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
@@ -17,11 +17,18 @@ interface Props {
 
 type TimeRange = 'all' | '90d' | '30d';
 type Metric = 'weight' | 'oneRm' | 'reps';
+type Aggregation = 'day' | 'month' | 'year';
 
 const RANGE_LABEL_KEY: Record<TimeRange, StringKey> = {
   all: 'progress.range.all',
   '90d': 'progress.range.90d',
   '30d': 'progress.range.30d',
+};
+
+const AGGREGATION_LABEL_KEY: Record<Aggregation, StringKey> = {
+  day: 'progress.aggregation.day',
+  month: 'progress.aggregation.month',
+  year: 'progress.aggregation.year',
 };
 
 const CHART_AXIS_WIDTH = 56;
@@ -165,6 +172,14 @@ function xForChartTime(timestampMs: number, minMs: number, maxMs: number, width:
   return CHART_X_PADDING + t * innerWidth;
 }
 
+function timeForChartX(x: number, minMs: number, maxMs: number, width: number): number {
+  const innerWidth = Math.max(1, width - CHART_X_PADDING * 2);
+  if (maxMs === minMs) return minMs;
+  const clampedX = clamp(x - CHART_X_PADDING, 0, innerWidth);
+  const t = clampedX / innerWidth;
+  return minMs + t * (maxMs - minMs);
+}
+
 function daysForRange(range: TimeRange): number | null {
   if (range === '30d') return 30;
   if (range === '90d') return 90;
@@ -179,6 +194,107 @@ function estimateOneRm(weight: number, reps: number): number {
   if (reps <= 1) return weight;
   const est = weight * (1 + reps / 30);
   return Math.round(est * 10) / 10;
+}
+
+function bucketStartMs(timestampMs: number, aggregation: Aggregation): number {
+  const date = new Date(timestampMs);
+  if (aggregation === 'year') return new Date(date.getFullYear(), 0, 1).getTime();
+  if (aggregation === 'month') return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function formatAggregationLabel(date: Date, aggregation: Aggregation, language: AppLanguage): string {
+  if (aggregation === 'year') return String(date.getFullYear());
+  if (aggregation === 'month') {
+    try {
+      return date.toLocaleDateString(localeForLanguage(language), { month: 'short', year: '2-digit' });
+    } catch {
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = String(date.getFullYear()).slice(-2);
+      return `${month}/${year}`;
+    }
+  }
+  return formatShortDate(date);
+}
+
+function aggregateRows(
+  rows: ProgressRow[],
+  aggregation: Aggregation,
+  metric: Metric,
+  language: AppLanguage
+): ProgressRow[] {
+  if (aggregation === 'day') return rows;
+  const buckets = new Map<string, { row: ProgressRow; bucketMs: number }>();
+
+  for (const row of rows) {
+    const bucketMs = bucketStartMs(row.createdAtMs, aggregation);
+    const key = String(bucketMs);
+    const existing = buckets.get(key);
+    if (!existing) {
+      buckets.set(key, { row, bucketMs });
+      continue;
+    }
+
+    const currentValue = metricValue(row, metric);
+    const existingValue = metricValue(existing.row, metric);
+    if (currentValue > existingValue) {
+      buckets.set(key, { row, bucketMs });
+    } else if (currentValue === existingValue && row.createdAtMs > existing.row.createdAtMs) {
+      buckets.set(key, { row, bucketMs });
+    }
+  }
+
+  const aggregated = Array.from(buckets.values()).map(({ row, bucketMs }) => ({
+    ...row,
+    id: `${bucketMs}-${metric}`,
+    createdAtMs: bucketMs,
+    dateLabel: formatAggregationLabel(new Date(bucketMs), aggregation, language),
+  }));
+
+  aggregated.sort((a, b) => a.createdAtMs - b.createdAtMs);
+  return aggregated;
+}
+
+function findNearestRow(rows: ProgressRow[], targetMs: number): ProgressRow | null {
+  if (rows.length === 0) return null;
+  let lo = 0;
+  let hi = rows.length - 1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const value = rows[mid].createdAtMs;
+    if (value === targetMs) return rows[mid];
+    if (value < targetMs) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  const before = rows[Math.max(0, hi)];
+  const after = rows[Math.min(rows.length - 1, lo)];
+  if (!before) return after;
+  if (!after) return before;
+  return Math.abs(before.createdAtMs - targetMs) <= Math.abs(after.createdAtMs - targetMs) ? before : after;
+}
+
+function clampViewport(
+  startMs: number,
+  endMs: number,
+  minMs: number,
+  maxMs: number,
+  minWindowMs: number
+): { startMs: number; endMs: number } {
+  let windowMs = Math.max(minWindowMs, endMs - startMs);
+  const maxWindow = Math.max(1, maxMs - minMs);
+  if (windowMs > maxWindow) windowMs = maxWindow;
+
+  let nextStart = startMs;
+  let nextEnd = nextStart + windowMs;
+  if (nextStart < minMs) {
+    nextStart = minMs;
+    nextEnd = nextStart + windowMs;
+  }
+  if (nextEnd > maxMs) {
+    nextEnd = maxMs;
+    nextStart = nextEnd - windowMs;
+  }
+  return { startMs: nextStart, endMs: nextEnd };
 }
 
 function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
@@ -196,10 +312,17 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(initialBlockId);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
+  const [aggregation, setAggregation] = useState<Aggregation>('day');
   const [metric, setMetric] = useState<Metric>('weight');
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
-  const prAnim = useRef(new Animated.Value(0)).current;
+  const [viewport, setViewport] = useState<{ startMs: number; endMs: number } | null>(null);
+  const viewportRef = useRef<{ startMs: number; endMs: number } | null>(null);
+  const gestureRef = useRef<{
+    mode: 'pan' | 'pinch';
+    startViewport: { startMs: number; endMs: number };
+    startDistance: number;
+  } | null>(null);
 
   const blocks = appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[];
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
@@ -244,27 +367,86 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   useEffect(() => {
     setSelectedPointId(null);
-  }, [metric, selectedExerciseId, timeRange]);
+  }, [aggregation, metric, selectedExerciseId, timeRange]);
 
-  const rowsVisible: ProgressRow[] = useMemo(() => {
+  const rowsInRange: ProgressRow[] = useMemo(() => {
     const days = daysForRange(timeRange);
     if (!days) return rowsAll;
     const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
     return rowsAll.filter((row) => row.createdAtMs >= cutoffMs);
   }, [rowsAll, timeRange]);
 
+  const rowsVisible: ProgressRow[] = useMemo(() => {
+    return aggregateRows(rowsInRange, aggregation, metric, language);
+  }, [aggregation, language, metric, rowsInRange]);
+
   const rowsChart: ProgressRow[] = useMemo(() => {
     if (metric === 'reps') return rowsVisible;
     return rowsVisible.filter((row) => row.weight > 0);
   }, [metric, rowsVisible]);
 
+  const rowsChartRef = useRef<ProgressRow[]>([]);
+
+  useEffect(() => {
+    rowsChartRef.current = rowsChart;
+  }, [rowsChart]);
+
+  const fullRange = useMemo(() => {
+    if (rowsChart.length === 0) return null;
+    return { minMs: rowsChart[0].createdAtMs, maxMs: rowsChart[rowsChart.length - 1].createdAtMs };
+  }, [rowsChart]);
+
+  const minWindowMs = useMemo(() => {
+    if (!fullRange) return 0;
+    const range = Math.max(1, fullRange.maxMs - fullRange.minMs);
+    if (rowsChart.length < 2) return range;
+    const gaps = rowsChart
+      .slice(1)
+      .map((row, idx) => row.createdAtMs - rowsChart[idx].createdAtMs)
+      .filter((value) => value > 0);
+    const minGap = gaps.length > 0 ? Math.min(...gaps) : range;
+    return Math.max(minGap * 2, range * 0.05);
+  }, [fullRange, rowsChart]);
+
+  useEffect(() => {
+    if (!fullRange) {
+      setViewport(null);
+      return;
+    }
+    setViewport({ startMs: fullRange.minMs, endMs: fullRange.maxMs });
+  }, [fullRange]);
+
+  useEffect(() => {
+    if (viewport) {
+      viewportRef.current = viewport;
+      return;
+    }
+    if (fullRange) {
+      viewportRef.current = { startMs: fullRange.minMs, endMs: fullRange.maxMs };
+    } else {
+      viewportRef.current = null;
+    }
+  }, [fullRange, viewport]);
+
+  const viewRange = viewport ?? (fullRange ? { startMs: fullRange.minMs, endMs: fullRange.maxMs } : null);
+
+  const viewportRows = useMemo(() => {
+    if (!viewRange) return [] as ProgressRow[];
+    const filtered = rowsChart.filter(
+      (row) => row.createdAtMs >= viewRange.startMs && row.createdAtMs <= viewRange.endMs
+    );
+    if (filtered.length > 0) return filtered;
+    const nearest = findNearestRow(rowsChart, (viewRange.startMs + viewRange.endMs) / 2);
+    return nearest ? [nearest] : [];
+  }, [rowsChart, viewRange]);
+
   const chartValues = useMemo(() => {
-    return rowsChart.map((row) => {
+    return viewportRows.map((row) => {
       if (metric === 'reps') return row.reps;
       const raw = fromKg(metricValue(row, metric), massUnit);
       return roundForDisplay(raw, massUnit);
     });
-  }, [massUnit, metric, rowsChart]);
+  }, [massUnit, metric, viewportRows]);
 
   const chartAxisCandidates = useMemo(() => {
     if (metric === 'reps') return [1, 2, 5, 10];
@@ -275,20 +457,23 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const chartAxis = useMemo(() => buildAxis(chartValues, 5, chartAxisCandidates), [chartAxisCandidates, chartValues]);
 
   const chartPoints = useMemo<ChartPoint[]>(() => {
-    if (rowsChart.length === 0 || chartWidth <= 0) return [];
-    const minMs = rowsChart[0].createdAtMs;
-    const maxMs = rowsChart[rowsChart.length - 1].createdAtMs;
-    return rowsChart.map((row, idx) => {
+    if (viewportRows.length === 0 || chartWidth <= 0 || !viewRange) return [];
+    const minMs = viewRange.startMs;
+    const maxMs = viewRange.endMs;
+    return viewportRows.map((row, idx) => {
       const value = chartValues[idx] ?? 0;
       const x = xForChartTime(row.createdAtMs, minMs, maxMs, chartWidth);
       const y = yForChartValue(value, chartAxis.min, chartAxis.max);
       return { id: row.id, row, x, y, value };
     });
-  }, [chartAxis.max, chartAxis.min, chartValues, chartWidth, rowsChart]);
+  }, [chartAxis.max, chartAxis.min, chartValues, chartWidth, viewRange, viewportRows]);
 
-  const chartStartLabel = rowsChart.length > 0 ? formatShortDate(new Date(rowsChart[0].createdAtMs)) : '';
-  const chartEndLabel =
-    rowsChart.length > 0 ? formatShortDate(new Date(rowsChart[rowsChart.length - 1].createdAtMs)) : '';
+  const chartStartLabel = viewRange
+    ? formatAggregationLabel(new Date(viewRange.startMs), aggregation, language)
+    : '';
+  const chartEndLabel = viewRange
+    ? formatAggregationLabel(new Date(viewRange.endMs), aggregation, language)
+    : '';
 
   const bestChartPointId = useMemo(() => {
     if (chartPoints.length === 0) return null;
@@ -307,11 +492,145 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const chartTooltipStyle = useMemo(() => {
     if (!selectedChartPoint) return null;
     const tooltipWidth = 190;
-    const tooltipHeight = 56;
+    const tooltipHeight = 68;
     const left = clamp(selectedChartPoint.x - tooltipWidth / 2, 0, Math.max(0, chartWidth - tooltipWidth));
     const top = clamp(selectedChartPoint.y - tooltipHeight - 10, 0, CHART_HEIGHT - tooltipHeight);
     return { left, top, width: tooltipWidth, minHeight: tooltipHeight };
   }, [chartWidth, selectedChartPoint]);
+
+  const latestVisible = rowsVisible.length > 0 ? rowsVisible[rowsVisible.length - 1] : null;
+
+  const bestVisible = useMemo(() => {
+    if (rowsVisible.length === 0) return null;
+    return rowsVisible.reduce((best, row) => (metricValue(row, metric) > metricValue(best, metric) ? row : best), rowsVisible[0]);
+  }, [metric, rowsVisible]);
+
+  const isFullRange = useMemo(() => {
+    if (!viewRange || !fullRange) return true;
+    return viewRange.startMs === fullRange.minMs && viewRange.endMs === fullRange.maxMs;
+  }, [fullRange, viewRange]);
+
+  const selectNearestAtX = (x: number, range: { startMs: number; endMs: number }) => {
+    const availableRows = rowsChartRef.current;
+    if (availableRows.length === 0 || chartWidth <= 0) return;
+    const targetMs = timeForChartX(x, range.startMs, range.endMs, chartWidth);
+    const nearest = findNearestRow(availableRows, targetMs);
+    if (nearest) setSelectedPointId(nearest.id);
+  };
+
+  const applyZoom = (
+    scale: number,
+    anchorX?: number,
+    baseRange?: { startMs: number; endMs: number }
+  ) => {
+    if (!fullRange || chartWidth <= 0) return null;
+    const base = baseRange ?? viewportRef.current ?? { startMs: fullRange.minMs, endMs: fullRange.maxMs };
+    const windowMs = Math.max(1, base.endMs - base.startMs);
+    const nextWindow = clamp(windowMs * scale, Math.max(1, minWindowMs), fullRange.maxMs - fullRange.minMs);
+    const anchorTime =
+      anchorX != null ? timeForChartX(anchorX, base.startMs, base.endMs, chartWidth) : base.startMs + windowMs / 2;
+    const anchorRatio = windowMs > 0 ? (anchorTime - base.startMs) / windowMs : 0.5;
+    const nextStart = anchorTime - anchorRatio * nextWindow;
+    const nextEnd = nextStart + nextWindow;
+    const clamped = clampViewport(nextStart, nextEnd, fullRange.minMs, fullRange.maxMs, minWindowMs);
+    setViewport(clamped);
+    return clamped;
+  };
+
+  const handleZoomIn = () => {
+    applyZoom(0.75);
+  };
+
+  const handleZoomOut = () => {
+    applyZoom(1.35);
+  };
+
+  const handleResetZoom = () => {
+    if (!fullRange) return;
+    setViewport({ startMs: fullRange.minMs, endMs: fullRange.maxMs });
+  };
+
+  // Enable timeline scrub + pinch zoom without introducing inner scroll views.
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => {
+        if (!fullRange) return false;
+        return evt.nativeEvent.touches.length > 0;
+      },
+      onMoveShouldSetPanResponder: (evt, gesture) => {
+        if (!fullRange) return false;
+        if (evt.nativeEvent.touches.length >= 2) return true;
+        return Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 4;
+      },
+      onPanResponderGrant: (evt) => {
+        if (!fullRange) return;
+        const touches = evt.nativeEvent.touches;
+        const startViewport = viewportRef.current ?? { startMs: fullRange.minMs, endMs: fullRange.maxMs };
+        if (touches.length >= 2) {
+          const dx = touches[0].locationX - touches[1].locationX;
+          const dy = touches[0].locationY - touches[1].locationY;
+          gestureRef.current = {
+            mode: 'pinch',
+            startViewport,
+            startDistance: Math.sqrt(dx * dx + dy * dy),
+          };
+          const anchorX = (touches[0].locationX + touches[1].locationX) / 2;
+          selectNearestAtX(anchorX, startViewport);
+          return;
+        }
+        gestureRef.current = { mode: 'pan', startViewport, startDistance: 0 };
+        const anchorX = touches[0]?.locationX ?? 0;
+        selectNearestAtX(anchorX, startViewport);
+      },
+      onPanResponderMove: (evt, gesture) => {
+        if (!fullRange || chartWidth <= 0) return;
+        const state = gestureRef.current;
+        if (!state) return;
+        const touches = evt.nativeEvent.touches;
+        if (state.mode === 'pinch' && touches.length >= 2) {
+          const dx = touches[0].locationX - touches[1].locationX;
+          const dy = touches[0].locationY - touches[1].locationY;
+          const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+          const scale = state.startDistance > 0 ? state.startDistance / distance : 1;
+          const anchorX = (touches[0].locationX + touches[1].locationX) / 2;
+          const next = applyZoom(scale, anchorX, state.startViewport);
+          if (next) selectNearestAtX(anchorX, next);
+          return;
+        }
+        if (state.mode === 'pan') {
+          const innerWidth = Math.max(1, chartWidth - CHART_X_PADDING * 2);
+          const windowMs = Math.max(1, state.startViewport.endMs - state.startViewport.startMs);
+          const deltaMs = (gesture.dx / innerWidth) * windowMs;
+          const nextStart = state.startViewport.startMs - deltaMs;
+          const nextEnd = nextStart + windowMs;
+          const next = clampViewport(nextStart, nextEnd, fullRange.minMs, fullRange.maxMs, minWindowMs);
+          setViewport(next);
+          const anchorX = touches[0]?.locationX ?? 0;
+          selectNearestAtX(anchorX, next);
+        }
+      },
+      onPanResponderRelease: () => {
+        gestureRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        gestureRef.current = null;
+      },
+    });
+  }, [chartWidth, fullRange, minWindowMs]);
+
+  const handleWheel = (event: any) => {
+    if (Platform.OS !== 'web') return;
+    if (!fullRange) return;
+    const deltaY = event?.nativeEvent?.deltaY ?? event?.deltaY ?? 0;
+    if (!Number.isFinite(deltaY) || deltaY === 0) return;
+    event?.preventDefault?.();
+    const scale = deltaY > 0 ? 1.25 : 0.8;
+    const anchorX = event?.nativeEvent?.offsetX ?? event?.nativeEvent?.locationX ?? 0;
+    const next = applyZoom(scale, anchorX);
+    if (next) selectNearestAtX(anchorX, next);
+  };
+
+  const chartWheelProps = Platform.OS === 'web' ? ({ onWheel: handleWheel } as any) : {};
 
   const selectedExercise =
     selectedExerciseId && appState.exercises.find((e) => e.id === selectedExerciseId);
@@ -339,33 +658,6 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     }, rowsAll[0]);
   }, [rowsAll]);
 
-  const isNewPr = useMemo(() => {
-    if (!latestOverall) return false;
-    if (rowsAll.length < 2) return false;
-
-    const prior = rowsAll.slice(0, -1);
-    const priorBestWeight = prior.reduce((max, row) => Math.max(max, row.weight), 0);
-    const priorBestOneRm = prior.reduce((max, row) => Math.max(max, row.oneRm), 0);
-    const priorBestReps = prior.reduce((max, row) => Math.max(max, row.reps), 0);
-
-    if (hasWeightData) {
-      return (latestOverall.weight > 0 && latestOverall.weight > priorBestWeight) || latestOverall.oneRm > priorBestOneRm;
-    }
-    return latestOverall.reps > priorBestReps;
-  }, [hasWeightData, latestOverall, rowsAll]);
-
-  useEffect(() => {
-    if (!isNewPr) return;
-    prAnim.setValue(0);
-    Animated.spring(prAnim, { toValue: 1, useNativeDriver: true }).start();
-  }, [isNewPr, prAnim]);
-
-  const prBadgeStyle = useMemo(() => {
-    const scale = prAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
-    const opacity = prAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
-    return { transform: [{ scale }], opacity };
-  }, [prAnim]);
-
   const deltaFromPrev = useMemo(() => {
     if (!latestOverall || !prevOverall) return null;
     return metricValue(latestOverall, metric) - metricValue(prevOverall, metric);
@@ -375,6 +667,15 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     if (!latestOverall || !firstOverall) return null;
     return metricValue(latestOverall, metric) - metricValue(firstOverall, metric);
   }, [firstOverall, latestOverall, metric]);
+
+  const changeLabelStyle =
+    deltaFromPrev == null
+      ? styles.kpiLabelNeutral
+      : deltaFromPrev > 0
+        ? styles.kpiLabelUp
+        : deltaFromPrev < 0
+          ? styles.kpiLabelDown
+          : styles.kpiLabelNeutral;
 
   const target = useMemo<NextTarget | null>(() => {
     if (!latestOverall) return null;
@@ -486,11 +787,6 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressTitle}>{t(language, 'development')}</Text>
-            {isNewPr ? (
-              <Animated.View style={[styles.prBadge, prBadgeStyle]}>
-                <Text style={styles.prBadgeText}>{t(language, 'progress.newPr')}</Text>
-              </Animated.View>
-            ) : null}
           </View>
 
           {selectedExercise && latestOverall ? (
@@ -501,18 +797,18 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
               <View style={styles.kpiGrid}>
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{t(language, 'progress.latest')}</Text>
-                  <Text style={styles.kpiValue} numberOfLines={1}>
+                  <Text style={[styles.kpiLabel, styles.kpiLabelLatest]}>{t(language, 'progress.latest')}</Text>
+                  <Text style={[styles.kpiValue, styles.kpiValueLast]} numberOfLines={1}>
                     {hasWeightData
                       ? `${formatWeight(latestOverall.weight, massUnit, language)} x ${latestOverall.reps}`
                       : `${latestOverall.reps} ${t(language, 'reps')}`}
                   </Text>
-                  <Text style={styles.kpiSub}>{latestOverall.dateLabel}</Text>
+                  <Text style={[styles.kpiSub, styles.kpiSubMuted]}>{latestOverall.dateLabel}</Text>
                 </View>
 
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{t(language, 'progress.pr')}</Text>
-                  <Text style={styles.kpiValue} numberOfLines={1}>
+                  <Text style={[styles.kpiLabel, styles.kpiLabelPr]}>{t(language, 'progress.pr')}</Text>
+                  <Text style={[styles.kpiValue, styles.kpiValuePr]} numberOfLines={1}>
                     {metric === 'reps'
                       ? `${bestAllReps} ${t(language, 'reps')}`
                       : metric === 'weight'
@@ -525,7 +821,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 </View>
 
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{t(language, 'progress.change')}</Text>
+                  <Text style={[styles.kpiLabel, changeLabelStyle]}>{t(language, 'progress.change')}</Text>
                   <Text
                     style={[
                       styles.kpiValue,
@@ -601,6 +897,27 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 </View>
 
                 <View style={styles.segment}>
+                  {(['day', 'month', 'year'] as Aggregation[]).map((agg) => {
+                    const selected = agg === aggregation;
+                    return (
+                      <TouchableOpacity
+                        key={agg}
+                        onPress={() => {
+                          animateNext();
+                          setAggregation(agg);
+                        }}
+                        activeOpacity={0.9}
+                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
+                      >
+                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>
+                          {t(language, AGGREGATION_LABEL_KEY[agg])}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.segment}>
                   {hasWeightData ? (
                     <>
                       <TouchableOpacity
@@ -636,13 +953,33 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 </View>
               </View>
 
-                <Text style={styles.chartCaption}>
-                  {metric === 'weight'
-                    ? t(language, 'weightOverTime')
-                    : metric === 'oneRm'
-                      ? t(language, 'oneRmOverTime')
-                      : t(language, 'repsOverTime')}
-                </Text>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartCaption}>
+                    {metric === 'weight'
+                      ? t(language, 'weightOverTime')
+                      : metric === 'oneRm'
+                        ? t(language, 'oneRmOverTime')
+                        : t(language, 'repsOverTime')}
+                  </Text>
+                  <View style={styles.chartControls}>
+                    <TouchableOpacity onPress={handleZoomOut} activeOpacity={0.85} style={styles.chartControlButton}>
+                      <Text style={styles.chartControlText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleZoomIn} activeOpacity={0.85} style={styles.chartControlButton}>
+                      <Text style={styles.chartControlText}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handleResetZoom}
+                      activeOpacity={0.85}
+                      style={[styles.chartResetButton, isFullRange ? styles.chartResetButtonDisabled : null]}
+                      disabled={isFullRange}
+                    >
+                      <Text style={[styles.chartResetText, isFullRange ? styles.chartResetTextDisabled : null]}>
+                        {t(language, 'progress.reset')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
                 {rowsVisible.length === 0 ? (
                   <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
@@ -667,6 +1004,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                             const w = Math.round(e.nativeEvent.layout.width);
                             setChartWidth((prev) => (prev === w ? prev : w));
                           }}
+                          {...chartWheelProps}
+                          {...panResponder.panHandlers}
                         >
                           {chartAxis.ticks.map((tick) => {
                             const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
@@ -712,11 +1051,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                             const isLatest = p.id === latestChartPointId;
                             const isSelected = p.id === selectedPointId;
                             return (
-                              <TouchableOpacity
+                              <View
                                 key={`pt-${p.id}`}
-                                onPress={() => setSelectedPointId((prev) => (prev === p.id ? null : p.id))}
-                                activeOpacity={0.85}
-                                hitSlop={10}
                                 style={[
                                   styles.chartPoint,
                                   {
@@ -737,9 +1073,14 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                 {metric === 'reps'
                                   ? `${selectedChartPoint.row.reps} ${t(language, 'reps')}`
                                   : metric === 'oneRm'
-                                    ? formatWeight(selectedChartPoint.row.oneRm, massUnit, language)
-                                    : `${formatWeight(selectedChartPoint.row.weight, massUnit, language)} x ${selectedChartPoint.row.reps}`}
+                                    ? `${t(language, 'oneRmEst')}: ${formatWeight(selectedChartPoint.row.oneRm, massUnit, language)}`
+                                    : `${formatWeight(selectedChartPoint.row.weight, massUnit, language)} × ${selectedChartPoint.row.reps} ${t(language, 'reps')}`}
                               </Text>
+                              {metric === 'oneRm' ? (
+                                <Text style={styles.chartTooltipDetail} numberOfLines={1}>
+                                  {selectedChartPoint.row.reps} {t(language, 'reps')}
+                                </Text>
+                              ) : null}
                               <Text style={styles.chartTooltipLabel} numberOfLines={1}>
                                 {selectedChartPoint.row.dateLabel}
                               </Text>
@@ -776,13 +1117,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                     )}
 
                     {[...rowsVisible].reverse().map((r) => {
-                      const isLatest = latestOverall?.id === r.id;
-                      const rowIsBest =
-                        metric === 'reps'
-                          ? r.reps === bestAllReps && bestAllReps > 0
-                          : metric === 'oneRm'
-                            ? r.oneRm === bestAllOneRm && bestAllOneRm > 0
-                            : r.weight === bestAllWeight && bestAllWeight > 0;
+                      const isLatest = latestVisible?.id === r.id;
+                      const rowIsBest = bestVisible?.id === r.id;
                       return (
                         <View
                           key={r.id}
@@ -905,8 +1241,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.lg,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    padding: SPACING.xl,
+    shadowColor: COLORS.blue2,
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   progressHeader: {
     flexDirection: 'row',
@@ -919,20 +1260,6 @@ const styles = StyleSheet.create({
     fontSize: TEXT.lg,
     fontWeight: '800',
   },
-  prBadge: {
-    borderRadius: RADIUS.pill,
-    backgroundColor: 'rgba(34, 197, 94, 0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.28)',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-  },
-  prBadgeText: {
-    color: '#BBF7D0',
-    fontSize: TEXT.xs,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
   progressSubtitle: {
     color: '#9CA3AF',
     marginBottom: SPACING.sm,
@@ -942,25 +1269,40 @@ const styles = StyleSheet.create({
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.sm,
+    gap: SPACING.md,
     marginTop: SPACING.md,
   },
   kpiCard: {
     flexGrow: 1,
     flexBasis: '30%',
-    minWidth: 140,
+    minWidth: 150,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
+    borderColor: 'rgba(148, 163, 184, 0.18)',
     backgroundColor: '#020617',
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
   },
   kpiLabel: {
-    color: '#9CA3AF',
+    color: '#94A3B8',
     fontSize: TEXT.xs,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
+  },
+  kpiLabelLatest: {
+    color: '#60A5FA',
+  },
+  kpiLabelPr: {
+    color: '#FBBF24',
+  },
+  kpiLabelUp: {
+    color: '#6EE7B7',
+  },
+  kpiLabelDown: {
+    color: '#FDBA74',
+  },
+  kpiLabelNeutral: {
+    color: '#94A3B8',
   },
   kpiValue: {
     marginTop: 4,
@@ -968,21 +1310,27 @@ const styles = StyleSheet.create({
     fontSize: TEXT.md,
     fontWeight: '900',
   },
+  kpiValueLast: {
+    color: '#F8FAFC',
+  },
+  kpiValuePr: {
+    color: '#FBBF24',
+  },
   kpiSub: {
     marginTop: 2,
-    color: '#9CA3AF',
+    color: '#94A3B8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
   kpiSubMuted: {
-    color: '#6B7280',
+    color: '#64748B',
     fontWeight: '700',
   },
   deltaUp: {
-    color: '#BBF7D0',
+    color: '#86EFAC',
   },
   deltaDown: {
-    color: '#FDE68A',
+    color: '#FDBA74',
   },
   deltaNeutral: {
     color: '#E5E7EB',
@@ -1062,11 +1410,59 @@ const styles = StyleSheet.create({
   segmentTextSelected: {
     color: '#F9FAFB',
   },
-  chartCaption: {
+  chartHeader: {
     marginTop: SPACING.md,
+    marginBottom: SPACING.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  chartCaption: {
     color: '#9CA3AF',
     fontSize: TEXT.xs,
-    marginBottom: SPACING.xs,
+    fontWeight: '700',
+  },
+  chartControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  chartControlButton: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#020617',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chartControlText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  chartResetButton: {
+    height: 28,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#020617',
+    paddingHorizontal: SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chartResetButtonDisabled: {
+    opacity: 0.5,
+  },
+  chartResetText: {
+    color: '#93C5FD',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  chartResetTextDisabled: {
+    color: '#6B7280',
   },
   chart: {
     marginBottom: SPACING.md,
@@ -1076,6 +1472,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#020617',
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.sm,
+    shadowColor: COLORS.blue2,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
   },
   chartRow: {
     flexDirection: 'row',
@@ -1141,6 +1542,11 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: TEXT.xs,
     fontWeight: '900',
+  },
+  chartTooltipDetail: {
+    color: '#94A3B8',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
   },
   chartTooltipLabel: {
     color: '#9CA3AF',

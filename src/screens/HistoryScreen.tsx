@@ -1,5 +1,18 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput } from 'react-native';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  TextInput,
+  FlatList,
+  LayoutAnimation,
+  UIManager,
+  Animated,
+  Easing,
+  Pressable,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContext, useFocusEffect } from '@react-navigation/native';
 import { AppState, TrainingBlockId } from '../features/workouts/model/types';
@@ -215,6 +228,55 @@ function buildDayNodes(appState: AppState, language: AppState['language']): DayN
   });
 }
 
+type FilterHeaderProps = {
+  expanded: boolean;
+  count: number;
+  label: string;
+  onToggle: () => void;
+};
+
+const FilterHeader: React.FC<FilterHeaderProps> = ({ expanded, count, label, onToggle }) => {
+  const rotateAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotateAnim, {
+      toValue: expanded ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotateAnim]);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '90deg'],
+  });
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.filterHeaderContainer,
+        expanded ? styles.filterHeaderContainerExpanded : null,
+        pressed ? styles.filterHeaderPressed : null,
+      ]}
+    >
+      <Text style={styles.filterHeaderTitle}>{label}</Text>
+      <View style={styles.filterHeaderMeta}>
+        <View style={styles.filterHeaderBadge}>
+          <Text style={styles.filterHeaderBadgeText}>{count}</Text>
+        </View>
+        <Animated.View style={[styles.filterHeaderChevron, { transform: [{ rotate: rotation }] }]}>
+          <Text style={[styles.filterHeaderChevronText, expanded ? styles.filterHeaderChevronTextOpen : null]}>
+            {'>'}
+          </Text>
+        </Animated.View>
+      </View>
+    </Pressable>
+  );
+};
+
 const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
@@ -223,6 +285,7 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
   const [blockFilterKey, setBlockFilterKey] = useState<string>('all');
   const [setTypeFilter, setSetTypeFilter] = useState<SetTypeFilter>('all');
   const [query, setQuery] = useState('');
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
   const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set());
@@ -262,19 +325,40 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
   }, [daysInRange, language]);
 
   useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (blockFilterKey === 'all') return;
     const exists = blockOptions.some((opt) => opt.key === blockFilterKey);
     if (!exists) setBlockFilterKey('all');
   }, [blockFilterKey, blockOptions]);
 
-  const hasActiveFilters =
-    range !== 'all' || blockFilterKey !== 'all' || setTypeFilter !== 'all' || queryTokens.length > 0;
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (range !== 'all') count += 1;
+    if (blockFilterKey !== 'all') count += 1;
+    if (setTypeFilter !== 'all') count += 1;
+    if (queryTokens.length > 0) count += 1;
+    return count;
+  }, [range, blockFilterKey, setTypeFilter, queryTokens.length]);
+
+  const hasActiveFilters = activeFilterCount > 0;
 
   const resetFilters = () => {
     setRange('all');
     setBlockFilterKey('all');
     setSetTypeFilter('all');
     setQuery('');
+  };
+
+  const toggleFiltersExpanded = () => {
+    if (Platform.OS !== 'web') {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setFiltersExpanded((prev) => !prev);
   };
 
   const visibleDays = useMemo<DayNode[]>(() => {
@@ -391,6 +475,254 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
     });
   };
 
+  const renderDayItem = ({ item: day, index }: { item: DayNode; index: number }) => {
+    const isLast = index === visibleDays.length - 1;
+    const isExpanded = expandedKey === day.dateKey;
+
+    return (
+      <View style={styles.row}>
+        <View style={styles.timelineColumn}>
+          <View style={styles.timelineDot} />
+          {!isLast && <View style={styles.timelineLine} />}
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => toggle(day.dateKey)}
+          style={[styles.card, isExpanded && styles.cardExpanded]}
+        >
+          <View style={styles.cardHeader}>
+            <View>
+              <Text style={styles.dayLabel}>{day.dayLabel}</Text>
+              <Text style={styles.dateLabel}>{day.dateLabel}</Text>
+            </View>
+            <Text style={styles.chevron}>{isExpanded ? 'v' : '>'}</Text>
+          </View>
+
+          {isExpanded && (
+            <View style={styles.groupList}>
+              {day.groups.map((block) => {
+                const toneKey = block.blockId ?? block.blockName ?? '';
+                const tone = getBlockTone(toneKey);
+                const dotColor = getDotColor(toneKey);
+                const blockKey = blockKeyForGroup(block);
+                const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+                const isBlockCollapsed = collapsedBlocks.has(blockKey);
+                const blockTitle = blockTitleForGroup(block, language);
+                return (
+                  <View key={blockKey} style={styles.blockGroup}>
+                    {blockTitle ? (
+                      <TouchableOpacity
+                        style={styles.blockHeaderRow}
+                        onPress={() => toggleBlockCollapsed(blockKey)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.blockLabel, { color: dotColor }]}>
+                          {blockTitle}
+                        </Text>
+                        <Text style={styles.blockSummary}>
+                          Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {!isBlockCollapsed && (
+                      <View style={styles.blockExercises}>
+                        {block.exercises.map((group) => {
+                          const isExerciseCollapsed = collapsedExercises.has(group.id);
+                          return (
+                            <View key={group.id} style={styles.groupRow}>
+                              <View
+                                style={[
+                                  styles.blockLine,
+                                  {
+                                    backgroundColor: tone.soft,
+                                    top: SPACING.xs * -1,
+                                    bottom:
+                                      group === block.exercises[block.exercises.length - 1]
+                                        ? 16
+                                        : -SPACING.xs,
+                                  },
+                                ]}
+                              />
+                              {group === block.exercises[block.exercises.length - 1] ? (
+                                <View style={[styles.blockLineEnd, { backgroundColor: tone.soft }]} />
+                              ) : null}
+                              <View style={styles.groupTextColumn}>
+                                <TouchableOpacity
+                                  onPress={() => toggleExerciseCollapsed(group.id)}
+                                  activeOpacity={0.85}
+                                  style={styles.exerciseRow}
+                                >
+                                  <View style={styles.exerciseTitleColumn}>
+                                    <View style={styles.exerciseTitleRow}>
+                                      <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
+                                      <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                    </View>
+                                    <View style={[styles.exerciseDivider, { backgroundColor: dotColor }]} />
+                                  </View>
+                                  <Text style={styles.exerciseSummary}>
+                                    Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
+                                  </Text>
+                                </TouchableOpacity>
+                                {!isExerciseCollapsed && (
+                                  <View style={styles.setList}>
+                                    {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
+                                      <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
+                                        <Text style={styles.indexText}>[{line.index}] </Text>
+                                        <Text style={styles.goldText}>{line.weightValue}</Text>
+                                        {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
+                                        {line.repsText ? (
+                                          <>
+                                            <Text style={styles.mutedText}> x </Text>
+                                            <Text style={styles.goldText}>{line.repsText}</Text>
+                                          </>
+                                        ) : null}
+                                      </Text>
+                                    ))}
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.groupTime}>{group.time}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Filters live in the FlatList header so the history list stays one scroll surface.
+  const filterHeader = (
+    <View style={styles.filterWrapper}>
+      <FilterHeader
+        expanded={filtersExpanded}
+        count={activeFilterCount}
+        label={t(language, 'historyFilters')}
+        onToggle={toggleFiltersExpanded}
+      />
+
+      {filtersExpanded && (
+        <View style={styles.filterBody}>
+          <View style={styles.filterDivider} />
+          <View style={styles.filterBodyContent}>
+            <View style={styles.searchRow}>
+              <Text style={styles.searchIcon}>{'\u{1F50D}'}</Text>
+              <TextInput
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t(language, 'historyFilterPlaceholder')}
+                placeholderTextColor="#6B7280"
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+              {query.trim() ? (
+                <TouchableOpacity onPress={() => setQuery('')} activeOpacity={0.85} hitSlop={8} style={styles.clearButton}>
+                  <Text style={styles.clearText}>{'\u00D7'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <View style={styles.filterRow}>
+              <View style={styles.segment}>
+                {(['all', '7d', '30d', '90d'] as HistoryRange[]).map((r) => {
+                  const selected = range === r;
+                  const label = r === 'all' ? t(language, 'progress.range.all') : r;
+                  return (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
+                      onPress={() => setRange(r)}
+                      activeOpacity={0.9}
+                    >
+                      <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.segment}>
+                {[
+                  { key: 'all' as const, label: t(language, 'progress.range.all') },
+                  { key: 'weighted' as const, label: t(language, 'weight') },
+                  { key: 'bodyweight' as const, label: blockLabel('bodyweight', language) },
+                  { key: 'cardio' as const, label: blockLabel('cardio', language) },
+                ].map((opt) => {
+                  const selected = setTypeFilter === opt.key;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
+                      onPress={() => setSetTypeFilter(opt.key)}
+                      activeOpacity={0.9}
+                    >
+                      <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]} numberOfLines={1}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.chipRow}>
+              <TouchableOpacity
+                style={[styles.chip, blockFilterKey === 'all' ? styles.chipSelected : null]}
+                onPress={() => setBlockFilterKey('all')}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.chipText, blockFilterKey === 'all' ? styles.chipTextSelected : null]}>
+                  {t(language, 'progress.range.all')}
+                </Text>
+              </TouchableOpacity>
+              {blockOptions.map((opt) => {
+                const selected = opt.key === blockFilterKey;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: selected ? opt.accent : '#1F2937',
+                        backgroundColor: selected ? getBlockTone(opt.key).soft : '#020617',
+                      },
+                    ]}
+                    onPress={() => setBlockFilterKey(opt.key)}
+                    activeOpacity={0.9}
+                  >
+                    <View style={[styles.chipDot, { backgroundColor: opt.dotColor }]} />
+                    <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]} numberOfLines={1}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.filterFooter}>
+              <Text style={styles.filterMeta}>{t(language, 'historyFilterResults', { count: visibleDays.length })}</Text>
+              {hasActiveFilters ? (
+                <TouchableOpacity onPress={resetFilters} activeOpacity={0.9} style={styles.resetButton}>
+                  <Text style={styles.resetText}>{t(language, 'historyFilterReset')}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -408,249 +740,21 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
           <Text style={styles.emptyText}>{t(language, 'historyEmptyText')}</Text>
         </View>
       ) : (
-        <>
-          <View style={[styles.content, styles.filterWrapper]}>
-            <View style={styles.filterCard}>
-              <View style={styles.searchRow}>
-                <Text style={styles.searchIcon}>{'🔎'}</Text>
-                <TextInput
-                  style={styles.searchInput}
-                  value={query}
-                  onChangeText={setQuery}
-                  placeholder={t(language, 'historyFilterPlaceholder')}
-                  placeholderTextColor="#6B7280"
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  returnKeyType="search"
-                />
-                {query.trim() ? (
-                  <TouchableOpacity onPress={() => setQuery('')} activeOpacity={0.85} hitSlop={8} style={styles.clearButton}>
-                    <Text style={styles.clearText}>×</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              <View style={styles.filterRow}>
-                <View style={styles.segment}>
-                  {(['all', '7d', '30d', '90d'] as HistoryRange[]).map((r) => {
-                    const selected = range === r;
-                    const label = r === 'all' ? t(language, 'progress.range.all') : r;
-                    return (
-                      <TouchableOpacity
-                        key={r}
-                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
-                        onPress={() => setRange(r)}
-                        activeOpacity={0.9}
-                      >
-                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <View style={styles.segment}>
-                  {[
-                    { key: 'all' as const, label: t(language, 'progress.range.all') },
-                    { key: 'weighted' as const, label: t(language, 'weight') },
-                    { key: 'bodyweight' as const, label: blockLabel('bodyweight', language) },
-                    { key: 'cardio' as const, label: blockLabel('cardio', language) },
-                  ].map((opt) => {
-                    const selected = setTypeFilter === opt.key;
-                    return (
-                      <TouchableOpacity
-                        key={opt.key}
-                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
-                        onPress={() => setSetTypeFilter(opt.key)}
-                        activeOpacity={0.9}
-                      >
-                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]} numberOfLines={1}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.chipRow}>
-                <TouchableOpacity
-                  style={[styles.chip, blockFilterKey === 'all' ? styles.chipSelected : null]}
-                  onPress={() => setBlockFilterKey('all')}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.chipText, blockFilterKey === 'all' ? styles.chipTextSelected : null]}>
-                    {t(language, 'progress.range.all')}
-                  </Text>
-                </TouchableOpacity>
-                {blockOptions.map((opt) => {
-                  const selected = opt.key === blockFilterKey;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[
-                        styles.chip,
-                        {
-                          borderColor: selected ? opt.accent : '#1F2937',
-                          backgroundColor: selected ? getBlockTone(opt.key).soft : '#020617',
-                        },
-                      ]}
-                      onPress={() => setBlockFilterKey(opt.key)}
-                      activeOpacity={0.9}
-                    >
-                      <View style={[styles.chipDot, { backgroundColor: opt.dotColor }]} />
-                      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]} numberOfLines={1}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <View style={styles.filterFooter}>
-                <Text style={styles.filterMeta}>{t(language, 'historyFilterResults', { count: visibleDays.length })}</Text>
-                {hasActiveFilters ? (
-                  <TouchableOpacity onPress={resetFilters} activeOpacity={0.9} style={styles.resetButton}>
-                    <Text style={styles.resetText}>{t(language, 'historyFilterReset')}</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-          </View>
-
-          {visibleDays.length === 0 ? (
-            <View style={[styles.emptyContainer, styles.content]}>
+        <FlatList
+          data={visibleDays}
+          keyExtractor={(item) => item.dateKey}
+          renderItem={renderDayItem}
+          ListHeaderComponent={filterHeader}
+          ListEmptyComponent={
+            <View style={styles.emptyContainerList}>
               <Text style={styles.emptyTitle}>{t(language, 'historyFilterNoResultsTitle')}</Text>
               <Text style={styles.emptyText}>{t(language, 'historyFilterNoResultsText')}</Text>
             </View>
-          ) : (
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-              {visibleDays.map((day, index) => {
-                const isLast = index === visibleDays.length - 1;
-                const isExpanded = expandedKey === day.dateKey;
-
-                return (
-                  <View key={day.dateKey} style={styles.row}>
-                    <View style={styles.timelineColumn}>
-                      <View style={styles.timelineDot} />
-                      {!isLast && <View style={styles.timelineLine} />}
-                    </View>
-
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() => toggle(day.dateKey)}
-                      style={[styles.card, isExpanded && styles.cardExpanded]}
-                    >
-                      <View style={styles.cardHeader}>
-                        <View>
-                          <Text style={styles.dayLabel}>{day.dayLabel}</Text>
-                          <Text style={styles.dateLabel}>{day.dateLabel}</Text>
-                        </View>
-                        <Text style={styles.chevron}>{isExpanded ? 'v' : '>'}</Text>
-                      </View>
-
-                      {isExpanded && (
-                        <View style={styles.groupList}>
-                          {day.groups.map((block) => {
-                            const toneKey = block.blockId ?? block.blockName ?? '';
-                            const tone = getBlockTone(toneKey);
-                            const dotColor = getDotColor(toneKey);
-                            const blockKey = blockKeyForGroup(block);
-                            const blockSetCount = block.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-                            const isBlockCollapsed = collapsedBlocks.has(blockKey);
-                            const blockTitle = blockTitleForGroup(block, language);
-                            return (
-                              <View key={blockKey} style={styles.blockGroup}>
-                                {blockTitle ? (
-                                  <TouchableOpacity
-                                    style={styles.blockHeaderRow}
-                                    onPress={() => toggleBlockCollapsed(blockKey)}
-                                    activeOpacity={0.85}
-                                  >
-                                    <Text style={[styles.blockLabel, { color: dotColor }]}>
-                                      {blockTitle}
-                                    </Text>
-                                    <Text style={styles.blockSummary}>
-                                      Sett: {blockSetCount} {isBlockCollapsed ? '>' : 'v'}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ) : null}
-                                {!isBlockCollapsed && (
-                                  <View style={styles.blockExercises}>
-                                    {block.exercises.map((group) => {
-                                      const isExerciseCollapsed = collapsedExercises.has(group.id);
-                                      return (
-                                        <View key={group.id} style={styles.groupRow}>
-                                          <View
-                                            style={[
-                                              styles.blockLine,
-                                              {
-                                                backgroundColor: tone.soft,
-                                                top: SPACING.xs * -1,
-                                                bottom:
-                                                  group === block.exercises[block.exercises.length - 1]
-                                                    ? 16
-                                                    : -SPACING.xs,
-                                              },
-                                            ]}
-                                          />
-                                          {group === block.exercises[block.exercises.length - 1] ? (
-                                            <View style={[styles.blockLineEnd, { backgroundColor: tone.soft }]} />
-                                          ) : null}
-                                          <View style={styles.groupTextColumn}>
-                                            <TouchableOpacity
-                                              onPress={() => toggleExerciseCollapsed(group.id)}
-                                              activeOpacity={0.85}
-                                              style={styles.exerciseRow}
-                                            >
-                                              <View style={styles.exerciseTitleColumn}>
-                                                <View style={styles.exerciseTitleRow}>
-                                                  <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
-                                                  <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
-                                                </View>
-                                                <View style={[styles.exerciseDivider, { backgroundColor: dotColor }]} />
-                                              </View>
-                                              <Text style={styles.exerciseSummary}>
-                                                Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
-                                              </Text>
-                                            </TouchableOpacity>
-                                            {!isExerciseCollapsed && (
-                                              <View style={styles.setList}>
-                                                {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
-                                                  <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
-                                                    <Text style={styles.indexText}>[{line.index}] </Text>
-                                                    <Text style={styles.goldText}>{line.weightValue}</Text>
-                                                    {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
-                                                    {line.repsText ? (
-                                                      <>
-                                                        <Text style={styles.mutedText}> x </Text>
-                                                        <Text style={styles.goldText}>{line.repsText}</Text>
-                                                      </>
-                                                    ) : null}
-                                                  </Text>
-                                                ))}
-                                              </View>
-                                            )}
-                                          </View>
-                                          <Text style={styles.groupTime}>{group.time}</Text>
-                                        </View>
-                                      );
-                                    })}
-                                  </View>
-                                )}
-                              </View>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          )}
-        </>
+          }
+          contentContainerStyle={styles.scrollContent}
+          style={styles.list}
+          keyboardShouldPersistTaps="handled"
+        />
       )}
     </SafeAreaView>
   );
@@ -711,16 +815,91 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     marginBottom: SPACING.xl,
   },
+  list: {
+    flex: 1,
+  },
   filterWrapper: {
     marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xxl,
   },
-  filterCard: {
+  filterHeaderContainer: {
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
     backgroundColor: '#0B1220',
-    padding: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  filterHeaderContainerExpanded: {
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+  },
+  filterHeaderPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  filterHeaderTitle: {
+    color: '#DDE6F5',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  filterHeaderMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  filterHeaderBadge: {
+    minWidth: 22,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.xs,
+    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterHeaderBadgeText: {
+    color: '#E2E8F0',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  filterHeaderChevron: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterHeaderChevronText: {
+    color: '#64748B',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  filterHeaderChevronTextOpen: {
+    color: '#CBD5F5',
+  },
+  filterBody: {
+    marginTop: SPACING.xs,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.12)',
+    backgroundColor: '#0B1220',
+    overflow: 'hidden',
+  },
+  filterDivider: {
+    height: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.14)',
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  filterBodyContent: {
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.md,
+    paddingTop: SPACING.sm,
     gap: SPACING.sm,
   },
   searchRow: {
@@ -855,6 +1034,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xxl,
     paddingHorizontal: SCREEN_PADDING,
   },
+  emptyContainerList: {
+    marginTop: SPACING.xxl,
+  },
   emptyTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.md,
@@ -867,7 +1049,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: SCREEN_PADDING,
-    paddingTop: SPACING.lg,
     paddingBottom: SPACING.xxxl,
   },
   row: {

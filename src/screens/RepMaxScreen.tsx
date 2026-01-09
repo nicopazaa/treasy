@@ -13,28 +13,40 @@ import { NavigationContext, useFocusEffect } from '@react-navigation/native';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getSetsForExercise } from '../features/workouts/model/workoutService';
 import { getBlockTone } from '../shared/theme/blockTone';
-import { SPACING, TEXT, SCREEN_PADDING } from '../shared/theme/tokens';
+import { formatDate } from '../shared/utils/dateLabels';
+import { SPACING, TEXT, SCREEN_PADDING, RADIUS, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
-import { COLORS } from '../shared/theme/tokens';
-import { formatWeight } from '../shared/utils/units';
+import { formatWeight, type MassUnit } from '../shared/utils/units';
 
 interface Props {
   appState: AppState;
   onBack: () => void;
 }
 
+type BestSetParts = {
+  isWeighted: boolean;
+  weightValue: string;
+  weightUnit: string;
+  repsValue: number;
+};
+
 interface RepMaxItem {
   id: string; // exercise id
   exerciseName: string;
   blockId: string;
-  bestText: string;
+  bestSet: SetEntry;
+  bestSetParts: BestSetParts;
+  bestEst1Rm: number;
+  bestSetDateLabel: string;
 }
 
 interface RepMaxSection {
   title: string;
   blockId: string;
   data: RepMaxItem[];
+  totalCount: number;
+  topExerciseId: string;
 }
 
 const fallbackNavigation = {
@@ -42,29 +54,59 @@ const fallbackNavigation = {
   isFocused: () => true,
 };
 
-function pickBestSet(sets: SetEntry[]): SetEntry | null {
+function estimateOneRm(weight: number, reps: number): number {
+  if (reps <= 1) return weight;
+  const est = weight * (1 + reps / 30);
+  return Math.round(est * 10) / 10;
+}
+
+function splitWeightLabel(value: string): { weightValue: string; weightUnit: string } {
+  const trimmed = value.trim();
+  const lastSpace = trimmed.lastIndexOf(' ');
+  if (lastSpace <= 0) return { weightValue: trimmed, weightUnit: '' };
+  return {
+    weightValue: trimmed.slice(0, lastSpace),
+    weightUnit: trimmed.slice(lastSpace + 1),
+  };
+}
+
+function buildBestSetParts(set: SetEntry, massUnit: MassUnit, language: AppState['language']): BestSetParts {
+  const isWeighted = set.setType !== 'bodyweight' && set.setType !== 'cardio' && set.weight > 0;
+  if (!isWeighted) {
+    return { isWeighted: false, weightValue: '', weightUnit: '', repsValue: set.reps };
+  }
+
+  const formatted = formatWeight(set.weight, massUnit, language ?? 'en');
+  const { weightValue, weightUnit } = splitWeightLabel(formatted);
+  return { isWeighted: true, weightValue, weightUnit, repsValue: set.reps };
+}
+
+function pickBestSetByOneRm(
+  sets: SetEntry[]
+): { set: SetEntry; est1Rm: number } | null {
   if (!sets?.length) return null;
-  return sets.reduce<SetEntry | null>((best, current) => {
-    if (!best) return current;
-    const bestWeighted = best.setType !== 'bodyweight' && best.setType !== 'cardio' && best.weight > 0;
-    const currentWeighted =
-      current.setType !== 'bodyweight' && current.setType !== 'cardio' && current.weight > 0;
 
-    if (bestWeighted && currentWeighted) {
-      if (current.weight > best.weight) return current;
-      if (current.weight < best.weight) return best;
-      if (current.reps > best.reps) return current;
-      if (current.reps < best.reps) return best;
-      return current.createdAt > best.createdAt ? current : best;
-    }
+  return sets.reduce<{ set: SetEntry; est1Rm: number } | null>((best, current) => {
+    if (current.setType === 'cardio') return best;
+    const currentEst = estimateOneRm(current.weight, current.reps);
+    if (!best) return { set: current, est1Rm: currentEst };
 
-    if (bestWeighted) return best;
-    if (currentWeighted) return current;
+    if (currentEst > best.est1Rm) return { set: current, est1Rm: currentEst };
+    if (currentEst < best.est1Rm) return best;
 
-    if (current.reps > best.reps) return current;
-    if (current.reps < best.reps) return best;
-    return current.createdAt > best.createdAt ? current : best;
+    if (current.weight > best.set.weight) return { set: current, est1Rm: currentEst };
+    if (current.weight < best.set.weight) return best;
+    if (current.reps > best.set.reps) return { set: current, est1Rm: currentEst };
+    if (current.reps < best.set.reps) return best;
+
+    return current.createdAt > best.set.createdAt ? { set: current, est1Rm: currentEst } : best;
   }, null);
+}
+
+function formatSetDateLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return formatDate(date);
 }
 
 function labelForBlock(block: TrainingBlock, language: AppState['language']): string {
@@ -83,39 +125,46 @@ const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
 
   const sections: RepMaxSection[] = useMemo(() => {
     const res: RepMaxSection[] = [];
-
+    // Build a single best-set summary per exercise based on max estimated 1RM.
     for (const block of appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[]) {
       const exercisesForBlock = appState.exercises.filter((ex) => ex.blockId === block.id);
       const items: RepMaxItem[] = [];
 
       for (const ex of exercisesForBlock as Exercise[]) {
         const sets = getSetsForExercise(appState, ex.id);
-        const best = pickBestSet(sets);
+        const best = pickBestSetByOneRm(sets);
         if (!best) continue;
 
-        const isWeighted = best.setType !== 'bodyweight' && best.setType !== 'cardio' && best.weight > 0;
-        const bestText = isWeighted ? formatWeight(best.weight, massUnit, language) : `${best.reps} reps`;
+        const bestSetParts = buildBestSetParts(best.set, massUnit, language);
+
         items.push({
           id: ex.id,
           exerciseName: formatExerciseLabel(ex),
           blockId: block.id,
-          bestText,
+          bestSet: best.set,
+          bestSetParts,
+          bestEst1Rm: best.est1Rm,
+          bestSetDateLabel: formatSetDateLabel(best.set.createdAt),
         });
       }
 
       if (items.length > 0) {
-        items.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+        items.sort(
+          (a, b) => b.bestEst1Rm - a.bestEst1Rm || a.exerciseName.localeCompare(b.exerciseName)
+        );
 
         res.push({
           title: labelForBlock(block, language),
           blockId: block.id,
           data: items,
+          totalCount: items.length,
+          topExerciseId: items[0].id,
         });
       }
     }
 
     return res;
-  }, [appState, language]);
+  }, [appState, language, massUnit]);
 
   const sectionIds = useMemo(() => sections.map((section) => section.blockId), [sections]);
 
@@ -159,16 +208,12 @@ const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <View style={styles.titleRow}>
-          <Text style={styles.badge}>🌟</Text>
-          <Text style={styles.title}>{t(language, 'repMaxTitleScreen')}</Text>
-          <Text style={styles.clip}>📎</Text>
-        </View>
-        <Text style={styles.subtitle}>{t(language, 'repMaxSubtitleScreen')}</Text>
+        <Text style={styles.title}>{t(language, 'repmax.title')}</Text>
+        <Text style={styles.subtitle}>{t(language, 'repmax.subtitle')}</Text>
       </View>
 
       {sections.length === 0 ? (
-        <Text style={[styles.emptyText, styles.content]}>{t(language, 'noRepMaxYet')}</Text>
+        <Text style={[styles.emptyText, styles.content]}>{t(language, 'repmax.noLifts')}</Text>
       ) : (
         <SectionList
           sections={visibleSections}
@@ -185,27 +230,67 @@ const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
               <TouchableOpacity
                 style={styles.sectionHeader}
                 activeOpacity={0.8}
+                hitSlop={8}
                 onPress={() => toggleBlock(section.blockId)}
               >
-                <Text style={[styles.sectionTitle, { color: tone.accent }]}>{section.title}</Text>
-                <Text style={styles.chevron}>{isCollapsed ? '>' : 'v'}</Text>
+                <View style={styles.sectionTitleRow}>
+                  <View style={[styles.sectionAccent, { backgroundColor: tone.accent }]} />
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                </View>
+                <View style={styles.sectionMeta}>
+                  <Text style={styles.sectionCount}>
+                    {t(language, 'repmax.liftsCount', { count: section.totalCount })}
+                  </Text>
+                  <Text style={styles.sectionChevron}>{isCollapsed ? '>' : 'v'}</Text>
+                </View>
               </TouchableOpacity>
             );
           }}
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.rowHeader}>
-                  <Text style={styles.exercise} numberOfLines={1} ellipsizeMode="tail">
-                    {item.exerciseName}
+          renderItem={({ item, section }) => {
+            const isGroupTop = section.topExerciseId === item.id;
+            const parts = item.bestSetParts;
+            return (
+              <View style={[styles.card, isGroupTop ? styles.cardTop : null]}>
+                <View style={[styles.cardAccent, isGroupTop ? styles.cardAccentTop : null]} />
+                <View style={styles.cardBody}>
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={styles.exerciseName} numberOfLines={1} ellipsizeMode="tail">
+                      {item.exerciseName}
+                    </Text>
+                    <Text style={[styles.star, isGroupTop ? styles.starTop : null]}>⭐</Text>
+                  </View>
+                  <Text style={styles.bestSet} numberOfLines={1}>
+                    {parts.isWeighted ? (
+                      <>
+                        <Text style={isGroupTop ? styles.bestSetValueTop : styles.bestSetValue}>
+                          {parts.weightValue}
+                        </Text>
+                        {parts.weightUnit ? <Text style={styles.bestSetUnit}> {parts.weightUnit}</Text> : null}
+                        <Text style={styles.bestSetDivider}> × </Text>
+                        <Text style={isGroupTop ? styles.bestSetValueTop : styles.bestSetValue}>
+                          {parts.repsValue}
+                        </Text>
+                        <Text style={styles.bestSetUnit}> {t(language, 'repmax.reps')}</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={isGroupTop ? styles.bestSetValueTop : styles.bestSetValue}>{parts.repsValue}</Text>
+                        <Text style={styles.bestSetUnit}> {t(language, 'repmax.reps')}</Text>
+                      </>
+                    )}
                   </Text>
-                  <Text style={styles.bestIcon}>🌟</Text>
+                  <Text style={styles.est1rm}>
+                    {t(language, 'repmax.est1rm')}: {formatWeight(item.bestEst1Rm, massUnit, language)}
+                  </Text>
+                  <Text style={styles.setOn}>
+                    {t(language, 'repmax.setOn')}: {item.bestSetDateLabel}
+                  </Text>
                 </View>
-                <Text style={styles.detail}>{item.bestText}</Text>
               </View>
-            </View>
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={styles.itemSpacer} />}
+          stickySectionHeadersEnabled={false}
         />
       )}
     </SafeAreaView>
@@ -253,23 +338,6 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     marginTop: SPACING.xs,
   },
-  badge: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F9FAFB',
-    marginTop: 2,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  clip: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F9FAFB',
-    marginTop: 2,
-  },
   subtitle: {
     marginTop: SPACING.xs,
     color: '#9CA3AF',
@@ -281,53 +349,139 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
   listContent: {
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xxl,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xxxl,
     paddingHorizontal: SCREEN_PADDING,
   },
   sectionHeader: {
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
     marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    backgroundColor: '#0B1220',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    shadowColor: COLORS.blue2,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  sectionAccent: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   sectionTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
-  chevron: {
-    color: '#9CA3AF',
+  sectionMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  sectionCount: {
+    color: '#94A3B8',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  sectionChevron: {
+    color: '#94A3B8',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
-  row: {
+  card: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
+    gap: SPACING.md,
+    padding: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    backgroundColor: '#0B1220',
+    shadowColor: COLORS.blue2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardTop: {
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+    shadowColor: '#FBBF24',
+    shadowOpacity: 0.14,
+  },
+  cardAccent: {
+    width: 3,
+    borderRadius: 999,
+    backgroundColor: COLORS.blue2,
+    alignSelf: 'stretch',
+  },
+  cardAccentTop: {
+    backgroundColor: '#FBBF24',
+  },
+  cardBody: {
+    flex: 1,
     gap: SPACING.sm,
   },
-  bestIcon: {
-    fontSize: TEXT.sm,
-    color: '#9CA3AF',
-    opacity: 0.8,
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
   },
-  exercise: {
-    color: '#E5E7EB',
+  exerciseName: {
+    color: '#CBD5F5',
     fontSize: TEXT.md,
+    fontWeight: '600',
+  },
+  star: {
+    color: 'rgba(251, 191, 36, 0.55)',
+    fontSize: TEXT.sm,
+  },
+  starTop: {
+    color: '#FBBF24',
+  },
+  bestSet: {
+    color: '#F9FAFB',
+    fontSize: TEXT.xl,
+    fontWeight: '800',
+  },
+  bestSetValue: {
+    color: '#F9FAFB',
+  },
+  bestSetValueTop: {
+    color: '#FBBF24',
+  },
+  bestSetUnit: {
+    color: '#94A3B8',
+    fontSize: TEXT.md,
+    fontWeight: '600',
+  },
+  bestSetDivider: {
+    color: '#94A3B8',
     fontWeight: '700',
   },
-  detail: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
+  est1rm: {
+    color: '#E2E8F0',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
-  separator: {
-    height: 1,
-    backgroundColor: '#111827',
+  setOn: {
+    color: '#64748B',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+  },
+  itemSpacer: {
+    height: SPACING.sm,
   },
 });
