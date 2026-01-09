@@ -4,11 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
 import { getBlockTone } from '../shared/theme/blockTone';
-import { formatRelativeDateTime } from '../shared/utils/dateLabels';
+import { formatRelativeDateTime, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t, type StringKey } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
-import { formatWeight, toKg, type MassUnit } from '../shared/utils/units';
+import { formatWeight, fromKg, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
 
 interface Props {
   appState: AppState;
@@ -24,6 +24,14 @@ const RANGE_LABEL_KEY: Record<TimeRange, StringKey> = {
   '30d': 'progress.range.30d',
 };
 
+const CHART_AXIS_WIDTH = 56;
+const CHART_HEIGHT = 140;
+const CHART_X_PADDING = 10;
+const CHART_Y_PADDING_TOP = 12;
+const CHART_Y_PADDING_BOTTOM = 12;
+const CHART_POINT_SIZE = 10;
+const CHART_LINE_THICKNESS = 2;
+
 interface ProgressRow {
   id: string;
   createdAtMs: number;
@@ -37,10 +45,124 @@ type NextTarget =
   | { kind: 'reps'; next: number; progress: number; diff: number }
   | { kind: 'weight'; nextKg: number; progress: number; diffKg: number };
 
+type ChartPoint = {
+  id: string;
+  row: ProgressRow;
+  x: number;
+  y: number;
+  value: number;
+};
+
 function metricValue(row: ProgressRow, metric: Metric): number {
   if (metric === 'oneRm') return row.oneRm;
   if (metric === 'reps') return row.reps;
   return row.weight;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function localeForLanguage(language: AppLanguage): string {
+  if (language === 'nb') return 'nb-NO';
+  if (language === 'es') return 'es-ES';
+  return 'en-US';
+}
+
+function formatChartTick(language: AppLanguage, value: number, metric: Metric, massUnit: MassUnit): string {
+  if (!Number.isFinite(value)) return '';
+  if (metric === 'reps') return String(Math.round(value));
+  const maximumFractionDigits = massUnit === 'lb' ? 0 : 1;
+  try {
+    const nf = new Intl.NumberFormat(localeForLanguage(language), {
+      maximumFractionDigits,
+      minimumFractionDigits: 0,
+    });
+    return nf.format(value);
+  } catch {
+    return maximumFractionDigits === 0 ? String(Math.round(value)) : String(value);
+  }
+}
+
+function niceStep(rawStep: number, candidates: number[]): number {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
+  const exp = Math.floor(Math.log10(rawStep));
+  const base = Math.pow(10, exp);
+  const fraction = rawStep / base;
+
+  let best = candidates[candidates.length - 1] ?? 1;
+  for (const c of candidates) {
+    if (fraction <= c) {
+      best = c;
+      break;
+    }
+  }
+  return best * base;
+}
+
+function makeTicks(minValue: number, maxValue: number, step: number): number[] {
+  const res: number[] = [];
+  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || !Number.isFinite(step) || step <= 0) return res;
+  const roundedStep = Number(step.toFixed(10));
+  const maxIter = 200;
+  let v = minValue;
+  let iter = 0;
+  while (v <= maxValue + roundedStep * 0.5 && iter < maxIter) {
+    res.push(Number(v.toFixed(10)));
+    v += roundedStep;
+    iter += 1;
+  }
+  return res;
+}
+
+function buildAxis(values: number[], desiredTickCount: number, candidates: number[]): { min: number; max: number; ticks: number[] } {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return { min: 0, max: 1, ticks: [0, 1] };
+
+  let min = Math.min(...finite);
+  let max = Math.max(...finite);
+
+  if (min === max) {
+    const pad = min === 0 ? 1 : Math.max(1, Math.abs(min) * 0.1);
+    min -= pad;
+    max += pad;
+  }
+
+  const range = max - min;
+  const rawStep = range / Math.max(1, desiredTickCount - 1);
+  let step = niceStep(rawStep, candidates);
+  if (!Number.isFinite(step) || step <= 0) step = 1;
+
+  let axisMin = Math.floor(min / step) * step;
+  let axisMax = Math.ceil(max / step) * step;
+  let ticks = makeTicks(axisMin, axisMax, step);
+
+  while (ticks.length > desiredTickCount + 2) {
+    step *= 2;
+    axisMin = Math.floor(min / step) * step;
+    axisMax = Math.ceil(max / step) * step;
+    ticks = makeTicks(axisMin, axisMax, step);
+  }
+
+  if (ticks.length < 2) {
+    return { min, max, ticks: [min, max] };
+  }
+
+  return { min: axisMin, max: axisMax, ticks };
+}
+
+function yForChartValue(value: number, axisMin: number, axisMax: number): number {
+  if (axisMax === axisMin) return CHART_Y_PADDING_TOP + (CHART_HEIGHT - CHART_Y_PADDING_TOP - CHART_Y_PADDING_BOTTOM) / 2;
+  const t = (value - axisMin) / (axisMax - axisMin);
+  const inner = CHART_HEIGHT - CHART_Y_PADDING_TOP - CHART_Y_PADDING_BOTTOM;
+  return CHART_Y_PADDING_TOP + (1 - t) * inner;
+}
+
+function xForChartTime(timestampMs: number, minMs: number, maxMs: number, width: number): number {
+  const innerWidth = Math.max(1, width - CHART_X_PADDING * 2);
+  if (maxMs === minMs) return CHART_X_PADDING + innerWidth / 2;
+  const t = (timestampMs - minMs) / (maxMs - minMs);
+  return CHART_X_PADDING + t * innerWidth;
 }
 
 function daysForRange(range: TimeRange): number | null {
@@ -75,6 +197,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [metric, setMetric] = useState<Metric>('weight');
+  const [chartWidth, setChartWidth] = useState(0);
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const prAnim = useRef(new Animated.Value(0)).current;
 
   const blocks = appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[];
@@ -118,6 +242,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     });
   }, [hasWeightData, selectedExerciseId]);
 
+  useEffect(() => {
+    setSelectedPointId(null);
+  }, [metric, selectedExerciseId, timeRange]);
+
   const rowsVisible: ProgressRow[] = useMemo(() => {
     const days = daysForRange(timeRange);
     if (!days) return rowsAll;
@@ -125,7 +253,65 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     return rowsAll.filter((row) => row.createdAtMs >= cutoffMs);
   }, [rowsAll, timeRange]);
 
-  const chartMax = rowsVisible.reduce((max, row) => Math.max(max, metricValue(row, metric)), 0);
+  const rowsChart: ProgressRow[] = useMemo(() => {
+    if (metric === 'reps') return rowsVisible;
+    return rowsVisible.filter((row) => row.weight > 0);
+  }, [metric, rowsVisible]);
+
+  const chartValues = useMemo(() => {
+    return rowsChart.map((row) => {
+      if (metric === 'reps') return row.reps;
+      const raw = fromKg(metricValue(row, metric), massUnit);
+      return roundForDisplay(raw, massUnit);
+    });
+  }, [massUnit, metric, rowsChart]);
+
+  const chartAxisCandidates = useMemo(() => {
+    if (metric === 'reps') return [1, 2, 5, 10];
+    if (massUnit === 'lb') return [1, 2, 5, 10];
+    return [1, 2, 2.5, 5, 10];
+  }, [massUnit, metric]);
+
+  const chartAxis = useMemo(() => buildAxis(chartValues, 5, chartAxisCandidates), [chartAxisCandidates, chartValues]);
+
+  const chartPoints = useMemo<ChartPoint[]>(() => {
+    if (rowsChart.length === 0 || chartWidth <= 0) return [];
+    const minMs = rowsChart[0].createdAtMs;
+    const maxMs = rowsChart[rowsChart.length - 1].createdAtMs;
+    return rowsChart.map((row, idx) => {
+      const value = chartValues[idx] ?? 0;
+      const x = xForChartTime(row.createdAtMs, minMs, maxMs, chartWidth);
+      const y = yForChartValue(value, chartAxis.min, chartAxis.max);
+      return { id: row.id, row, x, y, value };
+    });
+  }, [chartAxis.max, chartAxis.min, chartValues, chartWidth, rowsChart]);
+
+  const chartStartLabel = rowsChart.length > 0 ? formatShortDate(new Date(rowsChart[0].createdAtMs)) : '';
+  const chartEndLabel =
+    rowsChart.length > 0 ? formatShortDate(new Date(rowsChart[rowsChart.length - 1].createdAtMs)) : '';
+
+  const bestChartPointId = useMemo(() => {
+    if (chartPoints.length === 0) return null;
+    const maxValue = chartPoints.reduce((max, p) => Math.max(max, p.value), -Infinity);
+    const bestPoints = chartPoints.filter((p) => p.value === maxValue);
+    return bestPoints.length > 0 ? bestPoints[bestPoints.length - 1]?.id ?? null : null;
+  }, [chartPoints]);
+
+  const latestChartPointId = chartPoints.length > 0 ? chartPoints[chartPoints.length - 1]?.id ?? null : null;
+
+  const selectedChartPoint = useMemo(() => {
+    if (!selectedPointId) return null;
+    return chartPoints.find((p) => p.id === selectedPointId) ?? null;
+  }, [chartPoints, selectedPointId]);
+
+  const chartTooltipStyle = useMemo(() => {
+    if (!selectedChartPoint) return null;
+    const tooltipWidth = 190;
+    const tooltipHeight = 56;
+    const left = clamp(selectedChartPoint.x - tooltipWidth / 2, 0, Math.max(0, chartWidth - tooltipWidth));
+    const top = clamp(selectedChartPoint.y - tooltipHeight - 10, 0, CHART_HEIGHT - tooltipHeight);
+    return { left, top, width: tooltipWidth, minHeight: tooltipHeight };
+  }, [chartWidth, selectedChartPoint]);
 
   const selectedExercise =
     selectedExerciseId && appState.exercises.find((e) => e.id === selectedExerciseId);
@@ -141,6 +327,17 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const bestAllWeight = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.weight), 0), [rowsAll]);
   const bestAllOneRm = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.oneRm), 0), [rowsAll]);
   const bestAllReps = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.reps), 0), [rowsAll]);
+
+  const bestWeightSet = useMemo<ProgressRow | null>(() => {
+    if (rowsAll.length === 0) return null;
+    return rowsAll.reduce((best, row) => {
+      if (row.weight > best.weight) return row;
+      if (row.weight < best.weight) return best;
+      if (row.reps > best.reps) return row;
+      if (row.reps < best.reps) return best;
+      return row.createdAtMs > best.createdAtMs ? row : best;
+    }, rowsAll[0]);
+  }, [rowsAll]);
 
   const isNewPr = useMemo(() => {
     if (!latestOverall) return false;
@@ -318,7 +515,11 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                   <Text style={styles.kpiValue} numberOfLines={1}>
                     {metric === 'reps'
                       ? `${bestAllReps} ${t(language, 'reps')}`
-                      : formatWeight(bestAll, massUnit, language)}
+                      : metric === 'weight'
+                        ? bestWeightSet
+                          ? `${formatWeight(bestWeightSet.weight, massUnit, language)} x ${bestWeightSet.reps}`
+                          : t(language, 'analysis.empty')
+                        : formatWeight(bestAll, massUnit, language)}
                   </Text>
                   <Text style={styles.kpiSub}>{t(language, 'progress.allTime')}</Text>
                 </View>
@@ -435,46 +636,134 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 </View>
               </View>
 
-              <Text style={styles.chartCaption}>
-                {metric === 'weight'
-                  ? t(language, 'weightOverTime')
-                  : metric === 'oneRm'
-                    ? t(language, 'oneRmOverTime')
-                    : t(language, 'repsOverTime')}
-              </Text>
+                <Text style={styles.chartCaption}>
+                  {metric === 'weight'
+                    ? t(language, 'weightOverTime')
+                    : metric === 'oneRm'
+                      ? t(language, 'oneRmOverTime')
+                      : t(language, 'repsOverTime')}
+                </Text>
 
-              {rowsVisible.length === 0 ? (
-                <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
-              ) : (
-                <>
-                  <View style={styles.chart}>
-                    <View style={styles.chartBaseline} />
-                    {rowsVisible.map((r, index) => {
-                      const value = metricValue(r, metric);
-                      const height = chartMax > 0 ? Math.max(6, (value / chartMax) * 120) : 6;
-                      const isLatest = latestOverall?.id === r.id;
-                      const isBestInView = value === chartMax && chartMax > 0;
-                      return (
+                {rowsVisible.length === 0 ? (
+                  <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
+                ) : (
+                  <>
+                    <View style={styles.chart}>
+                      <View style={styles.chartRow}>
+                        <View style={styles.chartYAxis}>
+                          {chartAxis.ticks.map((tick) => {
+                            const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
+                            return (
+                              <Text key={`y-${tick}`} style={[styles.chartYAxisLabel, { top: y - 7 }]}>
+                                {formatChartTick(language, tick, metric, massUnit)}
+                              </Text>
+                            );
+                          })}
+                        </View>
+
                         <View
-                          key={`${r.id}-bar`}
-                          style={[
-                            styles.chartBar,
-                            {
-                              height,
-                              backgroundColor: isBestInView ? COLORS.success : selectedBlockTone.accent,
-                              opacity: isLatest ? 1 : 0.75,
-                              borderColor: isLatest ? '#F9FAFB' : 'transparent',
-                            },
-                          ]}
-                        />
-                      );
-                    })}
-                  </View>
+                          style={styles.chartPlot}
+                          onLayout={(e) => {
+                            const w = Math.round(e.nativeEvent.layout.width);
+                            setChartWidth((prev) => (prev === w ? prev : w));
+                          }}
+                        >
+                          {chartAxis.ticks.map((tick) => {
+                            const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
+                            const isBaseline = tick === chartAxis.min;
+                            return (
+                              <View
+                                key={`g-${tick}`}
+                                style={[styles.chartGridLine, { top: y, opacity: isBaseline ? 0.7 : 0.35 }]}
+                              />
+                            );
+                          })}
 
-                  <View style={styles.table}>
-                    {hasWeightData ? (
-                      <View style={[styles.row, styles.headerRow]}>
-                        <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
+                          {chartPoints.map((p, idx) => {
+                            if (idx === 0) return null;
+                            const prev = chartPoints[idx - 1];
+                            if (!prev) return null;
+                            const dx = p.x - prev.x;
+                            const dy = p.y - prev.y;
+                            const length = Math.sqrt(dx * dx + dy * dy);
+                            const angle = Math.atan2(dy, dx);
+                            const midX = (prev.x + p.x) / 2;
+                            const midY = (prev.y + p.y) / 2;
+                            return (
+                              <View
+                                key={`seg-${prev.id}-${p.id}`}
+                                style={[
+                                  styles.chartLine,
+                                  {
+                                    left: midX - length / 2,
+                                    top: midY - CHART_LINE_THICKNESS / 2,
+                                    width: length,
+                                    height: CHART_LINE_THICKNESS,
+                                    backgroundColor: selectedBlockTone.accent,
+                                    transform: [{ rotateZ: `${angle}rad` }],
+                                  },
+                                ]}
+                              />
+                            );
+                          })}
+
+                          {chartPoints.map((p) => {
+                            const isBest = p.id === bestChartPointId;
+                            const isLatest = p.id === latestChartPointId;
+                            const isSelected = p.id === selectedPointId;
+                            return (
+                              <TouchableOpacity
+                                key={`pt-${p.id}`}
+                                onPress={() => setSelectedPointId((prev) => (prev === p.id ? null : p.id))}
+                                activeOpacity={0.85}
+                                hitSlop={10}
+                                style={[
+                                  styles.chartPoint,
+                                  {
+                                    left: p.x - CHART_POINT_SIZE / 2,
+                                    top: p.y - CHART_POINT_SIZE / 2,
+                                    backgroundColor: isBest ? COLORS.success : selectedBlockTone.accent,
+                                    borderColor: isSelected || isLatest ? '#F9FAFB' : 'transparent',
+                                    transform: [{ scale: isSelected ? 1.25 : isLatest ? 1.1 : 1 }],
+                                  },
+                                ]}
+                              />
+                            );
+                          })}
+
+                          {selectedChartPoint && chartTooltipStyle ? (
+                            <View style={[styles.chartTooltip, chartTooltipStyle]} pointerEvents="none">
+                              <Text style={styles.chartTooltipValue} numberOfLines={1}>
+                                {metric === 'reps'
+                                  ? `${selectedChartPoint.row.reps} ${t(language, 'reps')}`
+                                  : metric === 'oneRm'
+                                    ? formatWeight(selectedChartPoint.row.oneRm, massUnit, language)
+                                    : `${formatWeight(selectedChartPoint.row.weight, massUnit, language)} x ${selectedChartPoint.row.reps}`}
+                              </Text>
+                              <Text style={styles.chartTooltipLabel} numberOfLines={1}>
+                                {selectedChartPoint.row.dateLabel}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          <Text style={styles.chartUnit} numberOfLines={1}>
+                            {metric === 'reps'
+                              ? t(language, 'reps')
+                              : t(language, massUnit === 'lb' ? 'units.lb' : 'units.kg')}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.chartXAxis}>
+                        <Text style={styles.chartXAxisLabel}>{chartStartLabel}</Text>
+                        <Text style={styles.chartXAxisLabel}>{chartEndLabel}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.table}>
+                      {hasWeightData ? (
+                        <View style={[styles.row, styles.headerRow]}>
+                          <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
                         <Text style={[styles.cell, styles.cellWeight]}>{t(language, 'weight')}</Text>
                         <Text style={[styles.cell, styles.cellReps]}>{t(language, 'reps')}</Text>
                         <Text style={[styles.cell, styles.cellOneRm]}>{t(language, 'oneRmEst')}</Text>
@@ -780,25 +1069,95 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   chart: {
-    height: 120,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
     marginBottom: SPACING.md,
-    gap: SPACING.xs,
-    paddingBottom: 4,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    backgroundColor: '#020617',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
   },
-  chartBaseline: {
+  chartRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  chartYAxis: {
+    width: CHART_AXIS_WIDTH,
+    height: CHART_HEIGHT,
+    position: 'relative',
+  },
+  chartYAxisLabel: {
+    position: 'absolute',
+    right: SPACING.xs,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  chartPlot: {
+    flex: 1,
+    height: CHART_HEIGHT,
+    position: 'relative',
+    borderRadius: RADIUS.md,
+    overflow: 'visible',
+  },
+  chartGridLine: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 4,
     height: 1,
     backgroundColor: '#111827',
   },
-  chartBar: {
-    width: 10,
-    borderRadius: RADIUS.md,
+  chartLine: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  chartPoint: {
+    position: 'absolute',
+    width: CHART_POINT_SIZE,
+    height: CHART_POINT_SIZE,
+    borderRadius: CHART_POINT_SIZE / 2,
+    borderWidth: 2,
+  },
+  chartUnit: {
+    position: 'absolute',
+    right: SPACING.xs,
+    top: SPACING.xs,
+    color: '#6B7280',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  chartTooltip: {
+    position: 'absolute',
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: 'rgba(2, 6, 23, 0.98)',
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    gap: 2,
+    zIndex: 5,
+  },
+  chartTooltipValue: {
+    color: '#F9FAFB',
+    fontSize: TEXT.xs,
+    fontWeight: '900',
+  },
+  chartTooltipLabel: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  chartXAxis: {
+    marginTop: SPACING.xs,
+    marginLeft: CHART_AXIS_WIDTH,
+    paddingHorizontal: CHART_X_PADDING,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  chartXAxisLabel: {
+    color: '#6B7280',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
   },
   table: {
     marginTop: SPACING.xs,
