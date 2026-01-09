@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, PanResponder, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -43,6 +43,7 @@ import { t } from './src/shared/i18n/i18n';
 import { formatExerciseLabel } from './src/shared/utils/exerciseLabel';
 import { toKg } from './src/shared/utils/units';
 import type { NavState, ScreenName } from './src/app/navigation/types';
+import { BackSwipeContext, type BackSwipeBlockerRect } from './src/app/navigation/BackSwipeContext';
 
 type NavHistoryState = {
   stack: NavState[];
@@ -187,6 +188,21 @@ export default function App() {
   const githubHandledRef = useRef(false);
   const { width: windowWidth } = useWindowDimensions();
   const [historyInitialDateKey, setHistoryInitialDateKey] = useState<string | null>(null);
+  const backSwipeBlockersRef = useRef<Record<string, BackSwipeBlockerRect>>({});
+  const registerBackSwipeBlocker = useCallback((id: string, rect: BackSwipeBlockerRect) => {
+    backSwipeBlockersRef.current[id] = rect;
+  }, []);
+  const unregisterBackSwipeBlocker = useCallback((id: string) => {
+    delete backSwipeBlockersRef.current[id];
+  }, []);
+  const backSwipeContextValue = useMemo(
+    () => ({
+      registerBlocker: registerBackSwipeBlocker,
+      unregisterBlocker: unregisterBackSwipeBlocker,
+      blockersRef: backSwipeBlockersRef,
+    }),
+    [registerBackSwipeBlocker, unregisterBackSwipeBlocker]
+  );
   const nav = navHistory.stack[navHistory.index] ?? { screen: 'landing' };
   const canGoBack = navHistory.index > 0;
   const canGoForward = navHistory.index < navHistory.stack.length - 1;
@@ -309,36 +325,56 @@ export default function App() {
   const panResponder = useMemo(() => {
     const isIOS = Platform.OS === 'ios';
     const EDGE_W = isIOS ? 64 : 28;
-    const SWIPE_X = isIOS ? 48 : 80;
-    const MAX_Y = isIOS ? 120 : 80;
+    const SWIPE_X = 60;
+    const MAX_Y = 25;
+    const BACK_START_X = windowWidth * 0.6;
+
+    const isInsideBlockedArea = (x: number, y: number) => {
+      const blockers = backSwipeBlockersRef.current;
+      for (const rect of Object.values(blockers)) {
+        if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, gesture) => {
         if (gesture.numberActiveTouches !== 1) return false;
         if (!canGoBack && !canGoForward) return false;
 
-        const fromLeftEdge = gesture.x0 < EDGE_W;
+        if (isInsideBlockedArea(gesture.x0, gesture.y0)) return false;
+
+        const fromBackZone = gesture.x0 < BACK_START_X;
         const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
-        if (!fromLeftEdge && !fromRightEdge) return false;
+        if (!fromBackZone && !fromRightEdge) return false;
 
         const dx = gesture.dx;
         const dy = gesture.dy;
-        return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12;
+        if (Math.abs(dy) > MAX_Y) return false;
+        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
+        if (!isHorizontal) return false;
+        if (dx > 12 && fromBackZone && canGoBack) return true;
+        if (dx < -12 && fromRightEdge && canGoForward) return true;
+        return false;
       },
       onPanResponderRelease: (_evt, gesture) => {
         const dx = gesture.dx;
         const dy = gesture.dy;
         if (Math.abs(dy) > MAX_Y) return;
+        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
+        if (!isHorizontal) return;
 
-        const fromLeftEdge = gesture.x0 < EDGE_W;
+        const fromBackZone = gesture.x0 < BACK_START_X;
         const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
 
-        if (fromLeftEdge && dx > SWIPE_X && canGoBack) {
+        if (fromBackZone && dx > SWIPE_X && gesture.vx > 0.3 && canGoBack) {
           dispatchNav({ type: 'back' });
           return;
         }
 
-        if (fromRightEdge && dx < -SWIPE_X && canGoForward) {
+        if (fromRightEdge && dx < -SWIPE_X && gesture.vx < -0.3 && canGoForward) {
           dispatchNav({ type: 'forward' });
         }
       },
@@ -502,7 +538,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <View style={styles.appContainer} {...panResponder.panHandlers}>
+      <BackSwipeContext.Provider value={backSwipeContextValue}>
+        <View style={styles.appContainer} {...panResponder.panHandlers}>
         <StatusBar barStyle="light-content" />
         <ExpoStatusBar style="light" />
 
@@ -738,7 +775,8 @@ export default function App() {
             onUpdate={(next: AppState) => setAppState(next)}
           />
         )}
-      </View>
+        </View>
+      </BackSwipeContext.Provider>
     </SafeAreaProvider>
   );
 }

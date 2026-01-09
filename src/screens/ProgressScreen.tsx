@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   PanResponder,
   Image,
   ImageSourcePropType,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
@@ -22,6 +23,7 @@ import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/t
 import { blockLabel, t, type StringKey } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatWeight, fromKg, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
+import { useBackSwipeContext } from '../app/navigation/BackSwipeContext';
 
 interface Props {
   appState: AppState;
@@ -29,7 +31,7 @@ interface Props {
 }
 
 type TimeRange = 'all' | '90d' | '30d';
-type Metric = 'weight' | 'oneRm' | 'reps';
+type Metric = 'weight' | 'oneRm' | 'volume' | 'reps';
 type Aggregation = 'day' | 'month' | 'year';
 type TileVariant = 'primary' | 'secondary';
 
@@ -67,31 +69,54 @@ const BLOCK_ICONS: Partial<Record<TrainingBlockId, ImageSourcePropType>> = {
   bodyweight: require('../assets/bodyweight.png'),
 };
 
-interface ProgressRow {
+interface SetRow {
   id: string;
   createdAtMs: number;
   dateLabel: string;
+  dateTimeLabel: string;
   weight: number;
   reps: number;
   oneRm: number;
+  volume: number;
+  volumeUsesWeight: boolean;
+  setLabel: string;
 }
 
 type NextTarget =
   | { kind: 'reps'; next: number; progress: number; diff: number }
   | { kind: 'weight'; nextKg: number; progress: number; diffKg: number };
 
+interface ChartRow {
+  id: string;
+  createdAtMs: number;
+  dateLabel: string;
+  weightMax: number;
+  oneRmMax: number;
+  volumeSum: number;
+  repsSum: number;
+  bestSet: SetRow | null;
+}
+
 type ChartPoint = {
   id: string;
-  row: ProgressRow;
+  row: ChartRow;
   x: number;
   y: number;
   value: number;
 };
 
-function metricValue(row: ProgressRow, metric: Metric): number {
+function metricValueSet(row: SetRow, metric: Metric): number {
   if (metric === 'oneRm') return row.oneRm;
   if (metric === 'reps') return row.reps;
+  if (metric === 'volume') return row.volume;
   return row.weight;
+}
+
+function metricValueChart(row: ChartRow, metric: Metric): number {
+  if (metric === 'oneRm') return row.oneRmMax;
+  if (metric === 'reps') return row.repsSum;
+  if (metric === 'volume') return row.volumeSum;
+  return row.weightMax;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -104,9 +129,17 @@ function localeForLanguage(language: AppLanguage): string {
   return 'en-US';
 }
 
-function formatChartTick(language: AppLanguage, value: number, metric: Metric, massUnit: MassUnit): string {
+function formatChartTick(
+  language: AppLanguage,
+  value: number,
+  metric: Metric,
+  massUnit: MassUnit,
+  volumeUsesWeight: boolean
+): string {
   if (!Number.isFinite(value)) return '';
-  if (metric === 'reps') return String(Math.round(value));
+  if (metric === 'reps' || (metric === 'volume' && !volumeUsesWeight)) {
+    return String(Math.round(value));
+  }
   const maximumFractionDigits = massUnit === 'lb' ? 0 : 1;
   try {
     const nf = new Intl.NumberFormat(localeForLanguage(language), {
@@ -117,6 +150,47 @@ function formatChartTick(language: AppLanguage, value: number, metric: Metric, m
   } catch {
     return maximumFractionDigits === 0 ? String(Math.round(value)) : String(value);
   }
+}
+
+function formatDateTime(date: Date, language: AppLanguage): string {
+  const time = date.toLocaleTimeString(localeForLanguage(language), {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${formatShortDate(date)} ${time}`;
+}
+
+function formatSetLabel(
+  weightKg: number,
+  reps: number,
+  isBodyweight: boolean,
+  massUnit: MassUnit,
+  language: AppLanguage
+): string {
+  if (isBodyweight || weightKg === 0) {
+    return `${reps} ${t(language, 'reps')}`;
+  }
+  return `${formatWeight(weightKg, massUnit, language)} x ${reps} ${t(language, 'reps')}`;
+}
+
+function formatMetricLabel(language: AppLanguage, metric: Metric): string {
+  if (metric === 'oneRm') return t(language, 'oneRm');
+  if (metric === 'volume') return t(language, 'analysis.volume.title');
+  if (metric === 'reps') return t(language, 'reps');
+  return t(language, 'weight');
+}
+
+function formatMetricValue(
+  value: number,
+  metric: Metric,
+  massUnit: MassUnit,
+  language: AppLanguage,
+  volumeUsesWeight: boolean
+): string {
+  if (!Number.isFinite(value)) return '';
+  if (metric === 'reps') return `${Math.round(value)} ${t(language, 'reps')}`;
+  if (metric === 'volume' && !volumeUsesWeight) return `${Math.round(value)} ${t(language, 'reps')}`;
+  return formatWeight(value, massUnit, language);
 }
 
 function niceStep(rawStep: number, candidates: number[]): number {
@@ -253,45 +327,56 @@ function formatAggregationLabel(date: Date, aggregation: Aggregation, language: 
   return formatShortDate(date);
 }
 
-function aggregateRows(
-  rows: ProgressRow[],
-  aggregation: Aggregation,
-  metric: Metric,
-  language: AppLanguage
-): ProgressRow[] {
-  if (aggregation === 'day') return rows;
-  const buckets = new Map<string, { row: ProgressRow; bucketMs: number }>();
+function pickBestSet(current: SetRow | null, candidate: SetRow): SetRow {
+  if (!current) return candidate;
+  if (candidate.oneRm > current.oneRm) return candidate;
+  if (candidate.oneRm < current.oneRm) return current;
+  if (candidate.weight > current.weight) return candidate;
+  if (candidate.weight < current.weight) return current;
+  if (candidate.reps > current.reps) return candidate;
+  if (candidate.reps < current.reps) return current;
+  return candidate.createdAtMs > current.createdAtMs ? candidate : current;
+}
+
+function aggregateChartRows(rows: SetRow[], aggregation: Aggregation, language: AppLanguage): ChartRow[] {
+  const buckets = new Map<string, ChartRow>();
 
   for (const row of rows) {
     const bucketMs = bucketStartMs(row.createdAtMs, aggregation);
     const key = String(bucketMs);
     const existing = buckets.get(key);
+
     if (!existing) {
-      buckets.set(key, { row, bucketMs });
+      buckets.set(key, {
+        id: `${bucketMs}`,
+        createdAtMs: bucketMs,
+        dateLabel: '',
+        weightMax: row.weight,
+        oneRmMax: row.oneRm,
+        volumeSum: row.volume,
+        repsSum: row.reps,
+        bestSet: row,
+      });
       continue;
     }
 
-    const currentValue = metricValue(row, metric);
-    const existingValue = metricValue(existing.row, metric);
-    if (currentValue > existingValue) {
-      buckets.set(key, { row, bucketMs });
-    } else if (currentValue === existingValue && row.createdAtMs > existing.row.createdAtMs) {
-      buckets.set(key, { row, bucketMs });
-    }
+    existing.weightMax = Math.max(existing.weightMax, row.weight);
+    existing.oneRmMax = Math.max(existing.oneRmMax, row.oneRm);
+    existing.volumeSum += row.volume;
+    existing.repsSum += row.reps;
+    existing.bestSet = pickBestSet(existing.bestSet, row);
   }
 
-  const aggregated = Array.from(buckets.values()).map(({ row, bucketMs }) => ({
+  const aggregated = Array.from(buckets.values()).map((row) => ({
     ...row,
-    id: `${bucketMs}-${metric}`,
-    createdAtMs: bucketMs,
-    dateLabel: formatAggregationLabel(new Date(bucketMs), aggregation, language),
+    dateLabel: formatAggregationLabel(new Date(row.createdAtMs), aggregation, language),
   }));
 
   aggregated.sort((a, b) => a.createdAtMs - b.createdAtMs);
   return aggregated;
 }
 
-function findNearestRow(rows: ProgressRow[], targetMs: number): ProgressRow | null {
+function findNearestRow(rows: ChartRow[], targetMs: number): ChartRow | null {
   if (rows.length === 0) return null;
   let lo = 0;
   let hi = rows.length - 1;
@@ -446,71 +531,117 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
   selected,
   onPress,
 }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = useCallback(() => {
+    Animated.timing(scaleAnim, {
+      toValue: 0.97,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [scaleAnim]);
+
+  const handlePressOut = useCallback(() => {
+    Animated.timing(scaleAnim, {
+      toValue: 1,
+      duration: 140,
+      useNativeDriver: true,
+    }).start();
+  }, [scaleAnim]);
+
   const selectedBg = selected ? hexToRgba(accent, 0.18) : '#0B1220';
   const borderColor = selected ? hexToRgba(accent, 0.75) : 'rgba(148, 163, 184, 0.2)';
   const glowColor = selected ? accent : '#0B1220';
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.groupTile,
-        { backgroundColor: selectedBg, borderColor, shadowColor: glowColor },
-        selected ? styles.groupTileSelected : null,
-        pressed ? styles.groupTilePressed : null,
-      ]}
-    >
-      <View style={[styles.groupTileDot, { backgroundColor: dotColor }]} />
-      <Text style={[styles.groupTileText, selected ? styles.groupTileTextSelected : null]} numberOfLines={1}>
-        {label}
-      </Text>
-      <View style={[styles.groupTileIconWrap, selected ? styles.groupTileIconWrapSelected : null]}>
-        {icon ? (
-          <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#3B82F6" />
-        ) : (
-          <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
-        )}
-      </View>
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View
+        style={[
+          styles.groupTile,
+          { backgroundColor: selectedBg, borderColor, shadowColor: glowColor, transform: [{ scale: scaleAnim }] },
+          selected ? styles.groupTileSelected : null,
+        ]}
+      >
+        <View style={[styles.groupTileDot, { backgroundColor: dotColor }]} />
+        <Text style={[styles.groupTileText, selected ? styles.groupTileTextSelected : null]} numberOfLines={1}>
+          {label}
+        </Text>
+        <View style={[styles.groupTileIconWrap, selected ? styles.groupTileIconWrapSelected : null]}>
+          {icon ? (
+            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#3B82F6" />
+          ) : (
+            <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
+          )}
+        </View>
+      </Animated.View>
     </Pressable>
   );
 };
 
 const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, selected, onPress }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const handlePressIn = useCallback(() => {
+    Animated.timing(scaleAnim, {
+      toValue: 0.96,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [scaleAnim]);
+  const handlePressOut = useCallback(() => {
+    Animated.timing(scaleAnim, {
+      toValue: 1,
+      duration: 140,
+      useNativeDriver: true,
+    }).start();
+  }, [scaleAnim]);
   const webTooltipProps = Platform.OS === 'web' ? ({ title: label } as any) : {};
+  const ringColor = selected ? hexToRgba(accent, 0.7) : 'rgba(148, 163, 184, 0.2)';
+  const fillColor = selected ? hexToRgba(accent, 0.2) : '#0B1220';
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.modeButton,
-        {
-          borderColor: selected ? hexToRgba(accent, 0.7) : 'rgba(148, 163, 184, 0.2)',
-          backgroundColor: selected ? hexToRgba(accent, 0.18) : '#0B1220',
-          shadowColor: selected ? accent : '#0B1220',
-        },
-        selected ? styles.modeButtonSelected : null,
-        pressed ? styles.modeButtonPressed : null,
-      ]}
-      {...webTooltipProps}
-    >
-      {icon ? (
-        <Image
-          source={icon}
-          style={styles.modeButtonIcon}
-          resizeMode="contain"
-          tintColor={selected ? accent : '#93C5FD'}
-        />
-      ) : (
-        <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
-      )}
-    </Pressable>
+    <View style={styles.modeButtonWrap}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        hitSlop={12}
+        {...webTooltipProps}
+      >
+        <Animated.View
+          style={[
+            styles.modeButton,
+            {
+              borderColor: ringColor,
+              borderWidth: selected ? 2 : 1,
+              backgroundColor: fillColor,
+              shadowColor: selected ? accent : '#0B1220',
+              transform: [{ scale: scaleAnim }],
+            },
+            selected ? styles.modeButtonSelected : null,
+          ]}
+        >
+          {icon ? (
+            <Image
+              source={icon}
+              style={styles.modeButtonIcon}
+              resizeMode="contain"
+              tintColor={selected ? accent : '#93C5FD'}
+            />
+          ) : (
+            <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
+          )}
+        </Animated.View>
+      </Pressable>
+      <Text style={styles.modeButtonLabel}>{label}</Text>
+    </View>
   );
 };
 
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
+  const backSwipeContext = useBackSwipeContext();
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
     const preferred =
       MAIN_BLOCK_ORDER.find((id) => appState.blocks.some((block) => block.id === id)) ?? MAIN_BLOCK_ORDER[0];
@@ -529,12 +660,42 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     startViewport: { startMs: number; endMs: number };
     startDistance: number;
   } | null>(null);
+  const chartContainerRef = useRef<View>(null);
+  const chartMeasureRaf = useRef<number | null>(null);
 
   const primaryBlocks = useMemo<TrainingBlock[]>(() => {
     const byId = new Map<string, TrainingBlock>(appState.blocks.map((block) => [block.id, block]));
     return MAIN_BLOCK_ORDER.map((id) => byId.get(id) ?? { id, name: blockLabel(id, language) });
   }, [appState.blocks, language]);
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
+
+  const registerChartBlocker = useCallback(() => {
+    if (!backSwipeContext || Platform.OS === 'web') return;
+    if (!chartContainerRef.current?.measureInWindow) return;
+    chartContainerRef.current.measureInWindow((x, y, width, height) => {
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+      backSwipeContext.registerBlocker('progressChart', { x, y, width, height });
+    });
+  }, [backSwipeContext]);
+
+  const scheduleChartBlockerMeasure = useCallback(() => {
+    if (!backSwipeContext || Platform.OS === 'web') return;
+    if (chartMeasureRaf.current != null) return;
+    chartMeasureRaf.current = requestAnimationFrame(() => {
+      chartMeasureRaf.current = null;
+      registerChartBlocker();
+    });
+  }, [backSwipeContext, registerChartBlocker]);
+
+  useEffect(() => {
+    return () => {
+      backSwipeContext?.unregisterBlocker('progressChart');
+      if (chartMeasureRaf.current != null) {
+        cancelAnimationFrame(chartMeasureRaf.current);
+        chartMeasureRaf.current = null;
+      }
+    };
+  }, [backSwipeContext]);
 
   const exercises = useMemo(() => {
     if (!selectedBlockId) return [] as Exercise[];
@@ -601,14 +762,18 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
       const isBodyweight = lastSet.isBodyweight || lastSet.setType === 'bodyweight' || lastSet.weight === 0;
       const lastValue = isBodyweight
         ? `${lastSet.reps} ${repsLabel}`
-        : `${formatWeight(lastSet.weight, massUnit, language)} × ${lastSet.reps}`;
+        : `${formatWeight(lastSet.weight, massUnit, language)} x ${lastSet.reps}`;
       summaries.set(ex.id, `${lastLabel}: ${lastValue}`);
     }
 
     return summaries;
   }, [appState.sets, exercises, language, massUnit]);
 
-  const rowsAll: ProgressRow[] = useMemo(() => {
+
+  const bodyweightKg = appState.weightKg ?? 0;
+  const repsLabel = t(language, 'reps');
+
+  const setRows: SetRow[] = useMemo(() => {
     if (!selectedExerciseId) return [];
 
     const setsForExercise = appState.sets
@@ -616,52 +781,91 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
       .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)) as SetEntry[];
 
     return setsForExercise.map((s) => {
-      const createdAtMs = new Date(s.createdAt).getTime();
-      const dateLabel = formatRelativeDateTime(new Date(s.createdAt), new Date(), language);
+      const date = new Date(s.createdAt);
+      const createdAtMs = date.getTime();
+      const dateLabel = formatRelativeDateTime(date, new Date(), language);
+      const dateTimeLabel = formatDateTime(date, language);
+      const isBodyweight = s.isBodyweight || s.setType === 'bodyweight' || s.weight === 0;
+      const usesBodyweight = isBodyweight && bodyweightKg > 0;
+      const volumeUsesWeight = s.weight > 0 || usesBodyweight;
+      const baseWeightKg = s.weight > 0 ? s.weight : usesBodyweight ? bodyweightKg : 0;
+      const volume = baseWeightKg > 0 ? baseWeightKg * s.reps : s.reps;
+      const setLabel = formatSetLabel(s.weight, s.reps, isBodyweight, massUnit, language);
       return {
         id: s.id,
         createdAtMs,
         dateLabel,
+        dateTimeLabel,
         weight: s.weight,
         reps: s.reps,
         oneRm: estimateOneRm(s.weight, s.reps),
+        volume,
+        volumeUsesWeight,
+        setLabel,
       };
     });
-  }, [appState.sets, language, selectedExerciseId]);
+  }, [appState.sets, bodyweightKg, language, massUnit, selectedExerciseId]);
 
-  const hasWeightData = rowsAll.some((row) => row.weight > 0);
+  const hasWeightData = setRows.some((row) => row.weight > 0);
+  const volumeUsesWeight = useMemo(() => setRows.some((row) => row.volumeUsesWeight), [setRows]);
 
   useEffect(() => {
     if (!selectedExerciseId) return;
 
-    setMetric((prev) => {
-      if (!hasWeightData) return 'reps';
-      if (prev === 'reps') return 'weight';
-      return prev;
-    });
-  }, [hasWeightData, selectedExerciseId]);
+    if ((metric === 'weight' || metric === 'oneRm') && !hasWeightData) {
+      setMetric('reps');
+    }
+  }, [hasWeightData, metric, selectedExerciseId]);
+
+  const metricOptions = useMemo(() => {
+    const options: Array<{ key: Metric; label: string }> = [];
+    if (hasWeightData) {
+      options.push({ key: 'weight', label: t(language, 'weight') });
+      options.push({ key: 'oneRm', label: t(language, 'oneRm') });
+    }
+    options.push({ key: 'volume', label: t(language, 'analysis.volume.title') });
+    options.push({ key: 'reps', label: t(language, 'reps') });
+    return options;
+  }, [hasWeightData, language]);
+
+  useEffect(() => {
+    if (!selectedExerciseId) return;
+    if (metricOptions.length === 0) return;
+    if (!metricOptions.some((opt) => opt.key === metric)) {
+      setMetric(metricOptions[0].key);
+    }
+  }, [metric, metricOptions, selectedExerciseId]);
 
   useEffect(() => {
     setSelectedPointId(null);
   }, [aggregation, metric, selectedExerciseId, timeRange]);
 
-  const rowsInRange: ProgressRow[] = useMemo(() => {
+  const rowsInRange: SetRow[] = useMemo(() => {
     const days = daysForRange(timeRange);
-    if (!days) return rowsAll;
+    if (!days) return setRows;
     const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
-    return rowsAll.filter((row) => row.createdAtMs >= cutoffMs);
-  }, [rowsAll, timeRange]);
+    return setRows.filter((row) => row.createdAtMs >= cutoffMs);
+  }, [setRows, timeRange]);
 
-  const rowsVisible: ProgressRow[] = useMemo(() => {
-    return aggregateRows(rowsInRange, aggregation, metric, language);
-  }, [aggregation, language, metric, rowsInRange]);
+  const rowsVisible: ChartRow[] = useMemo(() => {
+    return aggregateChartRows(rowsInRange, aggregation, language);
+  }, [aggregation, language, rowsInRange]);
 
-  const rowsChart: ProgressRow[] = useMemo(() => {
-    if (metric === 'reps') return rowsVisible;
-    return rowsVisible.filter((row) => row.weight > 0);
+  const rowsChart: ChartRow[] = useMemo(() => {
+    if (metric === 'weight') return rowsVisible.filter((row) => row.weightMax > 0);
+    if (metric === 'oneRm') return rowsVisible.filter((row) => row.oneRmMax > 0);
+    if (metric === 'volume') return rowsVisible.filter((row) => row.volumeSum > 0);
+    return rowsVisible.filter((row) => row.repsSum > 0);
   }, [metric, rowsVisible]);
 
-  const rowsChartRef = useRef<ProgressRow[]>([]);
+  useEffect(() => {
+    if (!backSwipeContext) return;
+    if (rowsChart.length === 0) {
+      backSwipeContext.unregisterBlocker('progressChart');
+    }
+  }, [backSwipeContext, rowsChart.length]);
+
+  const rowsChartRef = useRef<ChartRow[]>([]);
 
   useEffect(() => {
     rowsChartRef.current = rowsChart;
@@ -707,7 +911,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const viewRange = viewport ?? (fullRange ? { startMs: fullRange.minMs, endMs: fullRange.maxMs } : null);
 
   const viewportRows = useMemo(() => {
-    if (!viewRange) return [] as ProgressRow[];
+    if (!viewRange) return [] as ChartRow[];
     const filtered = rowsChart.filter(
       (row) => row.createdAtMs >= viewRange.startMs && row.createdAtMs <= viewRange.endMs
     );
@@ -718,17 +922,20 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   const chartValues = useMemo(() => {
     return viewportRows.map((row) => {
-      if (metric === 'reps') return row.reps;
-      const raw = fromKg(metricValue(row, metric), massUnit);
+      const value = metricValueChart(row, metric);
+      if (metric === 'reps' || (metric === 'volume' && !volumeUsesWeight)) return value;
+      const raw = fromKg(value, massUnit);
       return roundForDisplay(raw, massUnit);
     });
-  }, [massUnit, metric, viewportRows]);
+  }, [massUnit, metric, volumeUsesWeight, viewportRows]);
 
   const chartAxisCandidates = useMemo(() => {
-    if (metric === 'reps') return [1, 2, 5, 10];
+    if (metric === 'reps' || (metric === 'volume' && !volumeUsesWeight)) {
+      return [1, 2, 5, 10];
+    }
     if (massUnit === 'lb') return [1, 2, 5, 10];
     return [1, 2, 2.5, 5, 10];
-  }, [massUnit, metric]);
+  }, [massUnit, metric, volumeUsesWeight]);
 
   const chartAxis = useMemo(() => buildAxis(chartValues, 5, chartAxisCandidates), [chartAxisCandidates, chartValues]);
 
@@ -750,6 +957,13 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const chartEndLabel = viewRange
     ? formatAggregationLabel(new Date(viewRange.endMs), aggregation, language)
     : '';
+  const chartMetricLabel = formatMetricLabel(language, metric);
+  const chartUnitLabel =
+    metric === 'reps'
+      ? t(language, 'reps')
+      : metric === 'volume' && !volumeUsesWeight
+        ? t(language, 'reps')
+        : t(language, massUnit === 'lb' ? 'units.lb' : 'units.kg');
 
   const bestChartPointId = useMemo(() => {
     if (chartPoints.length === 0) return null;
@@ -767,19 +981,22 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   const chartTooltipStyle = useMemo(() => {
     if (!selectedChartPoint) return null;
-    const tooltipWidth = 190;
-    const tooltipHeight = 68;
+    const tooltipWidth = 200;
+    const tooltipHeight = 92;
     const left = clamp(selectedChartPoint.x - tooltipWidth / 2, 0, Math.max(0, chartWidth - tooltipWidth));
     const top = clamp(selectedChartPoint.y - tooltipHeight - 10, 0, CHART_HEIGHT - tooltipHeight);
     return { left, top, width: tooltipWidth, minHeight: tooltipHeight };
   }, [chartWidth, selectedChartPoint]);
 
-  const latestVisible = rowsVisible.length > 0 ? rowsVisible[rowsVisible.length - 1] : null;
+  const latestVisible = rowsChart.length > 0 ? rowsChart[rowsChart.length - 1] : null;
 
   const bestVisible = useMemo(() => {
-    if (rowsVisible.length === 0) return null;
-    return rowsVisible.reduce((best, row) => (metricValue(row, metric) > metricValue(best, metric) ? row : best), rowsVisible[0]);
-  }, [metric, rowsVisible]);
+    if (rowsChart.length === 0) return null;
+    return rowsChart.reduce(
+      (best, row) => (metricValueChart(row, metric) > metricValueChart(best, metric) ? row : best),
+      rowsChart[0]
+    );
+  }, [metric, rowsChart]);
 
   const isFullRange = useMemo(() => {
     if (!viewRange || !fullRange) return true;
@@ -911,37 +1128,37 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const selectedExercise =
     selectedExerciseId && appState.exercises.find((e) => e.id === selectedExerciseId);
 
-  const latestOverall = rowsAll.length > 0 ? rowsAll[rowsAll.length - 1] : null;
-  const prevOverall = rowsAll.length > 1 ? rowsAll[rowsAll.length - 2] : null;
-  const firstOverall = rowsAll.length > 0 ? rowsAll[0] : null;
+  const latestOverall = setRows.length > 0 ? setRows[setRows.length - 1] : null;
+  const prevOverall = setRows.length > 1 ? setRows[setRows.length - 2] : null;
+  const firstOverall = setRows.length > 0 ? setRows[0] : null;
 
   const bestAll = useMemo(() => {
-    return rowsAll.reduce((max, row) => Math.max(max, metricValue(row, metric)), 0);
-  }, [metric, rowsAll]);
+    return setRows.reduce((max, row) => Math.max(max, metricValueSet(row, metric)), 0);
+  }, [metric, setRows]);
 
-  const bestAllWeight = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.weight), 0), [rowsAll]);
-  const bestAllOneRm = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.oneRm), 0), [rowsAll]);
-  const bestAllReps = useMemo(() => rowsAll.reduce((max, row) => Math.max(max, row.reps), 0), [rowsAll]);
+  const bestAllWeight = useMemo(() => setRows.reduce((max, row) => Math.max(max, row.weight), 0), [setRows]);
+  const bestAllOneRm = useMemo(() => setRows.reduce((max, row) => Math.max(max, row.oneRm), 0), [setRows]);
+  const bestAllReps = useMemo(() => setRows.reduce((max, row) => Math.max(max, row.reps), 0), [setRows]);
 
-  const bestWeightSet = useMemo<ProgressRow | null>(() => {
-    if (rowsAll.length === 0) return null;
-    return rowsAll.reduce((best, row) => {
+  const bestWeightSet = useMemo<SetRow | null>(() => {
+    if (setRows.length === 0) return null;
+    return setRows.reduce((best, row) => {
       if (row.weight > best.weight) return row;
       if (row.weight < best.weight) return best;
       if (row.reps > best.reps) return row;
       if (row.reps < best.reps) return best;
       return row.createdAtMs > best.createdAtMs ? row : best;
-    }, rowsAll[0]);
-  }, [rowsAll]);
+    }, setRows[0]);
+  }, [setRows]);
 
   const deltaFromPrev = useMemo(() => {
     if (!latestOverall || !prevOverall) return null;
-    return metricValue(latestOverall, metric) - metricValue(prevOverall, metric);
+    return metricValueSet(latestOverall, metric) - metricValueSet(prevOverall, metric);
   }, [latestOverall, metric, prevOverall]);
 
   const deltaFromFirst = useMemo(() => {
     if (!latestOverall || !firstOverall) return null;
-    return metricValue(latestOverall, metric) - metricValue(firstOverall, metric);
+    return metricValueSet(latestOverall, metric) - metricValueSet(firstOverall, metric);
   }, [firstOverall, latestOverall, metric]);
 
   const changeLabelStyle =
@@ -988,7 +1205,12 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        onScroll={scheduleChartBlockerMeasure}
+        scrollEventThrottle={16}
+      >
         <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
@@ -1219,81 +1441,69 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                 </View>
 
                 <View style={styles.segment}>
-                  {hasWeightData ? (
-                    <>
+                  {metricOptions.map((opt) => {
+                    const selected = metric === opt.key;
+                    return (
                       <TouchableOpacity
+                        key={opt.key}
                         onPress={() => {
                           animateNext();
-                          setMetric('weight');
+                          setMetric(opt.key);
                         }}
                         activeOpacity={0.9}
-                        style={[styles.segmentButton, metric === 'weight' ? styles.segmentButtonSelected : null]}
+                        style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]}
                       >
-                        <Text style={[styles.segmentText, metric === 'weight' ? styles.segmentTextSelected : null]}>
-                          {t(language, 'weight')}
+                        <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>
+                          {opt.label}
                         </Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => {
-                          animateNext();
-                          setMetric('oneRm');
-                        }}
-                        activeOpacity={0.9}
-                        style={[styles.segmentButton, metric === 'oneRm' ? styles.segmentButtonSelected : null]}
-                      >
-                        <Text style={[styles.segmentText, metric === 'oneRm' ? styles.segmentTextSelected : null]}>
-                          {t(language, 'oneRm')}
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <View style={[styles.segmentButton, styles.segmentButtonSelected]}>
-                      <Text style={[styles.segmentText, styles.segmentTextSelected]}>{t(language, 'reps')}</Text>
-                    </View>
-                  )}
+                    );
+                  })}
                 </View>
               </View>
 
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartCaption}>
-                    {metric === 'weight'
-                      ? t(language, 'weightOverTime')
-                      : metric === 'oneRm'
-                        ? t(language, 'oneRmOverTime')
+              <View style={styles.chartHeader}>
+                <Text style={styles.chartCaption}>
+                  {metric === 'weight'
+                    ? t(language, 'weightOverTime')
+                    : metric === 'oneRm'
+                      ? t(language, 'oneRmOverTime')
+                      : metric === 'volume'
+                        ? t(language, 'progress.volumeOverTime')
                         : t(language, 'repsOverTime')}
-                  </Text>
-                  <View style={styles.chartControls}>
-                    <TouchableOpacity onPress={handleZoomOut} activeOpacity={0.85} style={styles.chartControlButton}>
-                      <Text style={styles.chartControlText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleZoomIn} activeOpacity={0.85} style={styles.chartControlButton}>
-                      <Text style={styles.chartControlText}>+</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={handleResetZoom}
-                      activeOpacity={0.85}
-                      style={[styles.chartResetButton, isFullRange ? styles.chartResetButtonDisabled : null]}
-                      disabled={isFullRange}
-                    >
-                      <Text style={[styles.chartResetText, isFullRange ? styles.chartResetTextDisabled : null]}>
-                        {t(language, 'progress.reset')}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                </Text>
+                <View style={styles.chartControls}>
+                  <TouchableOpacity onPress={handleZoomOut} activeOpacity={0.85} style={styles.chartControlButton}>
+                    <Text style={styles.chartControlText}>-</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleZoomIn} activeOpacity={0.85} style={styles.chartControlButton}>
+                    <Text style={styles.chartControlText}>+</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleResetZoom}
+                    activeOpacity={0.85}
+                    style={[styles.chartResetButton, isFullRange ? styles.chartResetButtonDisabled : null]}
+                    disabled={isFullRange}
+                  >
+                    <Text style={[styles.chartResetText, isFullRange ? styles.chartResetTextDisabled : null]}>
+                      {t(language, 'progress.reset')}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
+              </View>
 
-                {rowsVisible.length === 0 ? (
+                {rowsChart.length === 0 ? (
                   <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
                 ) : (
                   <>
-                    <View style={styles.chart}>
+                    <View ref={chartContainerRef} style={styles.chart} onLayout={registerChartBlocker}>
                       <View style={styles.chartRow}>
                         <View style={styles.chartYAxis}>
                           {chartAxis.ticks.map((tick) => {
                             const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
                             return (
                               <Text key={`y-${tick}`} style={[styles.chartYAxisLabel, { top: y - 7 }]}>
-                                {formatChartTick(language, tick, metric, massUnit)}
+                                {formatChartTick(language, tick, metric, massUnit, volumeUsesWeight)}
                               </Text>
                             );
                           })}
@@ -1370,28 +1580,34 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
                           {selectedChartPoint && chartTooltipStyle ? (
                             <View style={[styles.chartTooltip, chartTooltipStyle]} pointerEvents="none">
+                              {selectedExercise ? (
+                                <Text style={styles.chartTooltipTitle} numberOfLines={1}>
+                                  {formatExerciseLabel(selectedExercise)}
+                                </Text>
+                              ) : null}
                               <Text style={styles.chartTooltipValue} numberOfLines={1}>
-                                {metric === 'reps'
-                                  ? `${selectedChartPoint.row.reps} ${t(language, 'reps')}`
-                                  : metric === 'oneRm'
-                                    ? `${t(language, 'oneRmEst')}: ${formatWeight(selectedChartPoint.row.oneRm, massUnit, language)}`
-                                    : `${formatWeight(selectedChartPoint.row.weight, massUnit, language)} × ${selectedChartPoint.row.reps} ${t(language, 'reps')}`}
+                                {chartMetricLabel}:{' '}
+                                {formatMetricValue(
+                                  metricValueChart(selectedChartPoint.row, metric),
+                                  metric,
+                                  massUnit,
+                                  language,
+                                  volumeUsesWeight
+                                )}
                               </Text>
-                              {metric === 'oneRm' ? (
+                              {selectedChartPoint.row.bestSet?.setLabel ? (
                                 <Text style={styles.chartTooltipDetail} numberOfLines={1}>
-                                  {selectedChartPoint.row.reps} {t(language, 'reps')}
+                                  {selectedChartPoint.row.bestSet.setLabel}
                                 </Text>
                               ) : null}
                               <Text style={styles.chartTooltipLabel} numberOfLines={1}>
-                                {selectedChartPoint.row.dateLabel}
+                                {selectedChartPoint.row.bestSet?.dateTimeLabel ?? selectedChartPoint.row.dateLabel}
                               </Text>
                             </View>
                           ) : null}
 
                           <Text style={styles.chartUnit} numberOfLines={1}>
-                            {metric === 'reps'
-                              ? t(language, 'reps')
-                              : t(language, massUnit === 'lb' ? 'units.lb' : 'units.kg')}
+                            {chartUnitLabel}
                           </Text>
                         </View>
                       </View>
@@ -1403,46 +1619,37 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                     </View>
 
                     <View style={styles.table}>
-                      {hasWeightData ? (
-                        <View style={[styles.row, styles.headerRow]}>
-                          <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
-                        <Text style={[styles.cell, styles.cellWeight]}>{t(language, 'weight')}</Text>
-                        <Text style={[styles.cell, styles.cellReps]}>{t(language, 'reps')}</Text>
-                        <Text style={[styles.cell, styles.cellOneRm]}>{t(language, 'oneRmEst')}</Text>
-                      </View>
-                    ) : (
                       <View style={[styles.row, styles.headerRow]}>
                         <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
-                        <Text style={[styles.cell, styles.cellOneRm]}>{t(language, 'reps')}</Text>
+                        <Text style={[styles.cell, styles.cellMetric]}>{chartMetricLabel}</Text>
                       </View>
-                    )}
 
-                    {[...rowsVisible].reverse().map((r) => {
-                      const isLatest = latestVisible?.id === r.id;
-                      const rowIsBest = bestVisible?.id === r.id;
-                      return (
-                        <View
-                          key={r.id}
-                          style={[
-                            styles.row,
-                            isLatest ? { backgroundColor: selectedBlockTone.soft } : null,
-                            rowIsBest ? { backgroundColor: 'rgba(34, 197, 94, 0.08)' } : null,
-                          ]}
-                        >
-                          <Text style={[styles.cell, styles.cellDate]}>{r.dateLabel}</Text>
-                          {hasWeightData ? (
-                            <>
-                              <Text style={[styles.cell, styles.cellWeight]}>{formatWeight(r.weight, massUnit, language)}</Text>
-                              <Text style={[styles.cell, styles.cellReps]}>{r.reps}</Text>
-                              <Text style={[styles.cell, styles.cellOneRm]}>{formatWeight(r.oneRm, massUnit, language)}</Text>
-                            </>
-                          ) : (
-                            <Text style={[styles.cell, styles.cellOneRm]}>{r.reps}</Text>
-                          )}
-                        </View>
-                      );
-                    })}
-                  </View>
+                      {[...rowsChart].reverse().map((r) => {
+                        const isLatest = latestVisible?.id === r.id;
+                        const rowIsBest = bestVisible?.id === r.id;
+                        return (
+                          <View
+                            key={r.id}
+                            style={[
+                              styles.row,
+                              isLatest ? { backgroundColor: selectedBlockTone.soft } : null,
+                              rowIsBest ? { backgroundColor: 'rgba(34, 197, 94, 0.08)' } : null,
+                            ]}
+                          >
+                            <Text style={[styles.cell, styles.cellDate]}>{r.dateLabel}</Text>
+                            <Text style={[styles.cell, styles.cellMetric]}>
+                              {formatMetricValue(
+                                metricValueChart(r, metric),
+                                metric,
+                                massUnit,
+                                language,
+                                volumeUsesWeight
+                              )}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
                 </>
               )}
             </>
@@ -1503,7 +1710,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: SPACING.md,
   },
@@ -1511,39 +1718,47 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '700',
+    flex: 1,
   },
   modeButtons: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: SPACING.md,
+    paddingTop: 2,
+  },
+  modeButtonWrap: {
     alignItems: 'center',
-    gap: SPACING.sm,
   },
   modeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     backgroundColor: '#0B1220',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   modeButtonSelected: {
-    shadowOpacity: 0.35,
-    elevation: 4,
-  },
-  modeButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.96 }],
+    shadowOpacity: 0.5,
+    elevation: 5,
   },
   modeButtonIcon: {
-    width: 20,
-    height: 20,
+    width: 28,
+    height: 28,
+  },
+  modeButtonLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: '600',
   },
   groupGrid: {
     paddingBottom: SPACING.sm,
+    marginTop: 0,
   },
   groupGridRow: {
     justifyContent: 'space-between',
@@ -1575,10 +1790,6 @@ const styles = StyleSheet.create({
   groupTileSelected: {
     shadowOpacity: 0.45,
     elevation: 4,
-  },
-  groupTilePressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.985 }],
   },
   groupTileDot: {
     width: 10,
@@ -2004,6 +2215,11 @@ const styles = StyleSheet.create({
     gap: 2,
     zIndex: 5,
   },
+  chartTooltipTitle: {
+    color: '#CBD5F5',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
   chartTooltipValue: {
     color: '#F9FAFB',
     fontSize: TEXT.xs,
@@ -2050,16 +2266,10 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
   },
   cellDate: {
-    flex: 2.6,
+    flex: 1.6,
   },
-  cellWeight: {
-    flex: 1.2,
-  },
-  cellReps: {
-    flex: 0.9,
-  },
-  cellOneRm: {
-    flex: 1.4,
+  cellMetric: {
+    flex: 1,
     textAlign: 'right',
   },
 });
