@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, LayoutAnimation, PanResponder } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Pressable,
+  Platform,
+  LayoutAnimation,
+  PanResponder,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
@@ -18,6 +28,7 @@ interface Props {
 type TimeRange = 'all' | '90d' | '30d';
 type Metric = 'weight' | 'oneRm' | 'reps';
 type Aggregation = 'day' | 'month' | 'year';
+type TileVariant = 'primary' | 'secondary';
 
 const RANGE_LABEL_KEY: Record<TimeRange, StringKey> = {
   all: 'progress.range.all',
@@ -196,6 +207,14 @@ function estimateOneRm(weight: number, reps: number): number {
   return Math.round(est * 10) / 10;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function bucketStartMs(timestampMs: number, aggregation: Aggregation): number {
   const date = new Date(timestampMs);
   if (aggregation === 'year') return new Date(date.getFullYear(), 0, 1).getTime();
@@ -305,11 +324,93 @@ function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
   return block.name;
 }
 
+const OTHER_BLOCK_NAMES = new Set(['annet', 'other', 'otro']);
+
+function normalizeBlockName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isOtherBlock(block: TrainingBlock): boolean {
+  const id = String(block.id ?? '').toLowerCase();
+  if (id === 'other') return true;
+  const name = normalizeBlockName(block.name ?? '');
+  return OTHER_BLOCK_NAMES.has(name);
+}
+
+type SelectableTileProps = {
+  label: string;
+  subtitle?: string | null;
+  accent: string;
+  selected: boolean;
+  variant?: TileVariant;
+  onPress: () => void;
+};
+
+const SelectableTile: React.FC<SelectableTileProps> = ({
+  label,
+  subtitle,
+  accent,
+  selected,
+  variant = 'primary',
+  onPress,
+}) => {
+  const selectedBg = selected ? hexToRgba(accent, variant === 'primary' ? 0.18 : 0.12) : '#0B1220';
+  const borderColor = selected
+    ? hexToRgba(accent, variant === 'primary' ? 0.7 : 0.45)
+    : 'rgba(148, 163, 184, 0.16)';
+  const glowColor = selected ? accent : '#0B1220';
+  const dotOpacity = variant === 'primary' ? 1 : 0.6;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tile,
+        variant === 'secondary' ? styles.tileSecondary : null,
+        { backgroundColor: selectedBg, borderColor, shadowColor: glowColor },
+        selected ? styles.tileSelected : null,
+        pressed ? styles.tilePressed : null,
+      ]}
+    >
+      <View style={styles.tileDotWrap}>
+        <View style={[styles.tileDot, { backgroundColor: accent, opacity: dotOpacity }]} />
+      </View>
+      <View style={styles.tileText}>
+        <Text
+          style={[
+            styles.tileLabel,
+            variant === 'secondary' ? styles.tileLabelSecondary : null,
+            selected ? styles.tileLabelSelected : null,
+          ]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text
+            style={[
+              styles.tileSubtitle,
+              variant === 'secondary' ? styles.tileSubtitleSecondary : null,
+              selected ? styles.tileSubtitleSelected : null,
+            ]}
+            numberOfLines={1}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={[styles.tileChevron, { opacity: selected ? 1 : 0 }]}>{'>'}</Text>
+    </Pressable>
+  );
+};
+
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
-  const initialBlockId = appState.blocks.find((b) => b.id !== 'cardio')?.id ?? null;
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(initialBlockId);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
+    const first = appState.blocks.find((b) => b.id !== 'cardio' && !isOtherBlock(b));
+    return first?.id ?? null;
+  });
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [aggregation, setAggregation] = useState<Aggregation>('day');
@@ -324,13 +425,66 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     startDistance: number;
   } | null>(null);
 
-  const blocks = appState.blocks.filter((b) => b.id !== 'cardio') as TrainingBlock[];
+  const blocks = useMemo(() => {
+    return appState.blocks.filter((b) => b.id !== 'cardio' && !isOtherBlock(b)) as TrainingBlock[];
+  }, [appState.blocks]);
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
 
   const exercises = useMemo(() => {
     if (!selectedBlockId) return [] as Exercise[];
     return appState.exercises.filter((e) => e.blockId === selectedBlockId) as Exercise[];
   }, [appState.exercises, selectedBlockId]);
+
+  useEffect(() => {
+    if (blocks.length === 0) return;
+    if (!selectedBlockId || !blocks.some((block) => block.id === selectedBlockId)) {
+      setSelectedBlockId(blocks[0].id);
+      setSelectedExerciseId(null);
+    }
+  }, [blocks, selectedBlockId]);
+
+  const exerciseSummaries = useMemo(() => {
+    const summaries = new Map<string, string>();
+    if (exercises.length === 0) return summaries;
+    const bestLabel = t(language, 'progress.best1rm');
+    const lastLabel = t(language, 'progress.latest');
+    const repsLabel = t(language, 'reps');
+
+    for (const ex of exercises) {
+      const sets = appState.sets.filter((s) => s.exerciseId === ex.id && s.setType !== 'cardio');
+      if (sets.length === 0) continue;
+
+      let bestOneRm: number | null = null;
+      let lastSet: SetEntry | null = null;
+      let lastMs = -Infinity;
+
+      for (const set of sets) {
+        const createdAtMs = new Date(set.createdAt).getTime();
+        if (createdAtMs > lastMs) {
+          lastMs = createdAtMs;
+          lastSet = set;
+        }
+        if (set.weight > 0 && set.reps > 0) {
+          const est = estimateOneRm(set.weight, set.reps);
+          if (bestOneRm == null || est > bestOneRm) bestOneRm = est;
+        }
+      }
+
+      if (bestOneRm != null) {
+        summaries.set(ex.id, `${bestLabel}: ${formatWeight(bestOneRm, massUnit, language)}`);
+        continue;
+      }
+
+      if (!lastSet) continue;
+      const isBodyweight = lastSet.isBodyweight || lastSet.setType === 'bodyweight' || lastSet.weight === 0;
+      const lastValue = isBodyweight
+        ? `${lastSet.reps} ${repsLabel}`
+        : `${formatWeight(lastSet.weight, massUnit, language)} × ${lastSet.reps}`;
+      summaries.set(ex.id, `${lastLabel}: ${lastValue}`);
+    }
+
+    return summaries;
+  }, [appState.sets, exercises, language, massUnit]);
 
   const rowsAll: ProgressRow[] = useMemo(() => {
     if (!selectedExerciseId) return [];
@@ -721,32 +875,22 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         <Text style={styles.subtitle}>{t(language, 'progressScreenSubtitle')}</Text>
 
         <Text style={styles.sectionLabel}>{t(language, 'muscleGroups')}</Text>
-        <View style={styles.pillRow}>
+        <View style={styles.tileRow}>
           {blocks.map((block) => {
             const selected = block.id === selectedBlockId;
             const tone = getBlockTone(block.id);
             return (
-              <TouchableOpacity
+              <SelectableTile
                 key={block.id}
-                style={[
-                  styles.pill,
-                  {
-                    borderColor: selected ? tone.accent : '#1F2937',
-                    backgroundColor: selected ? tone.soft : '#0B1220',
-                  },
-                ]}
+                label={labelForBlock(block, language)}
+                accent={tone.accent}
+                selected={selected}
                 onPress={() => {
                   animateNext();
                   setSelectedBlockId(block.id);
                   setSelectedExerciseId(null);
                 }}
-                activeOpacity={0.9}
-              >
-                <View style={[styles.pillDot, { backgroundColor: tone.accent }]} />
-                <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                  {labelForBlock(block, language)}
-                </Text>
-              </TouchableOpacity>
+              />
             );
           })}
         </View>
@@ -755,30 +899,23 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         {exercises.length === 0 ? (
           <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
         ) : (
-          <View style={styles.pillRow}>
+          <View style={styles.tileRow}>
             {exercises.map((ex) => {
               const selected = ex.id === selectedExerciseId;
+              const subtitle = exerciseSummaries.get(ex.id);
               return (
-                <TouchableOpacity
+                <SelectableTile
                   key={ex.id}
-                  style={[
-                    styles.pill,
-                    {
-                      borderColor: selected ? selectedBlockTone.accent : '#1F2937',
-                      backgroundColor: selected ? selectedBlockTone.soft : '#0B1220',
-                    },
-                  ]}
+                  label={formatExerciseLabel(ex)}
+                  subtitle={subtitle}
+                  accent={selectedBlockTone.accent}
+                  selected={selected}
+                  variant="secondary"
                   onPress={() => {
                     animateNext();
                     setSelectedExerciseId(ex.id);
                   }}
-                  activeOpacity={0.9}
-                >
-                  <View style={[styles.pillDot, { backgroundColor: selectedBlockTone.accent }]} />
-                  <Text style={[styles.pillText, selected && styles.pillTextSelected]} numberOfLines={1}>
-                    {formatExerciseLabel(ex)}
-                  </Text>
-                </TouchableOpacity>
+                />
               );
             })}
           </View>
@@ -1198,39 +1335,85 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
-  pillRow: {
+  tileRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginHorizontal: -SPACING.xs,
   },
-  pill: {
+  tile: {
     flexBasis: '48%',
     flexGrow: 1,
     margin: SPACING.xs,
-    minHeight: 54,
+    minHeight: 68,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: 'rgba(148, 163, 184, 0.16)',
     backgroundColor: '#0B1220',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
     gap: SPACING.md,
+    shadowColor: '#0B1220',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
-  pillDot: {
+  tileSelected: {
+    shadowOpacity: 0.5,
+    elevation: 4,
+  },
+  tileSecondary: {
+    minHeight: 72,
+  },
+  tilePressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
+  },
+  tileDotWrap: {
+    width: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileDot: {
     width: 10,
     height: 10,
     borderRadius: 999,
   },
-  pillText: {
-    color: '#E5E7EB',
+  tileText: {
+    flex: 1,
+    gap: 2,
+  },
+  tileLabel: {
+    color: '#E2E8F0',
     fontSize: TEXT.sm,
     fontWeight: '700',
-    flex: 1,
   },
-  pillTextSelected: {
-    color: '#F9FAFB',
+  tileLabelSecondary: {
+    color: '#CBD5F5',
+    fontWeight: '600',
+  },
+  tileLabelSelected: {
+    color: '#F8FAFC',
+  },
+  tileSubtitle: {
+    color: '#94A3B8',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+  },
+  tileSubtitleSecondary: {
+    color: '#8FA3C5',
+  },
+  tileSubtitleSelected: {
+    color: '#CBD5F5',
+  },
+  tileChevron: {
+    color: '#93C5FD',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+    width: 14,
+    textAlign: 'right',
   },
   emptyText: {
     color: '#9CA3AF',
