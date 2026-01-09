@@ -6,14 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Pressable,
+  FlatList,
   Platform,
   LayoutAnimation,
   PanResponder,
+  Image,
+  ImageSourcePropType,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
-import { getBlockTone } from '../shared/theme/blockTone';
+import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDateTime, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t, type StringKey } from '../shared/i18n/i18n';
@@ -49,6 +52,20 @@ const CHART_Y_PADDING_TOP = 12;
 const CHART_Y_PADDING_BOTTOM = 12;
 const CHART_POINT_SIZE = 10;
 const CHART_LINE_THICKNESS = 2;
+
+const MAIN_BLOCK_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
+const MODE_BLOCK_IDS: TrainingBlockId[] = ['cardio', 'bodyweight'];
+const VALID_BLOCK_IDS = new Set<string>([...MAIN_BLOCK_ORDER, ...MODE_BLOCK_IDS]);
+const BLOCK_ICONS: Partial<Record<TrainingBlockId, ImageSourcePropType>> = {
+  chest: require('../assets/chest.png'),
+  shoulders: require('../assets/shoulder.png'),
+  back: require('../assets/back.png'),
+  arms: require('../assets/arms.png'),
+  core: require('../assets/core.png'),
+  legs: require('../assets/leggs.png'),
+  cardio: require('../assets/cardio.png'),
+  bodyweight: require('../assets/bodyweight.png'),
+};
 
 interface ProgressRow {
   id: string;
@@ -346,6 +363,23 @@ type SelectableTileProps = {
   onPress: () => void;
 };
 
+type MuscleGroupTileProps = {
+  label: string;
+  accent: string;
+  dotColor: string;
+  icon?: ImageSourcePropType | null;
+  selected: boolean;
+  onPress: () => void;
+};
+
+type IconModeButtonProps = {
+  label: string;
+  icon?: ImageSourcePropType | null;
+  accent: string;
+  selected: boolean;
+  onPress: () => void;
+};
+
 const SelectableTile: React.FC<SelectableTileProps> = ({
   label,
   subtitle,
@@ -404,12 +438,83 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
   );
 };
 
+const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
+  label,
+  accent,
+  dotColor,
+  icon,
+  selected,
+  onPress,
+}) => {
+  const selectedBg = selected ? hexToRgba(accent, 0.18) : '#0B1220';
+  const borderColor = selected ? hexToRgba(accent, 0.75) : 'rgba(148, 163, 184, 0.2)';
+  const glowColor = selected ? accent : '#0B1220';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.groupTile,
+        { backgroundColor: selectedBg, borderColor, shadowColor: glowColor },
+        selected ? styles.groupTileSelected : null,
+        pressed ? styles.groupTilePressed : null,
+      ]}
+    >
+      <View style={[styles.groupTileDot, { backgroundColor: dotColor }]} />
+      <Text style={[styles.groupTileText, selected ? styles.groupTileTextSelected : null]} numberOfLines={1}>
+        {label}
+      </Text>
+      <View style={[styles.groupTileIconWrap, selected ? styles.groupTileIconWrapSelected : null]}>
+        {icon ? (
+          <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#3B82F6" />
+        ) : (
+          <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
+        )}
+      </View>
+    </Pressable>
+  );
+};
+
+const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, selected, onPress }) => {
+  const webTooltipProps = Platform.OS === 'web' ? ({ title: label } as any) : {};
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.modeButton,
+        {
+          borderColor: selected ? hexToRgba(accent, 0.7) : 'rgba(148, 163, 184, 0.2)',
+          backgroundColor: selected ? hexToRgba(accent, 0.18) : '#0B1220',
+          shadowColor: selected ? accent : '#0B1220',
+        },
+        selected ? styles.modeButtonSelected : null,
+        pressed ? styles.modeButtonPressed : null,
+      ]}
+      {...webTooltipProps}
+    >
+      {icon ? (
+        <Image
+          source={icon}
+          style={styles.modeButtonIcon}
+          resizeMode="contain"
+          tintColor={selected ? accent : '#93C5FD'}
+        />
+      ) : (
+        <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
+      )}
+    </Pressable>
+  );
+};
+
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
-    const first = appState.blocks.find((b) => b.id !== 'cardio' && !isOtherBlock(b));
-    return first?.id ?? null;
+    const preferred =
+      MAIN_BLOCK_ORDER.find((id) => appState.blocks.some((block) => block.id === id)) ?? MAIN_BLOCK_ORDER[0];
+    return preferred ?? null;
   });
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
@@ -425,9 +530,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     startDistance: number;
   } | null>(null);
 
-  const blocks = useMemo(() => {
-    return appState.blocks.filter((b) => b.id !== 'cardio' && !isOtherBlock(b)) as TrainingBlock[];
-  }, [appState.blocks]);
+  const primaryBlocks = useMemo<TrainingBlock[]>(() => {
+    const byId = new Map<string, TrainingBlock>(appState.blocks.map((block) => [block.id, block]));
+    return MAIN_BLOCK_ORDER.map((id) => byId.get(id) ?? { id, name: blockLabel(id, language) });
+  }, [appState.blocks, language]);
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
 
   const exercises = useMemo(() => {
@@ -435,13 +541,29 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     return appState.exercises.filter((e) => e.blockId === selectedBlockId) as Exercise[];
   }, [appState.exercises, selectedBlockId]);
 
+  const fallbackBlockId = useMemo(() => {
+    const preferred = MAIN_BLOCK_ORDER.find((id) => appState.blocks.some((block) => block.id === id)) ?? MAIN_BLOCK_ORDER[0];
+    return preferred ?? null;
+  }, [appState.blocks]);
+
   useEffect(() => {
-    if (blocks.length === 0) return;
-    if (!selectedBlockId || !blocks.some((block) => block.id === selectedBlockId)) {
-      setSelectedBlockId(blocks[0].id);
+    if (!fallbackBlockId) return;
+    if (!selectedBlockId) {
+      setSelectedBlockId(fallbackBlockId);
+      setSelectedExerciseId(null);
+      return;
+    }
+    if (!VALID_BLOCK_IDS.has(selectedBlockId) || selectedBlockId === 'other') {
+      setSelectedBlockId(fallbackBlockId);
+      setSelectedExerciseId(null);
+      return;
+    }
+    const selectedBlock = appState.blocks.find((block) => block.id === selectedBlockId);
+    if (selectedBlock && isOtherBlock(selectedBlock)) {
+      setSelectedBlockId(fallbackBlockId);
       setSelectedExerciseId(null);
     }
-  }, [blocks, selectedBlockId]);
+  }, [appState.blocks, fallbackBlockId, selectedBlockId]);
 
   const exerciseSummaries = useMemo(() => {
     const summaries = new Map<string, string>();
@@ -874,26 +996,68 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         <Text style={styles.title}>{t(language, 'progressScreenTitle')}</Text>
         <Text style={styles.subtitle}>{t(language, 'progressScreenSubtitle')}</Text>
 
-        <Text style={styles.sectionLabel}>{t(language, 'muscleGroups')}</Text>
-        <View style={styles.tileRow}>
-          {blocks.map((block) => {
-            const selected = block.id === selectedBlockId;
-            const tone = getBlockTone(block.id);
-            return (
-              <SelectableTile
-                key={block.id}
-                label={labelForBlock(block, language)}
-                accent={tone.accent}
-                selected={selected}
-                onPress={() => {
-                  animateNext();
-                  setSelectedBlockId(block.id);
-                  setSelectedExerciseId(null);
-                }}
-              />
-            );
-          })}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>{t(language, 'muscleGroups')}</Text>
+          <View style={styles.modeButtons}>
+            <IconModeButton
+              label={blockLabel('cardio', language)}
+              icon={BLOCK_ICONS.cardio}
+              accent={getBlockTone('cardio').accent}
+              selected={selectedBlockId === 'cardio'}
+              onPress={() => {
+                animateNext();
+                setSelectedBlockId('cardio');
+                setSelectedExerciseId(null);
+              }}
+            />
+            <IconModeButton
+              label={blockLabel('bodyweight', language)}
+              icon={BLOCK_ICONS.bodyweight}
+              accent={getBlockTone('bodyweight').accent}
+              selected={selectedBlockId === 'bodyweight'}
+              onPress={() => {
+                animateNext();
+                setSelectedBlockId('bodyweight');
+                setSelectedExerciseId(null);
+              }}
+            />
+          </View>
         </View>
+        <FlatList
+          data={primaryBlocks}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          scrollEnabled={false}
+          columnWrapperStyle={styles.groupGridRow}
+          contentContainerStyle={styles.groupGrid}
+          renderItem={({ item, index }) => {
+            const selected = item.id === selectedBlockId;
+            const tone = getBlockTone(item.id);
+            const dotColor = getDotColor(item.id);
+            const icon = BLOCK_ICONS[item.id as TrainingBlockId];
+            return (
+              <View
+                style={[
+                  styles.groupTileWrap,
+                  index % 2 === 1 ? styles.groupTileWrapRight : null,
+                ]}
+              >
+                <MuscleGroupTile
+                  label={labelForBlock(item, language)}
+                  accent={tone.accent}
+                  dotColor={dotColor}
+                  icon={icon}
+                  selected={selected}
+                  onPress={() => {
+                    animateNext();
+                    setSelectedBlockId(item.id);
+                    setSelectedExerciseId(null);
+                  }}
+                />
+              </View>
+            );
+          }}
+        />
 
         <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>{t(language, 'exercises')}</Text>
         {exercises.length === 0 ? (
@@ -1334,6 +1498,125 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '700',
+  },
+  sectionHeaderRow: {
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+  },
+  sectionTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  modeButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  modeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: '#0B1220',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  modeButtonSelected: {
+    shadowOpacity: 0.35,
+    elevation: 4,
+  },
+  modeButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.96 }],
+  },
+  modeButtonIcon: {
+    width: 20,
+    height: 20,
+  },
+  groupGrid: {
+    paddingBottom: SPACING.sm,
+  },
+  groupGridRow: {
+    justifyContent: 'space-between',
+  },
+  groupTileWrap: {
+    flex: 1,
+    marginBottom: SPACING.sm,
+  },
+  groupTileWrapRight: {
+    marginLeft: SPACING.sm,
+  },
+  groupTile: {
+    minHeight: 78,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: '#0B1220',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
+    shadowColor: '#0B1220',
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  groupTileSelected: {
+    shadowOpacity: 0.45,
+    elevation: 4,
+  },
+  groupTilePressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  groupTileDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  groupTileText: {
+    flex: 1,
+    color: '#F8FAFC',
+    fontSize: TEXT.md,
+    fontWeight: '700',
+    marginLeft: SPACING.xs,
+  },
+  groupTileTextSelected: {
+    color: '#FFFFFF',
+  },
+  groupTileIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0F172A',
+  },
+  groupTileIconWrapSelected: {
+    borderColor: '#1D4ED8',
+  },
+  groupTileIcon: {
+    width: 22,
+    height: 22,
+  },
+  groupTileFallbackDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
   },
   tileRow: {
     flexDirection: 'row',
