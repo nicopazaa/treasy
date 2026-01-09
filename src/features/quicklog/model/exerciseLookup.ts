@@ -13,7 +13,13 @@ function normalizeName(value: string): string {
 }
 
 function exerciseTokens(ex: Exercise): string[] {
-  const tokens = [ex.name, ex.shortCode ?? '', ...(ex.tags ?? [])];
+  const tokens = [
+    ex.name,
+    ex.canonicalName ?? '',
+    ...(ex.aliases ?? []),
+    ex.shortCode ?? '',
+    ...(ex.tags ?? []),
+  ];
   return tokens.map(normalizeName).filter(Boolean);
 }
 

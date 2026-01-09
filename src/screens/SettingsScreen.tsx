@@ -10,6 +10,7 @@ type Props = {
   appState: AppState;
   onBack: () => void;
   onUpdate: (next: AppState) => void;
+  onOpenManageExercises: () => void;
 };
 
 type PendingAction = null | { type: 'deleteSets' } | { type: 'deleteCustomExercises' };
@@ -17,7 +18,7 @@ type PendingActionType = Exclude<PendingAction, null>['type'];
 
 const HOLD_TO_CONFIRM_MS = 1600;
 
-export const SettingsScreen: React.FC<Props> = ({ appState, onBack, onUpdate }) => {
+export const SettingsScreen: React.FC<Props> = ({ appState, onBack, onUpdate, onOpenManageExercises }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -122,6 +123,15 @@ export const SettingsScreen: React.FC<Props> = ({ appState, onBack, onUpdate }) 
           </View>
         </View>
 
+        <View style={[styles.card, styles.manageCard]}>
+          <Text style={styles.cardTitle}>{t(language, 'manageExercises')}</Text>
+          <Text style={styles.cardSubtitle}>{t(language, 'manageExercisesSettingsHint')}</Text>
+
+          <TouchableOpacity style={styles.manageButton} onPress={onOpenManageExercises} activeOpacity={0.9}>
+            <Text style={styles.manageButtonText}>{t(language, 'manageExercises')}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={[styles.card, styles.dangerCard]}>
           <Text style={styles.cardTitle}>{t(language, 'settings.danger.title')}</Text>
 
@@ -215,6 +225,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xl,
     borderColor: '#3F1D1D',
   },
+  manageCard: {
+    marginTop: SPACING.xl,
+  },
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -290,6 +303,22 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: {
     color: '#FCA5A5',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  manageButton: {
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#111827',
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.lg,
+  },
+  manageButtonText: {
+    color: '#E5E7EB',
     fontSize: TEXT.sm,
     fontWeight: '800',
   },

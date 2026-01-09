@@ -1,5 +1,6 @@
 import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEntry, NoteEntry } from './types';
 import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
+import { normalizeExerciseName } from './nameNormalize';
 
 function generateId(prefix: string = 'id'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
@@ -159,6 +160,8 @@ export function addExercise(
     shortCode: meta.shortCode ?? undefined,
     tags: meta.tags,
     isCustom: true,
+    aliases: [],
+    canonicalName: normalizeExerciseName(trimmed),
   };
 
   return {
@@ -204,6 +207,8 @@ export function addExerciseWithSetsResult(
     shortCode: meta.shortCode ?? undefined,
     tags: meta.tags,
     isCustom: true,
+    aliases: [],
+    canonicalName: normalizeExerciseName(trimmed),
   };
   const createdAt = new Date().toISOString();
   const newSets: SetEntry[] = validSets.map((s) => ({
@@ -239,13 +244,138 @@ export function renameExercise(
     ...state,
     exercises: state.exercises.map((ex) => {
       if (ex.id !== exerciseId) return ex;
-      const next: Exercise = { ...ex, name: trimmed };
+      const next: Exercise = {
+        ...ex,
+        name: trimmed,
+        canonicalName: normalizeExerciseName(trimmed),
+        aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
+      };
       if (metaProvided) {
         next.shortCode = meta.shortCode ?? undefined;
         next.tags = meta.tags;
       }
       return next;
     }),
+  };
+}
+
+export function addExerciseAlias(state: AppState, exerciseId: string, aliasName: string): AppState {
+  const raw = String(aliasName ?? '').trim();
+  const normalized = normalizeExerciseName(raw);
+  if (!normalized) return state;
+
+  return {
+    ...state,
+    exercises: state.exercises.map((ex) => {
+      if (ex.id !== exerciseId) return ex;
+
+      const existingAliases = Array.isArray(ex.aliases) ? ex.aliases : [];
+      if (existingAliases.length >= 25) return ex;
+
+      const canonical = normalizeExerciseName(ex.canonicalName ?? ex.name);
+      const nameNorm = normalizeExerciseName(ex.name);
+      const existingNorm = new Set<string>([canonical, nameNorm, ...existingAliases.map(normalizeExerciseName)]);
+      if (existingNorm.has(normalized)) return ex;
+
+      return {
+        ...ex,
+        aliases: [...existingAliases, raw],
+        canonicalName: typeof ex.canonicalName === 'string' && ex.canonicalName ? ex.canonicalName : canonical,
+      };
+    }),
+  };
+}
+
+export function findExerciseByNameOrAlias(state: AppState, name: string): Exercise | null {
+  const target = normalizeExerciseName(name);
+  if (!target) return null;
+
+  // Deterministic ranking:
+  // 0) canonicalName match
+  // 1) alias match
+  // 2) normalized exercise.name match (fallback for older/partial data)
+  let best: { ex: Exercise; rank: 0 | 1 | 2 } | null = null;
+
+  for (const ex of state.exercises) {
+    const canonical = normalizeExerciseName(ex.canonicalName ?? ex.name);
+    if (canonical && canonical === target) {
+      const candidate = { ex, rank: 0 as const };
+      if (!best || candidate.rank < best.rank || (candidate.rank === best.rank && ex.id < best.ex.id)) {
+        best = candidate;
+      }
+      continue;
+    }
+
+    const aliases = Array.isArray(ex.aliases) ? ex.aliases : [];
+    const aliasMatch = aliases.some((a) => normalizeExerciseName(a) === target);
+    if (aliasMatch) {
+      const candidate = { ex, rank: 1 as const };
+      if (!best || candidate.rank < best.rank || (candidate.rank === best.rank && ex.id < best.ex.id)) {
+        best = candidate;
+      }
+      continue;
+    }
+
+    const nameNorm = normalizeExerciseName(ex.name);
+    if (nameNorm && nameNorm === target) {
+      const candidate = { ex, rank: 2 as const };
+      if (!best || candidate.rank < best.rank || (candidate.rank === best.rank && ex.id < best.ex.id)) {
+        best = candidate;
+      }
+    }
+  }
+
+  return best?.ex ?? null;
+}
+
+function mergeAliasesStable(base: string[], additions: string[], max: number): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (raw: string) => {
+    const trimmed = String(raw ?? '').trim();
+    if (!trimmed) return;
+    const norm = normalizeExerciseName(trimmed);
+    if (!norm || seen.has(norm)) return;
+    seen.add(norm);
+    result.push(trimmed);
+  };
+
+  for (const a of base) push(a);
+  for (const a of additions) push(a);
+
+  return result.slice(0, max);
+}
+
+export function mergeExercises(state: AppState, fromExerciseId: string, intoExerciseId: string): AppState {
+  if (!fromExerciseId || !intoExerciseId) return state;
+  if (fromExerciseId === intoExerciseId) return state;
+
+  const from = state.exercises.find((ex) => ex.id === fromExerciseId);
+  const into = state.exercises.find((ex) => ex.id === intoExerciseId);
+  if (!from || !into) return state;
+
+  const intoAliases = Array.isArray(into.aliases) ? into.aliases : [];
+  const fromAliases = Array.isArray(from.aliases) ? from.aliases : [];
+  const mergedAliases = mergeAliasesStable(intoAliases, [from.name, ...fromAliases], 50);
+
+  const updatedInto: Exercise = {
+    ...into,
+    aliases: mergedAliases,
+    canonicalName: typeof into.canonicalName === 'string' && into.canonicalName.trim()
+      ? into.canonicalName
+      : normalizeExerciseName(into.name),
+  };
+
+  return {
+    ...state,
+    exercises: state.exercises
+      .filter((ex) => ex.id !== fromExerciseId)
+      .map((ex) => (ex.id === intoExerciseId ? updatedInto : ex)),
+    sets: state.sets.map((s) => (s.exerciseId === fromExerciseId ? { ...s, exerciseId: intoExerciseId } : s)),
+    cardioEntries: (state.cardioEntries ?? []).map((c) =>
+      c.exerciseId === fromExerciseId ? { ...c, exerciseId: intoExerciseId } : c
+    ),
   };
 }
 

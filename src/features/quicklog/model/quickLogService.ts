@@ -1,7 +1,7 @@
+import type { AppLanguage } from '../../../shared/types';
 import { TrainingBlockId } from '../../workouts/model/types';
+import { parseTrainingText } from '../../parsing/parsePipeline';
 import { ParsedSet, QuickLogParseResult } from './types';
-
-const SET_REGEX = /(\d+(?:[.,]\d+)?)\s*(?:kg)?\s*[x*]\s*(\d+)/gi;
 
 const BLOCK_KEYWORDS: Array<{ id: TrainingBlockId; keywords: string[] }> = [
   { id: 'chest', keywords: ['bryst', 'benk', 'pec', 'pushup', 'fly'] },
@@ -22,32 +22,26 @@ function normalizeMatch(value: string): string {
 }
 
 export function parseQuickLog(input: string): QuickLogParseResult | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
+  return parseQuickLogWithOptions(input);
+}
 
-  const matches = Array.from(trimmed.matchAll(SET_REGEX));
-  if (matches.length === 0) return null;
+// Backwards-compatible wrapper that uses the shared parse pipeline.
+export function parseQuickLogWithOptions(
+  input: string,
+  opts?: { language?: AppLanguage; defaultUnit?: 'kg' | 'lb' }
+): QuickLogParseResult | null {
+  const language = opts?.language ?? 'en';
+  const defaultUnit = opts?.defaultUnit ?? 'kg';
+  const chunks = parseTrainingText(input, { language, defaultUnit });
+  const first = chunks[0] ?? null;
+  if (!first) return null;
 
-  const firstIndex = matches[0].index ?? 0;
-  const exercisePart = trimmed.slice(0, firstIndex).trim().replace(/[,;:]+$/, '');
-  if (!exercisePart) return null;
-
-  const sets = matches
-    .map((match) => {
-      const weight = Number(String(match[1]).replace(',', '.'));
-      const reps = Number(match[2]);
-      if (!Number.isFinite(weight) || !Number.isFinite(reps)) return null;
-      if (weight < 0 || reps <= 0) return null;
-      return { weight, reps };
-    })
-    .filter((s): s is ParsedSet => s !== null);
-
+  const sets: ParsedSet[] = first.sets
+    .map((s) => ({ weight: s.weight, reps: s.reps }))
+    .filter((s) => Number.isFinite(s.weight) && Number.isFinite(s.reps) && s.weight >= 0 && s.reps > 0);
   if (sets.length === 0) return null;
 
-  return {
-    exerciseName: exercisePart,
-    sets,
-  };
+  return { exerciseName: first.rawExerciseName, sets };
 }
 
 export function inferBlockIdFromExercise(name: string): TrainingBlockId | null {

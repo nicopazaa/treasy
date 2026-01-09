@@ -11,6 +11,7 @@ export type ScreenName =
   | 'repMax'
   | 'profile'
   | 'settings'
+  | 'manageExercises'
   | 'quickLog'
   | 'cardio'
   | 'analysis';

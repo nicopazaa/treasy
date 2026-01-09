@@ -36,6 +36,10 @@ export interface Exercise {
   shortCode?: string | null;
   tags?: string[];
   isCustom?: boolean;
+  // Optional for backwards compatibility (older saved states won't have this).
+  aliases?: string[];
+  // Optional normalized name for deterministic matching (lower/trimmed/diacritics removed).
+  canonicalName?: string;
 }
 
 export interface ExerciseMetadataInput {

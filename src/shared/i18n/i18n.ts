@@ -120,6 +120,20 @@ const STRINGS = {
     'settings.danger.confirmOk': 'Continue',
     'settings.danger.holdToConfirm': 'Hold to confirm',
 
+    manageExercises: 'Manage exercises',
+    manageExercisesHelp: 'Select two exercises to merge duplicates.',
+    manageExercisesSettingsHint: 'Merge duplicates and prevent future duplicates with aliases.',
+    mergeExercises: 'Merge exercises',
+    mergeFrom: 'From',
+    mergeIntoLabel: 'Into',
+    mergeInto: 'Merge {from} into {into}',
+    mergeConfirmBody:
+      'This will move all sets (and cardio entries) from one exercise to another, and add the old name as an alias. This cannot be undone (use backup restore).',
+    aliasesCount: 'Aliases: {count}',
+    didYouMean: 'Did you mean {name}?',
+    linkAsAlias: 'Link as alias',
+    keepNewExercise: 'Keep new exercise',
+
     lastWorkoutNoneTitle: 'Last: No sessions yet',
     lastWorkoutNoneSubtitle: 'Log something to get started.',
     lastWorkoutTitle: 'Last: {block}',
@@ -369,6 +383,20 @@ const STRINGS = {
     'settings.danger.confirmOk': 'Fortsett',
     'settings.danger.holdToConfirm': 'Hold for å bekrefte',
 
+    manageExercises: 'Administrer øvelser',
+    manageExercisesHelp: 'Velg to øvelser for å slå sammen duplikater.',
+    manageExercisesSettingsHint: 'Slå sammen duplikater og bruk aliaser for å unngå nye.',
+    mergeExercises: 'Slå sammen øvelser',
+    mergeFrom: 'Fra',
+    mergeIntoLabel: 'Til',
+    mergeInto: 'Slå sammen {from} til {into}',
+    mergeConfirmBody:
+      'Dette flytter alle sett (og cardio-logger) fra en øvelse til en annen og legger det gamle navnet som alias. Dette kan ikke angres (bruk backup).',
+    aliasesCount: 'Aliaser: {count}',
+    didYouMean: 'Mente du {name}?',
+    linkAsAlias: 'Legg til som alias',
+    keepNewExercise: 'Behold ny øvelse',
+
     lastWorkoutNoneTitle: 'Sist: Ingen økter enda',
     lastWorkoutNoneSubtitle: 'Logg noe i hurtigloggen for å komme i gang.',
     lastWorkoutTitle: 'Sist: {block}',
@@ -617,6 +645,20 @@ const STRINGS = {
     'settings.danger.confirmCancel': 'Cancelar',
     'settings.danger.confirmOk': 'Continuar',
     'settings.danger.holdToConfirm': 'Mantén para confirmar',
+
+    manageExercises: 'Gestionar ejercicios',
+    manageExercisesHelp: 'Selecciona dos ejercicios para combinar duplicados.',
+    manageExercisesSettingsHint: 'Combina duplicados y usa alias para evitar nuevos duplicados.',
+    mergeExercises: 'Combinar ejercicios',
+    mergeFrom: 'De',
+    mergeIntoLabel: 'A',
+    mergeInto: 'Combinar {from} en {into}',
+    mergeConfirmBody:
+      'Esto moverá todas las series (y entradas de cardio) de un ejercicio a otro y añadirá el nombre antiguo como alias. No se puede deshacer (usa el backup).',
+    aliasesCount: 'Alias: {count}',
+    didYouMean: '¿Quisiste decir {name}?',
+    linkAsAlias: 'Vincular como alias',
+    keepNewExercise: 'Mantener ejercicio nuevo',
 
     lastWorkoutNoneTitle: 'Último: Sin sesiones aún',
     lastWorkoutNoneSubtitle: 'Registra algo para empezar.',

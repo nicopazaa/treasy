@@ -1,26 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, StatusBar, Platform, PanResponder, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AppState, ExerciseMetadataInput, loadAppState, saveAppState, createInitialState } from './src/features/workouts';
-import {
-  addExercise,
-  addExerciseWithSets,
-  addExerciseWithSetsResult,
-  addLogEntry,
-  addNoteEntry,
-  addSet,
-  addSetsForExercise,
-  addCardioEntry,
-  reorderExercisesInBlock,
-  renameExercise,
-  deleteExercise,
-  setExerciseBlockId,
-  updateSet,
-  deleteSet,
-  restoreExercise,
-  restoreSet,
-} from './src/features/workouts';
 
 import { LandingScreen } from './src/screens/LandingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -37,487 +18,48 @@ import { AnalysisScreen } from './src/screens/AnalysisScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { parseQuickLog, findExerciseFuzzy, inferBlockIdFromExercise } from './src/features/quicklog';
-import { parseNoteText } from './src/features/notes';
+import { ManageExercisesScreen } from './src/screens/ManageExercisesScreen';
+
+import { useAppActions } from './src/app/actions/useAppActions';
+import { BackSwipeContext } from './src/app/navigation/BackSwipeContext';
+import type { NavState } from './src/app/navigation/types';
+import { useNavStack } from './src/app/navigation/useNavStack';
+import { useAppStore } from './src/app/state/useAppStore';
+import { useDerivedCache } from './src/app/state/useDerivedCache';
 import { t } from './src/shared/i18n/i18n';
-import { formatExerciseLabel } from './src/shared/utils/exerciseLabel';
-import { toKg } from './src/shared/utils/units';
-import type { NavState, ScreenName } from './src/app/navigation/types';
-import { BackSwipeContext, type BackSwipeBlockerRect } from './src/app/navigation/BackSwipeContext';
-
-type NavHistoryState = {
-  stack: NavState[];
-  index: number;
-};
-
-type NavHistoryAction =
-  | { type: 'reset'; nav: NavState }
-  | { type: 'navigate'; nav: NavState }
-  | { type: 'back' }
-  | { type: 'forward' };
-
-function navHistoryReducer(state: NavHistoryState, action: NavHistoryAction): NavHistoryState {
-  switch (action.type) {
-    case 'reset': {
-      return { stack: [action.nav], index: 0 };
-    }
-    case 'navigate': {
-      const stack = state.stack.slice(0, state.index + 1);
-      stack.push(action.nav);
-      return { stack, index: stack.length - 1 };
-    }
-    case 'back': {
-      if (state.index <= 0) return state;
-      return { ...state, index: state.index - 1 };
-    }
-    case 'forward': {
-      if (state.index >= state.stack.length - 1) return state;
-      return { ...state, index: state.index + 1 };
-    }
-    default:
-      return state;
-  }
-}
-
-function normalizeExerciseBlocks(state: AppState): AppState {
-  const validBlocks = new Set(state.blocks.map((b) => b.id));
-  let changed = false;
-  const exercises = state.exercises.map((ex) => {
-    if (validBlocks.has(ex.blockId)) return ex;
-    const inferred = inferBlockIdFromExercise(ex.name);
-    const fallback = inferred && validBlocks.has(inferred) ? inferred : state.blocks[0]?.id ?? ex.blockId;
-    if (!fallback || fallback === ex.blockId) return ex;
-    changed = true;
-    return { ...ex, blockId: fallback };
-  });
-  if (!changed) return state;
-  return { ...state, exercises };
-}
-
-function splitNameAndCodes(raw: string): { name: string; metadata: ExerciseMetadataInput } {
-  const matches = Array.from(raw.matchAll(/\(([^)]+)\)/g))
-    .map((m) => (m[1] ?? '').trim())
-    .filter(Boolean);
-  const name = raw.replace(/\s*\([^)]+\)\s*/g, ' ').replace(/\s+/g, ' ').trim() || raw.trim();
-  const [shortCode, ...tags] = matches;
-  return {
-    name,
-    metadata: {
-      shortCode: shortCode ?? null,
-      tags,
-    },
-  };
-}
-
-function logWorkoutsFromNote(state: AppState, noteText: string): AppState {
-  let parsedExercises;
-  try {
-    parsedExercises = parseNoteText(noteText);
-  } catch (e) {
-    console.warn('Failed to parse note text', e);
-    return state;
-  }
-
-  if (!parsedExercises.length) return state;
-
-  let next = state;
-  const unit = state.massUnit ?? 'kg';
-
-  for (const entry of parsedExercises) {
-    const { name: parsedName, metadata } = splitNameAndCodes(entry.exerciseName);
-    const sets = entry.sets
-      .filter((s) => Number.isFinite(s.weight) && Number.isFinite(s.reps) && s.weight >= 0 && s.reps > 0)
-      .map((s) => ({ weight: toKg(s.weight, unit), reps: s.reps }));
-    if (!parsedName || sets.length === 0) continue;
-
-    const existing =
-      findExerciseFuzzy(next, entry.exerciseName) ??
-      (parsedName !== entry.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
-
-    if (existing) {
-      const allBodyweight = entry.sets.every((s) => s.isBodyweight);
-      next = addSetsForExercise(next, existing.id, sets, allBodyweight ? { isBodyweight: true } : undefined);
-      continue;
-    }
-
-    const inferredBlock = inferBlockIdFromExercise(entry.exerciseName);
-    const allowedBlocks = new Set(next.blocks.map((b) => b.id));
-    const targetBlock =
-      (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
-        ?? next.blocks[0]?.id
-        ?? 'chest';
-
-    const createdResult = addExerciseWithSetsResult(next, targetBlock, parsedName, sets, metadata);
-    if (createdResult) {
-      next = createdResult.nextState;
-    }
-  }
-
-  return next;
-}
-
-function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
-  const existing = state.exercises.find((ex) => ex.blockId === 'cardio');
-  if (existing) return { next: state, id: existing.id };
-
-  const newId = `cardio_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
-  const exercise = {
-    id: newId,
-    blockId: 'cardio',
-    name: 'Cardio',
-    shortCode: 'CARDIO',
-    tags: [],
-    isCustom: false,
-  };
-
-  return {
-    next: { ...state, exercises: [...state.exercises, exercise] },
-    id: newId,
-  };
-}
 
 export default function App() {
-  const [appState, setAppState] = useState<AppState | null>(null);
-  const [navHistory, dispatchNav] = useReducer(navHistoryReducer, {
-    stack: [{ screen: 'landing' }],
-    index: 0,
+  // Store (hydration + persistence wiring)
+  const { appState, setAppState, loading, persister } = useAppStore();
+
+  // In-memory indexes for fast lookups in the composition layer.
+  const derivedCache = useDerivedCache(appState);
+
+  // Navigation stack + swipe back/forward gesture handling.
+  const { nav, navigate, reset, panHandlers, backSwipeContextValue } = useNavStack<NavState>({
+    screen: 'landing',
   });
-  const [loading, setLoading] = useState(true);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const githubHandledRef = useRef(false);
-  const { width: windowWidth } = useWindowDimensions();
-  const [historyInitialDateKey, setHistoryInitialDateKey] = useState<string | null>(null);
-  const backSwipeBlockersRef = useRef<Record<string, BackSwipeBlockerRect>>({});
-  const registerBackSwipeBlocker = useCallback((id: string, rect: BackSwipeBlockerRect) => {
-    backSwipeBlockersRef.current[id] = rect;
-  }, []);
-  const unregisterBackSwipeBlocker = useCallback((id: string) => {
-    delete backSwipeBlockersRef.current[id];
-  }, []);
-  const backSwipeContextValue = useMemo(
-    () => ({
-      registerBlocker: registerBackSwipeBlocker,
-      unregisterBlocker: unregisterBackSwipeBlocker,
-      blockersRef: backSwipeBlockersRef,
-    }),
-    [registerBackSwipeBlocker, unregisterBackSwipeBlocker]
-  );
-  const nav = navHistory.stack[navHistory.index] ?? { screen: 'landing' };
-  const canGoBack = navHistory.index > 0;
-  const canGoForward = navHistory.index < navHistory.stack.length - 1;
 
+  // Actions / orchestration: mutations + persistence mode (saveNow vs debounced) + auth flow.
+  const actions = useAppActions({
+    appState,
+    setAppState,
+    loading,
+    persister,
+    derivedCache,
+    navigate,
+  });
+
+  // Preserve original init behavior: after hydration, reset nav stack once based on onboarded status.
+  const didInitNavRef = useRef(false);
   useEffect(() => {
-    const init = async () => {
-      const stored = await loadAppState();
-      const next = stored ?? createInitialState();
-      const normalized = normalizeExerciseBlocks(next);
-      setAppState(normalized);
-      dispatchNav({ type: 'reset', nav: { screen: normalized.onboarded ? 'home' : 'landing' } });
-      setLoading(false);
-    };
-    init();
-  }, []);
+    if (loading) return;
+    if (didInitNavRef.current) return;
+    didInitNavRef.current = true;
+    reset({ screen: appState.onboarded ? 'home' : 'landing' });
+  }, [appState.onboarded, loading, reset]);
 
-  useEffect(() => {
-    if (loading || !appState) return;
-    if (githubHandledRef.current) return;
-    if (Platform.OS !== 'web') return;
-    if (typeof window === 'undefined') return;
-
-    const url = new URL(window.location.href);
-    if (url.pathname !== '/auth/github') return;
-
-    const code = url.searchParams.get('code');
-    const returnedState = url.searchParams.get('state');
-    if (!code) return;
-
-    githubHandledRef.current = true;
-    setAuthBusy(true);
-
-    const storedState = window.sessionStorage?.getItem('treasy_github_oauth_state') ?? null;
-    if (!returnedState || !storedState || returnedState !== storedState) {
-      setLoginError(t(appState.language ?? 'en', 'githubFailed'));
-      window.history.replaceState({}, '', '/');
-      setAuthBusy(false);
-      dispatchNav({ type: 'navigate', nav: { screen: 'login' } });
-      return;
-    }
-
-    (async () => {
-      try {
-        const res = await fetch(`/.netlify/functions/github-oauth?code=${encodeURIComponent(code)}`);
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error ?? 'GitHub OAuth failed');
-        }
-
-        setAppState((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            onboarded: true,
-            authProvider: 'github',
-            userEmail: data?.email ?? prev.userEmail,
-            nickname: prev.nickname ?? data?.login ?? prev.nickname,
-          };
-        });
-
-        setLoginError(null);
-        dispatchNav({ type: 'navigate', nav: { screen: 'quickLog' } });
-      } catch (e) {
-        console.warn('GitHub auth failed', e);
-        setLoginError(t(appState.language ?? 'en', 'githubFailed'));
-        dispatchNav({ type: 'navigate', nav: { screen: 'login' } });
-      } finally {
-        window.sessionStorage?.removeItem('treasy_github_oauth_state');
-        window.history.replaceState({}, '', '/');
-        setAuthBusy(false);
-      }
-    })();
-  }, [appState, loading]);
-
-  useEffect(() => {
-    if (appState && !loading) {
-      saveAppState(appState);
-    }
-  }, [appState, loading]);
-
-  const navigate = (screen: ScreenName, params?: Partial<NavState>) => {
-    dispatchNav({ type: 'navigate', nav: { screen, ...params } });
-  };
-
-  const handleContinueWithoutLogin = () => {
-    setLoginError(null);
-    setAppState((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        onboarded: true,
-        authProvider: prev.authProvider ?? 'guest',
-      };
-    });
-    navigate('quickLog', { showLocalOnlyNotice: true });
-  };
-
-  const handleWelcomeComplete = (email: string) => {
-    const trimmed = email.trim().toLowerCase();
-    setLoginError(null);
-    setAppState((prev) => {
-      const current = prev ?? createInitialState();
-      const derivedNickname =
-        current.nickname && current.nickname.trim()
-          ? current.nickname
-          : trimmed.includes('@')
-            ? trimmed.split('@')[0]
-            : null;
-      return {
-        ...current,
-        onboarded: true,
-        authProvider: 'email',
-        userEmail: trimmed,
-        nickname: derivedNickname,
-      };
-    });
-    navigate('quickLog');
-  };
-
-  const panResponder = useMemo(() => {
-    const isIOS = Platform.OS === 'ios';
-    const EDGE_W = isIOS ? 64 : 28;
-    const SWIPE_X = 60;
-    const MAX_Y = 25;
-    const BACK_START_X = windowWidth * 0.6;
-
-    const isInsideBlockedArea = (x: number, y: number) => {
-      const blockers = backSwipeBlockersRef.current;
-      for (const rect of Object.values(blockers)) {
-        if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    return PanResponder.create({
-      onMoveShouldSetPanResponder: (_evt, gesture) => {
-        if (gesture.numberActiveTouches !== 1) return false;
-        if (!canGoBack && !canGoForward) return false;
-
-        if (isInsideBlockedArea(gesture.x0, gesture.y0)) return false;
-
-        const fromBackZone = gesture.x0 < BACK_START_X;
-        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
-        if (!fromBackZone && !fromRightEdge) return false;
-
-        const dx = gesture.dx;
-        const dy = gesture.dy;
-        if (Math.abs(dy) > MAX_Y) return false;
-        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
-        if (!isHorizontal) return false;
-        if (dx > 12 && fromBackZone && canGoBack) return true;
-        if (dx < -12 && fromRightEdge && canGoForward) return true;
-        return false;
-      },
-      onPanResponderRelease: (_evt, gesture) => {
-        const dx = gesture.dx;
-        const dy = gesture.dy;
-        if (Math.abs(dy) > MAX_Y) return;
-        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
-        if (!isHorizontal) return;
-
-        const fromBackZone = gesture.x0 < BACK_START_X;
-        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
-
-        if (fromBackZone && dx > SWIPE_X && gesture.vx > 0.3 && canGoBack) {
-          dispatchNav({ type: 'back' });
-          return;
-        }
-
-        if (fromRightEdge && dx < -SWIPE_X && gesture.vx < -0.3 && canGoForward) {
-          dispatchNav({ type: 'forward' });
-        }
-      },
-    });
-  }, [canGoBack, canGoForward, windowWidth]);
-
-  const handleStartCardio = () => {
-    if (!appState) return;
-    const { next, id } = ensureCardioExercise(appState);
-    if (next !== appState) setAppState(next);
-    navigate('cardio', { selectedExerciseId: id });
-  };
-
-  const handleAddNote = (text: string) => {
-    setAppState((prev) => {
-      if (!prev) return prev;
-      let next = addNoteEntry(prev, text);
-      next = addLogEntry(next, text);
-      next = logWorkoutsFromNote(next, text);
-      return next;
-    });
-  };
-
-  const startGithubLogin = () => {
-    setLoginError(null);
-
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      setLoginError(t(appState?.language ?? 'en', 'githubWebOnly'));
-      return;
-    }
-
-    const clientId = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
-    if (!clientId) {
-      setLoginError(t(appState?.language ?? 'en', 'githubNotConfigured'));
-      return;
-    }
-
-    const state = `st_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
-    window.sessionStorage?.setItem('treasy_github_oauth_state', state);
-
-    const redirectUri = `${window.location.origin}/auth/github`;
-    const params = new URLSearchParams();
-    params.set('client_id', clientId);
-    params.set('redirect_uri', redirectUri);
-    params.set('scope', 'read:user user:email');
-    params.set('state', state);
-
-    window.location.assign(`https://github.com/login/oauth/authorize?${params.toString()}`);
-  };
-
-  const handleQuickLogSave = (
-    text: string,
-    options?: { blockId?: string | null }
-  ): { newExerciseId?: string; newExerciseName?: string } => {
-    let created: { newExerciseId?: string; newExerciseName?: string } = {};
-
-    setAppState((prev) => {
-      if (!prev) return prev;
-      const unit = prev.massUnit ?? 'kg';
-
-      const blockHint = options?.blockId ?? null;
-      let next = addLogEntry(prev, text, { pinned: false });
-      const parsed = parseQuickLog(text);
-
-      if (parsed) {
-        const sets = parsed.sets.map((s) => ({ ...s, weight: toKg(s.weight, unit) }));
-        const { name: parsedName, metadata } = splitNameAndCodes(parsed.exerciseName);
-        const existing =
-          findExerciseFuzzy(next, parsed.exerciseName) ??
-          (parsedName !== parsed.exerciseName ? findExerciseFuzzy(next, parsedName) : null);
-
-        if (existing) {
-          next = addSetsForExercise(next, existing.id, sets);
-        } else {
-          const inferredBlock = inferBlockIdFromExercise(parsed.exerciseName);
-          const allowedBlocks = new Set(next.blocks.map((b) => b.id));
-          const targetBlock = (blockHint && allowedBlocks.has(blockHint) ? blockHint : null)
-            ?? (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null)
-            ?? next.blocks[0]?.id
-            ?? 'chest';
-
-          const createdResult = addExerciseWithSetsResult(
-            next,
-            targetBlock,
-            parsedName,
-            sets,
-            metadata
-          );
-          if (createdResult) {
-            next = createdResult.nextState;
-            const createdExercise =
-              next.exercises.find((ex) => ex.id === createdResult.exerciseId) ?? null;
-            const label = createdExercise ? formatExerciseLabel(createdExercise) : parsedName;
-            created = { newExerciseId: createdResult.exerciseId, newExerciseName: label };
-          }
-        }
-      }
-
-      return next;
-    });
-
-    return created;
-  };
-
-  const handleQuickLogSet = (
-    exerciseId: string,
-    weight: number,
-    reps: number,
-    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
-  ) => {
-    setAppState((prev) => {
-      if (!prev) return prev;
-
-      const exercise = prev.exercises.find((ex) => ex.id === exerciseId);
-      const language = prev.language ?? 'en';
-      const weightText = language === 'nb' ? String(weight).replace('.', ',') : String(weight);
-      const exerciseLabel = exercise ? formatExerciseLabel(exercise) : null;
-
-      let logText: string;
-      if (options?.distanceKm != null || options?.durationMin != null) {
-        const parts: string[] = [];
-        if (options.distanceKm != null) parts.push(`${options.distanceKm} km`);
-        if (options.durationMin != null) parts.push(`${options.durationMin} min`);
-        logText = exerciseLabel ? `${exerciseLabel} ${parts.join(' / ')}` : parts.join(' / ');
-      } else if (options?.bodyweight) {
-        logText = exerciseLabel ? `${exerciseLabel} BW x ${reps}` : `BW x ${reps}`;
-      } else {
-        logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
-      }
-
-      if (options?.distanceKm != null || options?.durationMin != null) {
-        const next = addCardioEntry(prev, exerciseId, options.distanceKm ?? null, options.durationMin ?? null);
-        return addLogEntry(next, logText);
-      }
-
-      const next = addSet(prev, exerciseId, weight, reps, {
-        isBodyweight: options?.bodyweight,
-      });
-      return addLogEntry(next, logText);
-    });
-  };
-
-  if (loading || !appState || authBusy) {
+  if (loading || actions.authBusy) {
     return (
       <SafeAreaProvider>
         <View style={styles.loadingContainer}>
@@ -528,253 +70,191 @@ export default function App() {
     );
   }
 
-  const currentBlock = nav.selectedBlockId
-    ? appState.blocks.find((b) => b.id === nav.selectedBlockId)
-    : null;
+  const currentBlock = nav.selectedBlockId ? appState.blocks.find((b) => b.id === nav.selectedBlockId) : null;
 
   const currentExercise = nav.selectedExerciseId
-    ? appState.exercises.find((e) => e.id === nav.selectedExerciseId)
+    ? derivedCache.exerciseById.get(nav.selectedExerciseId) ?? null
     : null;
 
   return (
     <SafeAreaProvider>
       <BackSwipeContext.Provider value={backSwipeContextValue}>
-        <View style={styles.appContainer} {...panResponder.panHandlers}>
-        <StatusBar barStyle="light-content" />
-        <ExpoStatusBar style="light" />
+        <View style={styles.appContainer} {...panHandlers}>
+          <StatusBar barStyle="light-content" />
+          <ExpoStatusBar style="light" />
 
-        {nav.screen === 'landing' && (
-          <LandingScreen
-            language={appState.language ?? 'en'}
-            onContinueWithoutLogin={handleContinueWithoutLogin}
-            onLogin={() => navigate('login')}
-          />
-        )}
+          {nav.screen === 'landing' && (
+            <LandingScreen
+              language={appState.language ?? 'en'}
+              onContinueWithoutLogin={actions.handleContinueWithoutLogin}
+              onLogin={() => navigate('login')}
+            />
+          )}
 
-        {nav.screen === 'login' && (
-          <LoginScreen
-            language={appState.language ?? 'en'}
-            onBack={() => navigate(appState.onboarded ? 'profile' : 'landing')}
-            onContinueWithGithub={() => {
-              startGithubLogin();
-            }}
-            onContinueWithEmail={() => {
-              setLoginError(null);
-              navigate('welcome');
-            }}
-            error={loginError}
-          />
-        )}
+          {nav.screen === 'login' && (
+            <LoginScreen
+              language={appState.language ?? 'en'}
+              onBack={() => navigate(appState.onboarded ? 'profile' : 'landing')}
+              onContinueWithGithub={actions.startGithubLogin}
+              onContinueWithEmail={() => {
+                actions.clearLoginError();
+                navigate('welcome');
+              }}
+              error={actions.loginError}
+            />
+          )}
 
-        {nav.screen === 'welcome' && (
-          <WelcomeScreen
-            language={appState.language ?? 'en'}
-            onBack={() => navigate('login')}
-            onComplete={handleWelcomeComplete}
-          />
-        )}
+          {nav.screen === 'welcome' && (
+            <WelcomeScreen
+              language={appState.language ?? 'en'}
+              onBack={() => navigate('login')}
+              onComplete={actions.handleWelcomeComplete}
+            />
+          )}
 
-        {nav.screen === 'home' && (
-          <HomeScreen
-            appState={appState}
-            onSelectBlock={(blockId) =>
-              navigate('block', { selectedBlockId: blockId })
-            }
-            onOpenAI={() => navigate('ai')}
-            onOpenQuickLog={() => navigate('quickLog')}
-            onOpenProfile={() => navigate('profile')}
-            onOpenSettings={() => navigate('settings')}
-            onOpenHistory={() => {
-              setHistoryInitialDateKey(null);
-              navigate('history');
-            }}
-            onOpenHistoryForDate={(dateKey) => {
-              setHistoryInitialDateKey(dateKey);
-              navigate('history');
-            }}
-            onOpenProgress={() => navigate('progress')}
-            onOpenRepMax={() => navigate('repMax')}
-            onOpenAnalysis={() => navigate('analysis')}
-            onStartCardio={handleStartCardio}
-            onAddNote={handleAddNote}
-          />
-        )}
+          {nav.screen === 'home' && (
+            <HomeScreen
+              appState={appState}
+              onSelectBlock={(blockId) => navigate('block', { selectedBlockId: blockId })}
+              onOpenAI={() => navigate('ai')}
+              onOpenQuickLog={() => navigate('quickLog')}
+              onOpenProfile={() => navigate('profile')}
+              onOpenSettings={() => navigate('settings')}
+              onOpenHistory={actions.openHistory}
+              onOpenHistoryForDate={actions.openHistoryForDate}
+              onOpenProgress={() => navigate('progress')}
+              onOpenRepMax={() => navigate('repMax')}
+              onOpenAnalysis={() => navigate('analysis')}
+              onStartCardio={actions.handleStartCardio}
+              onAddNote={actions.handleAddNote}
+            />
+          )}
 
-        {nav.screen === 'block' && currentBlock && (
-          <BlockScreen
-            language={appState.language ?? 'en'}
-            massUnit={appState.massUnit ?? 'kg'}
-            block={currentBlock}
-            exercises={appState.exercises.filter(
-              (ex) => ex.blockId === currentBlock.id
-            )}
-            sets={appState.sets}
-            allBlocks={appState.blocks}
-            onBack={() => navigate('home')}
-            onSelectExercise={(exerciseId) =>
-              navigate('exercise', {
-                selectedBlockId: currentBlock.id,
-                selectedExerciseId: exerciseId,
-              })
-            }
-            onReorderExercises={(orderedExerciseIds) => {
-              setAppState((prev) =>
-                prev ? reorderExercisesInBlock(prev, currentBlock.id, orderedExerciseIds) : prev
-              );
-            }}
-            onMoveExercise={(exerciseId, blockId) => {
-              setAppState((prev) =>
-                prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
-              );
-            }}
-          onAddExercise={(name, metadata) => {
-            setAppState((prev) =>
-              prev ? addExercise(prev, currentBlock.id, name, metadata) : prev
-            );
-          }}
-          onRenameExercise={(exerciseId, name, metadata) => {
-            setAppState((prev) =>
-              prev ? renameExercise(prev, exerciseId, name, metadata) : prev
-            );
-          }}
-            onDeleteExercise={(exerciseId) => {
-              setAppState((prev) =>
-                prev ? deleteExercise(prev, exerciseId) : prev
-              );
-            }}
-            onRestoreExercise={(exercise, sets, index) => {
-              setAppState((prev) =>
-                prev ? restoreExercise(prev, exercise, sets, index) : prev
-              );
-            }}
-          />
-        )}
+          {nav.screen === 'block' && currentBlock && (
+            <BlockScreen
+              language={appState.language ?? 'en'}
+              massUnit={appState.massUnit ?? 'kg'}
+              block={currentBlock}
+              exercises={derivedCache.exercisesByBlockId.get(currentBlock.id) ?? []}
+              sets={appState.sets}
+              allBlocks={appState.blocks}
+              onBack={() => navigate('home')}
+              onSelectExercise={(exerciseId) =>
+                navigate('exercise', {
+                  selectedBlockId: currentBlock.id,
+                  selectedExerciseId: exerciseId,
+                })
+              }
+              onReorderExercises={(orderedExerciseIds) => actions.reorderExercises(currentBlock.id, orderedExerciseIds)}
+              onMoveExercise={actions.moveExercise}
+              onAddExercise={(name, metadata) => actions.addExerciseToBlock(currentBlock.id, name, metadata)}
+              onRenameExercise={actions.renameExerciseById}
+              onDeleteExercise={actions.deleteExerciseById}
+              onRestoreExercise={actions.restoreExerciseEntry}
+            />
+          )}
 
-        {nav.screen === 'exercise' && currentExercise && (
-          <ExerciseScreen
-            language={appState.language ?? 'en'}
-            massUnit={appState.massUnit ?? 'kg'}
-            exercise={currentExercise}
-            sets={appState.sets
-              .filter((s) => s.exerciseId === currentExercise.id)
-              .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))}
-            onBack={() =>
-              navigate('block', {
-                selectedBlockId: currentExercise.blockId,
-                selectedExerciseId: currentExercise.id,
-              })
-            }
-          onAddSet={(weight, reps, meta) => {
-            setAppState((prev) =>
-              prev ? addSet(prev, currentExercise.id, weight, reps, meta) : prev
-            );
-          }}
-            onUpdateSet={(setId, weight, reps, meta) => {
-              setAppState((prev) =>
-                prev ? updateSet(prev, setId, weight, reps, meta) : prev
-              );
-            }}
-            onDeleteSet={(setId) => {
-              setAppState((prev) => (prev ? deleteSet(prev, setId) : prev));
-            }}
-            onRestoreSet={(setEntry) => {
-              setAppState((prev) => (prev ? restoreSet(prev, setEntry) : prev));
-            }}
-            onAskAIForExercise={() =>
-              navigate('ai', {
-                selectedExerciseId: currentExercise.id,
-                aiInitialQuestion: t(appState.language ?? 'en', 'appa.prompt.lastForExercise', {
-                  exercise: currentExercise.name,
-                }),
-              })
-            }
-          />
-        )}
+          {nav.screen === 'exercise' && currentExercise && (
+            <ExerciseScreen
+              language={appState.language ?? 'en'}
+              massUnit={appState.massUnit ?? 'kg'}
+              exercise={currentExercise}
+              sets={derivedCache.setsByExerciseId.get(currentExercise.id) ?? []}
+              onBack={() =>
+                navigate('block', {
+                  selectedBlockId: currentExercise.blockId,
+                  selectedExerciseId: currentExercise.id,
+                })
+              }
+              onAddSet={(weight, reps, meta) => actions.addSetToExercise(currentExercise.id, weight, reps, meta)}
+              onUpdateSet={(setId, weight, reps, meta) => actions.updateSetById(setId, weight, reps, meta)}
+              onDeleteSet={actions.deleteSetById}
+              onRestoreSet={actions.restoreSetEntry}
+              onAskAIForExercise={() =>
+                navigate('ai', {
+                  selectedExerciseId: currentExercise.id,
+                  aiInitialQuestion: t(appState.language ?? 'en', 'appa.prompt.lastForExercise', {
+                    exercise: currentExercise.name,
+                  }),
+                })
+              }
+            />
+          )}
 
-        {nav.screen === 'ai' && (
-          <AIScreen
-            appState={appState}
-            onBack={() => navigate('home')}
-            initialQuestion={nav.aiInitialQuestion ?? undefined}
-            initialExerciseId={nav.selectedExerciseId ?? null}
-          />
-        )}
+          {nav.screen === 'ai' && (
+            <AIScreen
+              appState={appState}
+              onBack={() => navigate('home')}
+              initialQuestion={nav.aiInitialQuestion ?? undefined}
+              initialExerciseId={nav.selectedExerciseId ?? null}
+            />
+          )}
 
-        {nav.screen === 'cardio' && (
-          <CardioScreen
-            language={appState.language ?? 'en'}
-            cardioEntries={appState.cardioEntries}
-            exerciseId={nav.selectedExerciseId ?? null}
-            onBack={() => navigate('home')}
-            onSave={(data) => {
-              setAppState((prev) => {
-                if (!prev) return prev;
-                const ensured = ensureCardioExercise(prev);
-                const exerciseId = data.exerciseId ?? ensured.id;
-                const withExercise = ensured.next;
-                return addCardioEntry(withExercise, exerciseId, null, data.durationMin, {
-                  avgHeartRate: data.avgHeartRate ?? null,
-                  intensity: data.intensity ?? null,
-                  note: data.note ?? null,
-                  silentMode: data.silentMode ?? null,
-                });
-              });
-              navigate('home');
-            }}
-          />
-        )}
+          {nav.screen === 'cardio' && (
+            <CardioScreen
+              language={appState.language ?? 'en'}
+              cardioEntries={appState.cardioEntries}
+              exerciseId={nav.selectedExerciseId ?? null}
+              onBack={() => navigate('home')}
+              onSave={(data) => {
+                actions.saveCardio(data);
+                navigate('home');
+              }}
+            />
+          )}
 
-        {nav.screen === 'history' && (
-          <HistoryScreen
-            appState={appState}
-            onBack={() => navigate('home')}
-            initialExpandedDateKey={historyInitialDateKey}
-          />
-        )}
+          {nav.screen === 'history' && (
+            <HistoryScreen
+              appState={appState}
+              onBack={() => navigate('home')}
+              initialExpandedDateKey={actions.historyInitialDateKey}
+            />
+          )}
 
-        {nav.screen === 'progress' && (
-          <ProgressScreen appState={appState} onBack={() => navigate('home')} />
-        )}
+          {nav.screen === 'progress' && <ProgressScreen appState={appState} onBack={() => navigate('home')} />}
 
-        {nav.screen === 'analysis' && (
-          <AnalysisScreen language={appState.language ?? 'en'} onBack={() => navigate('home')} />
-        )}
+          {nav.screen === 'analysis' && (
+            <AnalysisScreen language={appState.language ?? 'en'} onBack={() => navigate('home')} />
+          )}
 
-        {nav.screen === 'repMax' && (
-          <RepMaxScreen appState={appState} onBack={() => navigate('home')} />
-        )}
+          {nav.screen === 'repMax' && <RepMaxScreen appState={appState} onBack={() => navigate('home')} />}
 
-        {nav.screen === 'quickLog' && (
-          <QuickLogScreen
-            appState={appState}
-            onBack={() => navigate('home')}
-            onSave={handleQuickLogSave}
-            onLogSet={handleQuickLogSet}
-            onCategorizeExercise={(exerciseId, blockId) => {
-              setAppState((prev) =>
-                prev ? setExerciseBlockId(prev, exerciseId, blockId) : prev
-              );
-            }}
-            showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
-          />
-        )}
+          {nav.screen === 'quickLog' && (
+            <QuickLogScreen
+              appState={appState}
+              onBack={() => navigate('home')}
+              onSave={actions.handleQuickLogSave}
+              onLogSet={actions.handleQuickLogSet}
+              onCategorizeExercise={actions.categorizeExercise}
+              showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
+            />
+          )}
 
-        {nav.screen === 'profile' && (
-          <ProfileScreen
-            appState={appState}
-            onBack={() => navigate('home')}
-            onUpdate={(next: AppState) => setAppState(next)}
-            onOpenLogin={() => navigate('login')}
-          />
-        )}
+          {nav.screen === 'profile' && (
+            <ProfileScreen
+              appState={appState}
+              onBack={() => navigate('home')}
+              onUpdate={actions.updateProfile}
+              onOpenLogin={() => navigate('login')}
+            />
+          )}
 
-        {nav.screen === 'settings' && (
-          <SettingsScreen
-            appState={appState}
-            onBack={() => navigate('home')}
-            onUpdate={(next: AppState) => setAppState(next)}
-          />
-        )}
+          {nav.screen === 'settings' && (
+            <SettingsScreen
+              appState={appState}
+              onBack={() => navigate('home')}
+              onUpdate={actions.updateSettings}
+              onOpenManageExercises={() => navigate('manageExercises')}
+            />
+          )}
+
+          {nav.screen === 'manageExercises' && (
+            <ManageExercisesScreen
+              appState={appState}
+              onBack={() => navigate('settings')}
+              onMerge={actions.mergeExercisesById}
+            />
+          )}
         </View>
       </BackSwipeContext.Provider>
     </SafeAreaProvider>

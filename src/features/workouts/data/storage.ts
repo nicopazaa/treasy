@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppState, Exercise, TrainingBlock } from '../model/types';
 import { DEFAULT_BLOCKS, generateUserId, guessDeviceLanguage } from '../model/initialState';
+import { normalizeExerciseName } from '../model/nameNormalize';
 
 const STORAGE_KEY = 'treasy_app_state_v2';
 
@@ -19,8 +20,19 @@ function isSystemExercise(exercise: Exercise): boolean {
 function normalizeExercises(exercises: AppState['exercises'] | undefined): Exercise[] {
   const list = Array.isArray(exercises) ? exercises : [];
   return list.map((ex) => {
-    if (typeof ex.isCustom === 'boolean') return ex;
-    return { ...ex, isCustom: !isSystemExercise(ex) };
+    const isCustom = typeof ex.isCustom === 'boolean' ? ex.isCustom : !isSystemExercise(ex);
+
+    // Migration / normalization (deterministic + idempotent):
+    // - `canonicalName`: computed from the current `name` if missing.
+    // - `aliases`: default to empty array if missing.
+    const canonicalName =
+      typeof ex.canonicalName === 'string' && ex.canonicalName.trim()
+        ? ex.canonicalName
+        : normalizeExerciseName(ex.name);
+
+    const aliases = Array.isArray(ex.aliases) ? ex.aliases.filter((a): a is string => typeof a === 'string') : [];
+
+    return { ...ex, isCustom, canonicalName, aliases };
   });
 }
 
