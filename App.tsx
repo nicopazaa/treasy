@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import { useFonts } from 'expo-font';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -31,6 +32,11 @@ import { assertNever } from './src/shared/assert';
 import { t } from './src/shared/i18n/i18n';
 
 export default function App() {
+  const [fontsLoaded, fontsError] = useFonts({
+    'RobotoSlab-SemiBold': require('./assets/fonts/RobotoSlab-SemiBold.ttf'),
+  });
+  const fontsReady = fontsLoaded || Boolean(fontsError);
+
   // Store (hydration + persistence wiring)
   const { appState, setAppState, loading, persister } = useAppStore();
 
@@ -197,7 +203,7 @@ export default function App() {
     reset({ screen: appState.onboarded ? 'home' : 'landing' });
   }, [appState.onboarded, loading, reset]);
 
-  if (loading || authBusy) {
+  if (loading || authBusy || !fontsReady) {
     return (
       <SafeAreaProvider>
         <View style={styles.loadingContainer}>

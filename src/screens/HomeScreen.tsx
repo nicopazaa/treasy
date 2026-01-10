@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { NavigationContext } from '@react-navigation/native';
 import type { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
-import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS, PALETTE } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
@@ -210,6 +210,11 @@ export const HomeScreen: React.FC<Props> = ({
   const lastExampleAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const lastExampleAnimatingRef = useRef(false);
   const navigationContext = useContext(NavigationContext);
+
+  const handlePressWordmark = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+
   const clearTickerInterval = useCallback(() => {
     if (tickerIntervalRef.current) {
       clearInterval(tickerIntervalRef.current);
@@ -855,12 +860,18 @@ export const HomeScreen: React.FC<Props> = ({
             { paddingTop: headerTopPadding, paddingBottom: headerBottomPadding, marginBottom: headerToQuickLogGap },
           ]}
         >
-          <Image
-            source={require('../assets/treasy-logo.png')}
-            style={styles.heroLogo}
-            resizeMode="contain"
+          <Pressable
+            onPress={handlePressWordmark}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            accessibilityRole="button"
             accessibilityLabel="Treasy"
-          />
+            style={({ pressed }) => [styles.wordmarkButton, pressed ? styles.wordmarkPressed : null]}
+          >
+            <Text style={styles.wordmarkText}>
+              <Text style={styles.wordmarkTextMain}>Treasy</Text>
+              <Text style={styles.wordmarkDot}>·</Text>
+            </Text>
+          </Pressable>
           <TouchableOpacity
             onPress={() => setCompassOpen(true)}
             style={styles.compassButton}
@@ -1238,11 +1249,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: 0,
   },
-  heroLogo: {
-    width: 80,
-    height: 80,
-    marginTop: 4,
-    flexShrink: 0,
+  wordmarkButton: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingRight: SPACING.sm,
+    alignSelf: 'stretch',
+    flexShrink: 1,
+    transform: [{ translateY: 1 }],
+  },
+  wordmarkPressed: {
+    opacity: 0.72,
+  },
+  wordmarkText: {
+    fontFamily: 'RobotoSlab-SemiBold',
+    fontSize: Platform.OS === 'web' ? 26 : 26,
+    letterSpacing: -0.2,
+  },
+  wordmarkTextMain: {
+    color: COLORS.blue1,
+    ...Platform.select({ web: { fontWeight: '600' } }),
+  },
+  wordmarkDot: {
+    color: PALETTE.DOT_CORE,
+    ...Platform.select({ web: { fontWeight: '600' } }),
   },
   headerRow: {
     flexDirection: 'row',
@@ -1321,19 +1350,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: TEXT.sm,
     fontWeight: '700',
-  },
-  brandColumn: {
-    flex: 1,
-    paddingRight: SPACING.lg,
-  },
-  logo: {
-    height: 28,
-    width: 120,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: TEXT.sm,
-    color: '#9CA3AF',
   },
   profileColumn: {
     alignItems: 'flex-end',
