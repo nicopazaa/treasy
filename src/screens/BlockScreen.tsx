@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetadataInput } from '../features/workouts/model/types';
+import type { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetadataInput } from '../features/workouts';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { UndoToast } from '../shared/ui/UndoToast';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { UNDO_TIMEOUT_MS } from '../shared/constants';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { BlockExerciseItem } from '../features/workouts/ui/BlockExerciseItem';
 import { BlockExerciseList } from '../features/workouts/ui/BlockExerciseList';
@@ -174,7 +175,7 @@ export const BlockScreen: React.FC<Props> = ({
       sets: relatedSets,
       index: index >= 0 ? index : exercises.length,
     });
-    undoTimerRef.current = setTimeout(() => setDeletedExercise(null), 4500);
+    undoTimerRef.current = setTimeout(() => setDeletedExercise(null), UNDO_TIMEOUT_MS);
   };
 
   const undoDeleteExercise = () => {

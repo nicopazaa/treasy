@@ -1,4 +1,5 @@
-import { AppState, Exercise } from '../../workouts/model/types';
+import type { AppState, Exercise } from '../workouts/types';
+import { FUZZY_MATCH_THRESHOLD } from '../../shared/constants';
 
 function normalizeMatch(value: string): string {
   return value
@@ -58,7 +59,7 @@ export function findExerciseFuzzy(appState: AppState, name: string): Exercise | 
     }
   }
 
-  if (best && best.score >= 0.6) {
+  if (best && best.score >= FUZZY_MATCH_THRESHOLD) {
     return best.ex;
   }
 

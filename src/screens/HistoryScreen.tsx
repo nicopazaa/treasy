@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContext, useFocusEffect } from '@react-navigation/native';
-import { AppState, TrainingBlockId } from '../features/workouts/model/types';
-import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
+import type { AppState, TrainingBlockId } from '../features/workouts';
+import { getWorkoutDates, getDailyWorkout, groupDailySets, type GroupedDailySetView } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';

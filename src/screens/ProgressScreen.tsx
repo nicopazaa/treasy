@@ -16,13 +16,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
+import type { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDateTime, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t, type StringKey } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatWeight, fromKg, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
+import { now } from '../shared/time';
 import { useBackSwipeContext } from '../app/navigation/BackSwipeContext';
 
 interface Props {
@@ -843,7 +844,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const rowsInRange: SetRow[] = useMemo(() => {
     const days = daysForRange(timeRange);
     if (!days) return setRows;
-    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    const cutoffMs = now() - days * 24 * 60 * 60 * 1000;
     return setRows.filter((row) => row.createdAtMs >= cutoffMs);
   }, [setRows, timeRange]);
 

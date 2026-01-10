@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState as NativeAppState, Platform } from 'react-native';
-import type { AppState } from '../../features/workouts/model/types';
+import type { AppState } from '../../features/workouts';
 import { createInitialState, loadAppState } from '../../features/workouts';
 import { inferBlockIdFromExercise } from '../../features/quicklog';
+import { SAVE_DEBOUNCE_MS } from '../../shared/constants';
 import { createAppStatePersister, type AppStatePersister } from './persist';
 
 function normalizeExerciseBlocks(state: AppState): AppState {
@@ -27,7 +28,7 @@ export function useAppStore(): {
   error: string | null;
   persister: AppStatePersister;
 } {
-  const persister = useMemo(() => createAppStatePersister({ debounceMs: 800 }), []);
+  const persister = useMemo(() => createAppStatePersister({ debounceMs: SAVE_DEBOUNCE_MS }), []);
 
   const [appState, setAppStateInner] = useState<AppState>(() => createInitialState());
   const [loading, setLoading] = useState(true);

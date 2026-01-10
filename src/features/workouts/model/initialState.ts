@@ -1,5 +1,6 @@
 import type { AppLanguage, AuthProvider } from '../../../shared/types';
-import type { AppState, TrainingBlock } from './types';
+import type { AppState, TrainingBlock } from '../../../domain/workouts/types';
+import { now } from '../../../shared/time';
 
 // Standard muskelgrupper som alltid skal finnes
 export const DEFAULT_BLOCKS: TrainingBlock[] = [
@@ -14,7 +15,7 @@ export const DEFAULT_BLOCKS: TrainingBlock[] = [
 ];
 
 export function generateUserId(): string {
-  return `user_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+  return `user_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
 }
 
 export function guessDeviceLanguage(): AppLanguage {

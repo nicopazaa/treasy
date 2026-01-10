@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { Exercise, SetEntry } from '../features/workouts/model/types';
+import type { Exercise, SetEntry } from '../features/workouts';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { UndoToast } from '../shared/ui/UndoToast';
@@ -20,6 +20,7 @@ import { getBlockTone } from '../shared/theme/blockTone';
 import { formatRelativeDateTime, formatRelativeDayLabel, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
+import { UNDO_TIMEOUT_MS } from '../shared/constants';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { Surface } from '../shared/ui/Surface';
 import { fromKg, formatWeight, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
@@ -219,7 +220,7 @@ export const ExerciseScreen: React.FC<Props> = ({
     onDeleteSet(set.id);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     setDeletedSet(set);
-    undoTimerRef.current = setTimeout(() => setDeletedSet(null), 4500);
+    undoTimerRef.current = setTimeout(() => setDeletedSet(null), UNDO_TIMEOUT_MS);
   };
 
   const undoDeleteSet = () => {

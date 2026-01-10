@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppLanguage, CardioEntry } from '../features/workouts/model/types';
+import type { AppLanguage, CardioEntry } from '../features/workouts';
 import { SPACING, TEXT, SCREEN_PADDING, RADIUS } from '../shared/theme/tokens';
+import { now } from '../shared/time';
 
 type Props = {
   language: AppLanguage;
@@ -68,7 +69,7 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
 
     timerRef.current = setInterval(() => {
       if (startRef.current == null) return;
-      setElapsedMs(Date.now() - startRef.current);
+      setElapsedMs(now() - startRef.current);
     }, 250);
 
     return () => {
@@ -81,7 +82,7 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
 
   const startSession = (keepTarget?: boolean) => {
     setTargetMinutes((prev) => (keepTarget && prev && state === 'idle' ? prev : null));
-    startRef.current = Date.now();
+    startRef.current = now();
     setElapsedMs(0);
     setState('running');
   };
@@ -94,7 +95,7 @@ export const CardioScreen: React.FC<Props> = ({ language, cardioEntries, onBack,
         timerRef.current = null;
       }
     } else if (state === 'paused') {
-      startRef.current = Date.now() - elapsedMs;
+      startRef.current = now() - elapsedMs;
       setState('running');
     }
   };

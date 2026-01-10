@@ -1,12 +1,13 @@
-import { AppState, Exercise, SetEntry, TrainingBlockId } from '../../workouts/model/types';
+import type { AppState, Exercise, SetEntry, TrainingBlockId } from '../../../domain/workouts/types';
 import {
   getLastSetForExercise,
   getWorkoutDates,
   getDailyWorkout,
   groupDailySets,
   getSetsForExercise,
-} from '../../workouts/model/workoutService';
+} from '../../../domain/workouts/workoutService';
 import type { AppLanguage } from '../../../shared/types';
+import { now } from '../../../shared/time';
 import { blockLabel } from '../../../shared/i18n/i18n';
 import { formatRelativeDayLabel, formatShortDate } from '../../../shared/utils/dateLabels';
 import { formatWeight, fromKg, toKg, type MassUnit } from '../../../shared/utils/units';
@@ -269,7 +270,7 @@ function formatNumber(language: AppLanguage, value: number): string {
 }
 
 function describeWindow(language: AppLanguage, since: Date): string {
-  const ms = Date.now() - since.getTime();
+  const ms = now() - since.getTime();
   const days = Math.max(1, Math.round(ms / 86400000));
   if (language === 'es') return ` (últimos ${days} días)`;
   if (language === 'en') return ` (last ${days} days)`;

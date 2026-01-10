@@ -10,10 +10,11 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppState } from '../features/workouts/model/types';
+import type { AppState } from '../features/workouts';
 import { answerAiQuestion } from '../features/analytics/model/aiService';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
+import { now } from '../shared/time';
 
 interface Props {
   appState: AppState;
@@ -29,7 +30,7 @@ type ChatMessage = {
 };
 
 function makeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export const AIScreen: React.FC<Props> = ({ appState, onBack, initialQuestion, initialExerciseId }) => {

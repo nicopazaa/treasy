@@ -1,5 +1,16 @@
 import { useCallback, useMemo, useReducer, useRef } from 'react';
 import { PanResponder, Platform, useWindowDimensions } from 'react-native';
+import { assertNever } from '../../shared/assert';
+import {
+  BACK_SWIPE_BACK_ZONE_RATIO,
+  BACK_SWIPE_EDGE_DEFAULT_PX,
+  BACK_SWIPE_EDGE_IOS_PX,
+  BACK_SWIPE_HORIZONTAL_SLOPE_RATIO,
+  BACK_SWIPE_MAX_VERTICAL_PX,
+  BACK_SWIPE_MIN_START_DRAG_PX,
+  BACK_SWIPE_MIN_VELOCITY,
+  BACK_SWIPE_TRIGGER_DISTANCE_PX,
+} from '../../shared/constants';
 import type { BackSwipeBlockerRect, BackSwipeContextValue } from './BackSwipeContext';
 
 export type Nav = { screen: string; [k: string]: any };
@@ -15,6 +26,9 @@ type NavHistoryAction<TNav extends Nav> =
   | { type: 'back' }
   | { type: 'forward' };
 
+// IMPORTANT:
+// Reducers must remain pure.
+// Never mutate `state` or `action` objects.
 function navHistoryReducer<TNav extends Nav>(
   state: NavHistoryState<TNav>,
   action: NavHistoryAction<TNav>
@@ -36,8 +50,9 @@ function navHistoryReducer<TNav extends Nav>(
       if (state.index >= state.stack.length - 1) return state;
       return { ...state, index: state.index + 1 };
     }
-    default:
-      return state;
+    default: {
+      return assertNever(action);
+    }
   }
 }
 
@@ -106,10 +121,8 @@ export function useNavStack<TNav extends Nav>(initial: TNav): {
 
   const panResponder = useMemo(() => {
     const isIOS = Platform.OS === 'ios';
-    const EDGE_W = isIOS ? 64 : 28;
-    const SWIPE_X = 60;
-    const MAX_Y = 25;
-    const BACK_START_X = windowWidth * 0.6;
+    const edgeWidth = isIOS ? BACK_SWIPE_EDGE_IOS_PX : BACK_SWIPE_EDGE_DEFAULT_PX;
+    const backZoneStartX = windowWidth * BACK_SWIPE_BACK_ZONE_RATIO;
 
     const isInsideBlockedArea = (x: number, y: number) => {
       const blockers = backSwipeBlockersRef.current;
@@ -128,35 +141,45 @@ export function useNavStack<TNav extends Nav>(initial: TNav): {
 
         if (isInsideBlockedArea(gesture.x0, gesture.y0)) return false;
 
-        const fromBackZone = gesture.x0 < BACK_START_X;
-        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
+        const fromBackZone = gesture.x0 < backZoneStartX;
+        const fromRightEdge = gesture.x0 > windowWidth - edgeWidth;
         if (!fromBackZone && !fromRightEdge) return false;
 
         const dx = gesture.dx;
         const dy = gesture.dy;
-        if (Math.abs(dy) > MAX_Y) return false;
-        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
+        if (Math.abs(dy) > BACK_SWIPE_MAX_VERTICAL_PX) return false;
+        const isHorizontal = Math.abs(dx) > Math.abs(dy) * BACK_SWIPE_HORIZONTAL_SLOPE_RATIO;
         if (!isHorizontal) return false;
-        if (dx > 12 && fromBackZone && canBack) return true;
-        if (dx < -12 && fromRightEdge && canForward) return true;
+        if (dx > BACK_SWIPE_MIN_START_DRAG_PX && fromBackZone && canBack) return true;
+        if (dx < -BACK_SWIPE_MIN_START_DRAG_PX && fromRightEdge && canForward) return true;
         return false;
       },
       onPanResponderRelease: (_evt, gesture) => {
         const dx = gesture.dx;
         const dy = gesture.dy;
-        if (Math.abs(dy) > MAX_Y) return;
-        const isHorizontal = Math.abs(dx) > Math.abs(dy) * 2;
+        if (Math.abs(dy) > BACK_SWIPE_MAX_VERTICAL_PX) return;
+        const isHorizontal = Math.abs(dx) > Math.abs(dy) * BACK_SWIPE_HORIZONTAL_SLOPE_RATIO;
         if (!isHorizontal) return;
 
-        const fromBackZone = gesture.x0 < BACK_START_X;
-        const fromRightEdge = gesture.x0 > windowWidth - EDGE_W;
+        const fromBackZone = gesture.x0 < backZoneStartX;
+        const fromRightEdge = gesture.x0 > windowWidth - edgeWidth;
 
-        if (fromBackZone && dx > SWIPE_X && gesture.vx > 0.3 && canBack) {
+        if (
+          fromBackZone &&
+          dx > BACK_SWIPE_TRIGGER_DISTANCE_PX &&
+          gesture.vx > BACK_SWIPE_MIN_VELOCITY &&
+          canBack
+        ) {
           back();
           return;
         }
 
-        if (fromRightEdge && dx < -SWIPE_X && gesture.vx < -0.3 && canForward) {
+        if (
+          fromRightEdge &&
+          dx < -BACK_SWIPE_TRIGGER_DISTANCE_PX &&
+          gesture.vx < -BACK_SWIPE_MIN_VELOCITY &&
+          canForward
+        ) {
           forward();
         }
       },

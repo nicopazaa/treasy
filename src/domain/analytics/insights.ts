@@ -1,4 +1,4 @@
-import type { AppState, SetEntry, TrainingBlockId } from '../../workouts/model/types';
+import type { AppState, SetEntry, TrainingBlockId } from '../workouts/types';
 
 export type MuscleBlockId = Exclude<TrainingBlockId, 'cardio'>;
 
@@ -176,4 +176,3 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
   const limit = options?.limit ?? 5;
   return items.slice(0, Math.max(0, limit));
 }
-

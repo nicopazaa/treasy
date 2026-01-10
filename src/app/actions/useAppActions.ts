@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import type { AppState, ExerciseMetadataInput } from '../../features/workouts/model/types';
+import type { AppState, ExerciseMetadataInput } from '../../features/workouts';
 import {
   addCardioEntry,
   addExercise,
@@ -22,11 +22,14 @@ import {
   createInitialState,
 } from '../../features/workouts';
 import { findExerciseFuzzy, inferBlockIdFromExercise } from '../../features/quicklog';
-import { applyParsedChunks } from '../../features/parsing/applyParsedChunks';
-import { parseTrainingText } from '../../features/parsing/parsePipeline';
+import { applyParsedChunks } from '../../domain/parsing/applyParsedChunks';
+import { parseTrainingText } from '../../domain/parsing/parsePipeline';
 import { t } from '../../shared/i18n/i18n';
 import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
-import { normalizeExerciseName } from '../../features/workouts/model/nameNormalize';
+import { normalizeExerciseName } from '../../domain/workouts/nameNormalize';
+import { now } from '../../shared/time';
+import { SYSTEM_EXERCISE_IDS } from '../../shared/systemEntities';
+import { assertNever } from '../../shared/assert';
 import type { NavState, ScreenName } from '../navigation/types';
 import type { DerivedCache } from '../state/derivedCache';
 import type { AppStatePersister } from '../state/persist';
@@ -52,17 +55,24 @@ function applyTrainingTextToState(state: AppState, text: string): AppState {
   const chunks = parseTrainingText(text, { language, defaultUnit });
   if (chunks.length === 0) return state;
   const applied = applyParsedChunks(state, chunks, { language });
-  return applied.next;
+  switch (applied.kind) {
+    case 'applied':
+    case 'needsAliasConfirmation':
+    case 'createdExerciseNeedsCategorization':
+      return applied.next;
+    default:
+      return assertNever(applied);
+  }
 }
 
 function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
-  const existing = state.exercises.find((ex) => ex.blockId === 'cardio');
+  const existing = state.exercises.find((ex) => ex.blockId === SYSTEM_EXERCISE_IDS.CARDIO);
   if (existing) return { next: state, id: existing.id };
 
-  const newId = `cardio_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+  const newId = `cardio_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
   const exercise = {
     id: newId,
-    blockId: 'cardio',
+    blockId: SYSTEM_EXERCISE_IDS.CARDIO,
     name: 'Cardio',
     shortCode: 'CARDIO',
     tags: [],
@@ -257,7 +267,7 @@ export function useAppActions(opts: {
       return;
     }
 
-    const state = `st_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+    const state = `st_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
     window.sessionStorage?.setItem('treasy_github_oauth_state', state);
 
     const redirectUri = `${window.location.origin}/auth/github`;

@@ -1,4 +1,4 @@
-import { Exercise } from '../../features/workouts/model/types';
+import type { Exercise } from '../../domain/workouts/types';
 
 export function getExerciseLabelSegments(exercise: Exercise): string[] {
   const parts: string[] = [];

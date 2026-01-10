@@ -1,6 +1,9 @@
 import type { AppLanguage } from '../../shared/types';
 import { toKg, type MassUnit } from '../../shared/utils/units';
 
+// IMPORTANT:
+// This module must remain pure and deterministic.
+// Never mutate inputs; parsing behavior must remain identical.
 export type ParsedSet = {
   weight: number; // stored as kg (0 for BW)
   reps: number;
@@ -118,4 +121,3 @@ export function parseTrainingText(
   }
   return results;
 }
-

@@ -4,7 +4,7 @@ import type { AppLanguage } from '../../../shared/types';
 import { SPACING, TEXT as TEXT_TOKENS, RADIUS } from '../../../shared/theme/tokens';
 import { t } from '../../../shared/i18n/i18n';
 import { formatRelativeDayLabel } from '../../../shared/utils/dateLabels';
-import type { WorkoutTimelineItem } from '../model/insights';
+import type { WorkoutTimelineItem } from '../../../domain/analytics/insights';
 
 type Props = {
   language: AppLanguage;

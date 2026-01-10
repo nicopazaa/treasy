@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContext, useFocusEffect } from '@react-navigation/native';
-import { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts/model/types';
-import { getSetsForExercise } from '../features/workouts/model/workoutService';
+import type { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts';
+import { getSetsForExercise } from '../features/workouts';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { formatDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, SCREEN_PADDING, RADIUS, COLORS } from '../shared/theme/tokens';

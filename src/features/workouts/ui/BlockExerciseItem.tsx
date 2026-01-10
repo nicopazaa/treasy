@@ -1,6 +1,6 @@
 import React from 'react';
 import type { GestureResponderEvent } from 'react-native';
-import { Exercise } from '../model/types';
+import type { Exercise } from '..';
 import { ExerciseRow } from '../../../shared/ui/ExerciseRow';
 import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
 

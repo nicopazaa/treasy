@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
+import type { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts';
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';

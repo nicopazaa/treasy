@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { AppState } from '../../features/workouts/model/types';
+import type { AppState } from '../../features/workouts';
 import { buildDerivedCache, type DerivedCache } from './derivedCache';
 
 // Memoized derived indexes for fast O(1) lookups in the app composition layer.
@@ -7,4 +7,3 @@ import { buildDerivedCache, type DerivedCache } from './derivedCache';
 export function useDerivedCache(state: AppState): DerivedCache {
   return useMemo(() => buildDerivedCache(state), [state]);
 }
-

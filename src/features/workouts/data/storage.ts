@@ -1,20 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AppState, Exercise, TrainingBlock } from '../model/types';
+import type { AppState, Exercise, TrainingBlock } from '../../../domain/workouts/types';
 import { DEFAULT_BLOCKS, generateUserId, guessDeviceLanguage } from '../model/initialState';
-import { normalizeExerciseName } from '../model/nameNormalize';
+import { normalizeExerciseName } from '../../../domain/workouts/nameNormalize';
+import { SYSTEM_EXERCISE_IDS } from '../../../shared/systemEntities';
 
 const STORAGE_KEY = 'treasy_app_state_v2';
 
 function isSystemExercise(exercise: Exercise): boolean {
   if (!exercise) return false;
   const blockId = String(exercise.blockId ?? '').toLowerCase();
-  if (blockId !== 'cardio') return false;
+  if (blockId !== SYSTEM_EXERCISE_IDS.CARDIO) return false;
 
   const id = String(exercise.id ?? '');
   const name = String(exercise.name ?? '').toLowerCase();
   const shortCode = String(exercise.shortCode ?? '').toUpperCase();
 
-  return id.startsWith('cardio_') || shortCode === 'CARDIO' || name === 'cardio';
+  return id.startsWith('cardio_') || shortCode === 'CARDIO' || name === SYSTEM_EXERCISE_IDS.CARDIO;
 }
 
 function normalizeExercises(exercises: AppState['exercises'] | undefined): Exercise[] {

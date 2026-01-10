@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { deleteAllCustomExercises, deleteAllLoggedSets } from '../features/workouts';
-import type { AppState } from '../features/workouts/model/types';
+import type { AppState } from '../features/workouts';
 import { t } from '../shared/i18n/i18n';
 import { RADIUS, SCREEN_PADDING, SPACING, TEXT } from '../shared/theme/tokens';
 

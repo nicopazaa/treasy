@@ -1,4 +1,5 @@
-import type { AppState } from '../../features/workouts/model/types';
+import type { AppState } from '../../domain/workouts/types';
+import { SAVE_DEBOUNCE_MS } from '../../shared/constants';
 import { saveAppState } from '../../features/workouts/data/storage';
 
 export type AppStatePersister = {
@@ -15,7 +16,7 @@ export type AppStatePersister = {
 };
 
 export function createAppStatePersister(opts: { debounceMs?: number }): AppStatePersister {
-  const debounceMs = opts.debounceMs ?? 800;
+  const debounceMs = opts.debounceMs ?? SAVE_DEBOUNCE_MS;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let latestState: AppState | null = null;
@@ -67,4 +68,3 @@ export function createAppStatePersister(opts: { debounceMs?: number }): AppState
     cancelPending,
   };
 }
-

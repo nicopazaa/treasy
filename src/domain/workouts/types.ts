@@ -1,5 +1,5 @@
-import type { AppLanguage, AuthProvider, ThemeMode } from '../../../shared/types';
-export type { AppLanguage } from '../../../shared/types';
+import type { AppLanguage, AuthProvider, ThemeMode } from '../../shared/types';
+export type { AppLanguage } from '../../shared/types';
 
 export type TrainingBlockId =
   | 'chest'
@@ -72,6 +72,9 @@ export interface CardioEntry {
   createdAt: string; // ISO string
 }
 
+// IMPORTANT:
+// AppState is treated as immutable across the app.
+// Never mutate AppState directly; always return new objects/arrays.
 export interface AppState {
   // Intern identitet (alltid lokalt tilgjengelig)
   userId?: string;

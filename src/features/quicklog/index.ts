@@ -1,4 +1,3 @@
-export * from './model/types';
-export { parseQuickLog, inferBlockIdFromExercise } from './model/quickLogService';
-export { findExerciseByName, findExerciseFuzzy } from './model/exerciseLookup';
-
+export * from '../../domain/quicklog/types';
+export { parseQuickLog, inferBlockIdFromExercise } from '../../domain/quicklog/quickLogService';
+export { findExerciseByName, findExerciseFuzzy } from '../../domain/quicklog/exerciseLookup';

@@ -1,4 +1,5 @@
-import type { AppState, Exercise, SetEntry } from '../../features/workouts/model/types';
+import type { AppState, Exercise, SetEntry } from '../../domain/workouts/types';
+import { dayKey as toDayKey } from '../../shared/time';
 
 export type DerivedCache = {
   exerciseById: Map<string, Exercise>;
@@ -12,14 +13,12 @@ export type DerivedCache = {
 
 function toLocalDayKey(iso: string): string {
   const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) {
+  const ts = dt.getTime();
+  if (Number.isNaN(ts)) {
     // Defensive fallback: keep a stable key even if the date string is unexpected.
     return String(iso ?? '').slice(0, 10);
   }
-  const yyyy = String(dt.getFullYear());
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return toDayKey(ts);
 }
 
 function sortByCreatedAtDesc(a: { createdAt: string }, b: { createdAt: string }): number {

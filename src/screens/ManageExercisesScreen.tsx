@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { AppState, Exercise, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
-import { normalizeExerciseName } from '../features/workouts/model/nameNormalize';
+import type { AppState, Exercise, TrainingBlock, TrainingBlockId } from '../features/workouts';
+import { normalizeExerciseName } from '../domain/workouts/nameNormalize';
 import type { AppLanguage } from '../shared/types';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { COLORS, RADIUS, SCREEN_PADDING, SPACING, TEXT } from '../shared/theme/tokens';

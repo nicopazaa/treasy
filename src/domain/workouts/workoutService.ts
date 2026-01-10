@@ -1,9 +1,14 @@
 import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEntry, NoteEntry } from './types';
-import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
+import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
+import { MAX_EXERCISE_ALIASES, MAX_MERGED_EXERCISE_ALIASES } from '../../shared/constants';
 import { normalizeExerciseName } from './nameNormalize';
+import { now } from '../../shared/time';
 
+// IMPORTANT:
+// This module must remain pure and deterministic.
+// Never mutate AppState directly; always return new objects/arrays.
 function generateId(prefix: string = 'id'): string {
-  return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
+  return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${now().toString(36)}`;
 }
 
 function sanitizeLabel(label?: string | null): string | null {
@@ -270,7 +275,7 @@ export function addExerciseAlias(state: AppState, exerciseId: string, aliasName:
       if (ex.id !== exerciseId) return ex;
 
       const existingAliases = Array.isArray(ex.aliases) ? ex.aliases : [];
-      if (existingAliases.length >= 25) return ex;
+      if (existingAliases.length >= MAX_EXERCISE_ALIASES) return ex;
 
       const canonical = normalizeExerciseName(ex.canonicalName ?? ex.name);
       const nameNorm = normalizeExerciseName(ex.name);
@@ -357,7 +362,7 @@ export function mergeExercises(state: AppState, fromExerciseId: string, intoExer
 
   const intoAliases = Array.isArray(into.aliases) ? into.aliases : [];
   const fromAliases = Array.isArray(from.aliases) ? from.aliases : [];
-  const mergedAliases = mergeAliasesStable(intoAliases, [from.name, ...fromAliases], 50);
+  const mergedAliases = mergeAliasesStable(intoAliases, [from.name, ...fromAliases], MAX_MERGED_EXERCISE_ALIASES);
 
   const updatedInto: Exercise = {
     ...into,

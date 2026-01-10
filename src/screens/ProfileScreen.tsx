@@ -10,12 +10,13 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppState } from '../features/workouts/model/types';
+import type { AppState } from '../features/workouts';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { LANGUAGE_OPTIONS, t } from '../shared/i18n/i18n';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fromKg, roundForDisplay, toKg } from '../shared/utils/units';
+import { now } from '../shared/time';
 
 interface Props {
   appState: AppState;
@@ -92,7 +93,7 @@ export const ProfileScreen: React.FC<Props> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `treasy-backup-${Date.now()}.json`;
+      link.download = `treasy-backup-${now()}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

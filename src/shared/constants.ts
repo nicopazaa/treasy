@@ -1,0 +1,16 @@
+export const FUZZY_MATCH_THRESHOLD = 0.6;
+export const SAVE_DEBOUNCE_MS = 800;
+export const UNDO_TIMEOUT_MS = 4500;
+
+export const BACK_SWIPE_EDGE_IOS_PX = 64;
+export const BACK_SWIPE_EDGE_DEFAULT_PX = 28;
+export const BACK_SWIPE_TRIGGER_DISTANCE_PX = 60;
+export const BACK_SWIPE_MAX_VERTICAL_PX = 25;
+export const BACK_SWIPE_BACK_ZONE_RATIO = 0.6;
+export const BACK_SWIPE_MIN_START_DRAG_PX = 12;
+export const BACK_SWIPE_MIN_VELOCITY = 0.3;
+export const BACK_SWIPE_HORIZONTAL_SLOPE_RATIO = 2;
+
+export const MAX_EXERCISE_ALIASES = 25;
+export const MAX_MERGED_EXERCISE_ALIASES = 50;
+

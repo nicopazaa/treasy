@@ -1,6 +1,6 @@
-import type { AppLanguage } from '../../../shared/types';
-import { TrainingBlockId } from '../../workouts/model/types';
-import { parseTrainingText } from '../../parsing/parsePipeline';
+import type { AppLanguage } from '../../shared/types';
+import type { TrainingBlockId } from '../workouts/types';
+import { parseTrainingText } from '../parsing/parsePipeline';
 import { ParsedSet, QuickLogParseResult } from './types';
 
 const BLOCK_KEYWORDS: Array<{ id: TrainingBlockId; keywords: string[] }> = [

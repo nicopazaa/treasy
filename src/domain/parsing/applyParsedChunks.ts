@@ -1,10 +1,15 @@
 import type { AppLanguage } from '../../shared/types';
-import type { AppState, Exercise, ExerciseMetadataInput, SetEntry } from '../workouts/model/types';
-import { inferBlockIdFromExercise, findExerciseFuzzy } from '../quicklog';
-import { normalizeExerciseName } from '../workouts/model/nameNormalize';
-import { findExerciseByNameOrAlias } from '../workouts/model/workoutService';
+import type { AppState, Exercise, ExerciseMetadataInput, SetEntry } from '../workouts/types';
+import { findExerciseFuzzy } from '../quicklog/exerciseLookup';
+import { inferBlockIdFromExercise } from '../quicklog/quickLogService';
+import { normalizeExerciseName } from '../workouts/nameNormalize';
+import { findExerciseByNameOrAlias } from '../workouts/workoutService';
+import { now } from '../../shared/time';
 import type { ParsedExerciseChunk, ParsedSet } from './parsePipeline';
 
+// IMPORTANT:
+// This module must remain pure and deterministic.
+// Never mutate AppState directly; always return new objects/arrays.
 export type ApplyResult =
   | { kind: 'applied'; next: AppState }
   | {
@@ -100,7 +105,7 @@ export function applyParsedChunks(
     now?: number;
   }
 ): ApplyResult {
-  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  const nowMs = typeof opts.now === 'number' ? opts.now : now();
   const createdAtIso = new Date(nowMs).toISOString();
 
   const allowedBlocks = new Set(state.blocks.map((b) => b.id));

@@ -1,5 +1,5 @@
 import type { AppLanguage } from '../../../shared/types';
-import { parseTrainingText } from '../../parsing/parsePipeline';
+import { parseTrainingText } from '../../../domain/parsing/parsePipeline';
 
 export type ParsedNoteSet = {
   weight: number;

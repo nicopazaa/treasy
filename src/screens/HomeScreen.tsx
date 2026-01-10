@@ -16,13 +16,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContext } from '@react-navigation/native';
-import { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts/model/types';
+import type { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
-import { getWorkoutDates, getDailyWorkout, groupDailySets, GroupedDailySetView } from '../features/workouts/model/workoutService';
+import { getWorkoutDates, getDailyWorkout, groupDailySets, type GroupedDailySetView } from '../features/workouts';
 import { fromKg, formatWeight } from '../shared/utils/units';
 import {
   buildWorkoutTimeline,
@@ -33,7 +33,7 @@ import {
   getLastDaysRangesUtc,
   getMomentumStatus,
   getWorkoutsInRange,
-} from '../features/analytics/model/insights';
+} from '../domain/analytics/insights';
 import { MomentumCard } from '../features/analytics/ui/MomentumCard';
 import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorkoutsTimeline';
 import { VolumeCard, type VolumeByMuscleRow } from '../features/analytics/ui/VolumeCard';
