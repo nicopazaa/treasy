@@ -15,14 +15,23 @@
 If the repo contains any of these files, treat them as authoritative:
 - docs/AI_HANDOFF.md
 - PROJECT_CONTEXT.md
-- ARCHITECTURE.md
+- docs/ARCHITECTURE.md
 - docs/DECISIONS.md
 - docs/ROADMAP.md
+- docs/STATUS.md
+
+Precedence (if they conflict):
+1) User request in the current task
+2) docs/DECISIONS.md (chosen patterns/tradeoffs)
+3) docs/ARCHITECTURE.md + PROJECT_CONTEXT.md (structure + constraints)
+4) docs/ROADMAP.md + docs/STATUS.md (priorities + in-progress)
+5) Everything else (non-authoritative)
 
 Rules:
 - If behavior/architecture changes, update the relevant truth files in the same PR/commit.
 - If the request modifies decisions (tradeoffs, chosen patterns), add an entry to docs/DECISIONS.md.
-- If the request completes or creates work items, update docs/ROADMAP.md.
+- If the request completes or creates work items, update docs/ROADMAP.md and/or docs/STATUS.md.
+- Do not reformat markdown files unless content changes require it (avoid noisy diffs).
 
 ## Implementation workflow (always)
 1) Inventory: locate the relevant files and confirm assumptions with code references (paths).

@@ -25,25 +25,39 @@ import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatWeight, fromKg, roundForDisplay, toKg, type MassUnit } from '../shared/utils/units';
 import { now } from '../shared/time';
 import { useBackSwipeContext } from '../app/navigation/BackSwipeContext';
+import { BLOCK_ICON_SOURCES } from '../shared/ui/blockIcons';
 
 interface Props {
   appState: AppState;
   onBack: () => void;
 }
 
-type TimeRange = 'all' | '90d' | '30d';
+type TimeRange = 'all' | '90d' | '30d' | '14d' | '7d';
 type Metric = 'weight' | 'oneRm' | 'volume' | 'reps';
-type Aggregation = 'day' | 'month' | 'year';
+type Aggregation = 'auto' | 'day' | 'week' | 'month' | 'year';
+type ChartAggregation = Exclude<Aggregation, 'auto'>;
 type TileVariant = 'primary' | 'secondary';
 
 const RANGE_LABEL_KEY: Record<TimeRange, StringKey> = {
   all: 'progress.range.all',
   '90d': 'progress.range.90d',
   '30d': 'progress.range.30d',
+  '14d': 'progress.range.14d',
+  '7d': 'progress.range.7d',
+};
+
+const RANGE_LONG_LABEL_KEY: Record<TimeRange, StringKey> = {
+  all: 'progress.rangeLong.all',
+  '90d': 'progress.rangeLong.90d',
+  '30d': 'progress.rangeLong.30d',
+  '14d': 'progress.rangeLong.14d',
+  '7d': 'progress.rangeLong.7d',
 };
 
 const AGGREGATION_LABEL_KEY: Record<Aggregation, StringKey> = {
+  auto: 'progress.aggregation.auto',
   day: 'progress.aggregation.day',
+  week: 'progress.aggregation.week',
   month: 'progress.aggregation.month',
   year: 'progress.aggregation.year',
 };
@@ -53,22 +67,15 @@ const CHART_HEIGHT = 140;
 const CHART_X_PADDING = 10;
 const CHART_Y_PADDING_TOP = 12;
 const CHART_Y_PADDING_BOTTOM = 12;
-const CHART_POINT_SIZE = 10;
-const CHART_LINE_THICKNESS = 2;
+const CHART_POINT_SIZE = 8;
+const CHART_LINE_THICKNESS = 1;
+
+const INSIGHTS_TREND_WINDOW_DAYS = 14;
+const INSIGHTS_FALLBACK_SESSIONS = 5;
 
 const MAIN_BLOCK_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
 const MODE_BLOCK_IDS: TrainingBlockId[] = ['cardio', 'bodyweight'];
 const VALID_BLOCK_IDS = new Set<string>([...MAIN_BLOCK_ORDER, ...MODE_BLOCK_IDS]);
-const BLOCK_ICONS: Partial<Record<TrainingBlockId, ImageSourcePropType>> = {
-  chest: require('../assets/chest.png'),
-  shoulders: require('../assets/shoulder.png'),
-  back: require('../assets/back.png'),
-  arms: require('../assets/arms.png'),
-  core: require('../assets/core.png'),
-  legs: require('../assets/leggs.png'),
-  cardio: require('../assets/cardio.png'),
-  bodyweight: require('../assets/bodyweight.png'),
-};
 
 interface SetRow {
   id: string;
@@ -122,6 +129,14 @@ function metricValueChart(row: ChartRow, metric: Metric): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
+  const idx = label.indexOf('(');
+  if (idx <= 0) return { main: label, parentheses: null };
+  const main = label.slice(0, idx).trimEnd();
+  const parentheses = label.slice(idx).trim();
+  return parentheses.startsWith('(') && parentheses.length > 0 ? { main, parentheses } : { main: label, parentheses: null };
 }
 
 function localeForLanguage(language: AppLanguage): string {
@@ -284,6 +299,8 @@ function timeForChartX(x: number, minMs: number, maxMs: number, width: number): 
 }
 
 function daysForRange(range: TimeRange): number | null {
+  if (range === '7d') return 7;
+  if (range === '14d') return 14;
   if (range === '30d') return 30;
   if (range === '90d') return 90;
   return null;
@@ -307,14 +324,22 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function bucketStartMs(timestampMs: number, aggregation: Aggregation): number {
+function bucketStartMs(timestampMs: number, aggregation: ChartAggregation): number {
   const date = new Date(timestampMs);
   if (aggregation === 'year') return new Date(date.getFullYear(), 0, 1).getTime();
   if (aggregation === 'month') return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+  if (aggregation === 'week') {
+    const copy = new Date(date);
+    const day = copy.getDay(); // 0 = Sun
+    const diff = (day + 6) % 7; // Monday start
+    copy.setHours(0, 0, 0, 0);
+    copy.setDate(copy.getDate() - diff);
+    return copy.getTime();
+  }
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-function formatAggregationLabel(date: Date, aggregation: Aggregation, language: AppLanguage): string {
+function formatAggregationLabel(date: Date, aggregation: ChartAggregation, language: AppLanguage): string {
   if (aggregation === 'year') return String(date.getFullYear());
   if (aggregation === 'month') {
     try {
@@ -325,6 +350,7 @@ function formatAggregationLabel(date: Date, aggregation: Aggregation, language: 
       return `${month}/${year}`;
     }
   }
+  if (aggregation === 'week') return formatShortDate(date);
   return formatShortDate(date);
 }
 
@@ -339,7 +365,7 @@ function pickBestSet(current: SetRow | null, candidate: SetRow): SetRow {
   return candidate.createdAtMs > current.createdAtMs ? candidate : current;
 }
 
-function aggregateChartRows(rows: SetRow[], aggregation: Aggregation, language: AppLanguage): ChartRow[] {
+function aggregateChartRows(rows: SetRow[], aggregation: ChartAggregation, language: AppLanguage): ChartRow[] {
   const buckets = new Map<string, ChartRow>();
 
   for (const row of rows) {
@@ -474,11 +500,22 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
   variant = 'primary',
   onPress,
 }) => {
-  const selectedBg = selected ? hexToRgba(accent, variant === 'primary' ? 0.18 : 0.12) : '#0B1220';
+  const isExerciseCard = variant === 'secondary';
+  const splitLabel = isExerciseCard ? splitLabelParentheses(label) : null;
+  const showSplitLabel = Boolean(splitLabel?.parentheses);
+  const selectedBg = isExerciseCard
+    ? COLORS.surfaceCardLight
+    : selected
+      ? hexToRgba(accent, 0.18)
+      : '#0B1220';
   const borderColor = selected
-    ? hexToRgba(accent, variant === 'primary' ? 0.7 : 0.45)
-    : 'rgba(148, 163, 184, 0.16)';
-  const glowColor = selected ? accent : '#0B1220';
+    ? isExerciseCard
+      ? 'transparent'
+      : hexToRgba(accent, 0.7)
+    : isExerciseCard
+      ? 'transparent'
+      : 'rgba(148, 163, 184, 0.16)';
+  const glowColor = isExerciseCard ? '#000' : selected ? accent : '#0B1220';
   const dotOpacity = variant === 'primary' ? 1 : 0.6;
 
   return (
@@ -496,22 +533,43 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
         <View style={[styles.tileDot, { backgroundColor: accent, opacity: dotOpacity }]} />
       </View>
       <View style={styles.tileText}>
-        <Text
-          style={[
-            styles.tileLabel,
-            variant === 'secondary' ? styles.tileLabelSecondary : null,
-            selected ? styles.tileLabelSelected : null,
-          ]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
+        {variant === 'secondary' && showSplitLabel ? (
+          <View style={styles.tileLabelColumn}>
+            <Text
+              style={[styles.tileLabelSecondaryMain, { color: COLORS.textNavyPrimary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {splitLabel?.main ?? label}
+            </Text>
+            <Text
+              style={[styles.tileLabelSecondaryParen, { color: COLORS.textSecondaryGray }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {splitLabel?.parentheses}
+            </Text>
+          </View>
+        ) : (
+          <Text
+            style={[
+              styles.tileLabel,
+              variant === 'secondary' ? styles.tileLabelSecondary : null,
+              selected && variant !== 'secondary' ? styles.tileLabelSelected : null,
+              variant === 'secondary' ? { color: COLORS.textNavyPrimary } : null,
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        )}
         {subtitle ? (
           <Text
             style={[
               styles.tileSubtitle,
               variant === 'secondary' ? styles.tileSubtitleSecondary : null,
-              selected ? styles.tileSubtitleSelected : null,
+              selected && variant !== 'secondary' ? styles.tileSubtitleSelected : null,
+              variant === 'secondary' ? { color: COLORS.textSecondaryGray } : null,
             ]}
             numberOfLines={1}
           >
@@ -519,7 +577,15 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
           </Text>
         ) : null}
       </View>
-      <Text style={[styles.tileChevron, { opacity: selected ? 1 : 0 }]}>{'>'}</Text>
+      <Text
+        style={[
+          styles.tileChevron,
+          variant === 'secondary' ? styles.tileChevronSecondary : null,
+          { opacity: selected ? 1 : 0 },
+        ]}
+      >
+        {'>'}
+      </Text>
     </Pressable>
   );
 };
@@ -550,9 +616,10 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
     }).start();
   }, [scaleAnim]);
 
-  const selectedBg = selected ? hexToRgba(accent, 0.18) : '#0B1220';
-  const borderColor = selected ? hexToRgba(accent, 0.75) : 'rgba(148, 163, 184, 0.2)';
-  const glowColor = selected ? accent : '#0B1220';
+  const selectedBg = selected ? '#111827' : '#050A16';
+  const borderColor = selected ? 'rgba(148, 163, 184, 0.22)' : 'rgba(148, 163, 184, 0.14)';
+  const glowColor = COLORS.treasyNavy;
+  const iconBorderColor = selected ? 'rgba(148, 163, 184, 0.22)' : 'rgba(148, 163, 184, 0.16)';
 
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
@@ -567,9 +634,9 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
         <Text style={[styles.groupTileText, selected ? styles.groupTileTextSelected : null]} numberOfLines={1}>
           {label}
         </Text>
-        <View style={[styles.groupTileIconWrap, selected ? styles.groupTileIconWrapSelected : null]}>
+        <View style={[styles.groupTileIconWrap, { borderColor: iconBorderColor }]}>
           {icon ? (
-            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#3B82F6" />
+            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#FFFFFF" />
           ) : (
             <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
           )}
@@ -650,10 +717,12 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   });
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
-  const [aggregation, setAggregation] = useState<Aggregation>('day');
+  const [aggregation, setAggregation] = useState<Aggregation>('auto');
   const [metric, setMetric] = useState<Metric>('weight');
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [isTrayOpen, setIsTrayOpen] = useState(false);
+  const [showTable, setShowTable] = useState(false);
   const [viewport, setViewport] = useState<{ startMs: number; endMs: number } | null>(null);
   const viewportRef = useRef<{ startMs: number; endMs: number } | null>(null);
   const gestureRef = useRef<{
@@ -663,6 +732,8 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   } | null>(null);
   const chartContainerRef = useRef<View>(null);
   const chartMeasureRaf = useRef<number | null>(null);
+  const insightsAnim = useRef(new Animated.Value(0)).current;
+  const trayAnim = useRef(new Animated.Value(0)).current;
 
   const primaryBlocks = useMemo<TrainingBlock[]>(() => {
     const byId = new Map<string, TrainingBlock>(appState.blocks.map((block) => [block.id, block]));
@@ -702,6 +773,14 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     if (!selectedBlockId) return [] as Exercise[];
     return appState.exercises.filter((e) => e.blockId === selectedBlockId) as Exercise[];
   }, [appState.exercises, selectedBlockId]);
+
+  const insightsInsertAfterIndex = useMemo(() => {
+    if (!selectedExerciseId) return null;
+    const idx = exercises.findIndex((e) => e.id === selectedExerciseId);
+    if (idx < 0) return null;
+    if (idx % 2 === 0 && idx + 1 < exercises.length) return idx + 1;
+    return idx;
+  }, [exercises, selectedExerciseId]);
 
   const fallbackBlockId = useMemo(() => {
     const preferred = MAIN_BLOCK_ORDER.find((id) => appState.blocks.some((block) => block.id === id)) ?? MAIN_BLOCK_ORDER[0];
@@ -848,9 +927,22 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     return setRows.filter((row) => row.createdAtMs >= cutoffMs);
   }, [setRows, timeRange]);
 
+  const resolvedAggregation: ChartAggregation = useMemo(() => {
+    if (aggregation !== 'auto') return aggregation;
+    if (rowsInRange.length < 2) return 'day';
+
+    if (timeRange === '7d' || timeRange === '14d') return 'day';
+    if (timeRange === '30d') return rowsInRange.length < 6 ? 'day' : 'week';
+    if (timeRange === '90d') return rowsInRange.length < 10 ? 'month' : 'week';
+
+    const spanMs = rowsInRange[rowsInRange.length - 1]!.createdAtMs - rowsInRange[0]!.createdAtMs;
+    const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
+    return spanMs >= twoYearsMs ? 'year' : 'month';
+  }, [aggregation, rowsInRange, timeRange]);
+
   const rowsVisible: ChartRow[] = useMemo(() => {
-    return aggregateChartRows(rowsInRange, aggregation, language);
-  }, [aggregation, language, rowsInRange]);
+    return aggregateChartRows(rowsInRange, resolvedAggregation, language);
+  }, [language, resolvedAggregation, rowsInRange]);
 
   const rowsChart: ChartRow[] = useMemo(() => {
     if (metric === 'weight') return rowsVisible.filter((row) => row.weightMax > 0);
@@ -953,10 +1045,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   }, [chartAxis.max, chartAxis.min, chartValues, chartWidth, viewRange, viewportRows]);
 
   const chartStartLabel = viewRange
-    ? formatAggregationLabel(new Date(viewRange.startMs), aggregation, language)
+    ? formatAggregationLabel(new Date(viewRange.startMs), resolvedAggregation, language)
     : '';
   const chartEndLabel = viewRange
-    ? formatAggregationLabel(new Date(viewRange.endMs), aggregation, language)
+    ? formatAggregationLabel(new Date(viewRange.endMs), resolvedAggregation, language)
     : '';
   const chartMetricLabel = formatMetricLabel(language, metric);
   const chartUnitLabel =
@@ -1126,8 +1218,9 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
   const chartWheelProps = Platform.OS === 'web' ? ({ onWheel: handleWheel } as any) : {};
 
-  const selectedExercise =
-    selectedExerciseId && appState.exercises.find((e) => e.id === selectedExerciseId);
+  const selectedExercise = selectedExerciseId
+    ? (appState.exercises.find((e) => e.id === selectedExerciseId) ?? null)
+    : null;
 
   const latestOverall = setRows.length > 0 ? setRows[setRows.length - 1] : null;
   const prevOverall = setRows.length > 1 ? setRows[setRows.length - 2] : null;
@@ -1198,11 +1291,149 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     };
   }, [bestAllOneRm, bestAllReps, bestAllWeight, latestOverall, massUnit, metric]);
 
+  const insightsMetric: 'oneRm' | 'reps' = hasWeightData ? 'oneRm' : 'reps';
+
+  const insightsProgression = useMemo(() => {
+    if (!latestOverall || setRows.length < 2) return null;
+
+    const cutoffMs = now() - INSIGHTS_TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const recent = setRows.filter((row) => row.createdAtMs >= cutoffMs);
+    const windowRows = (recent.length >= 2 ? recent : setRows.slice(-INSIGHTS_FALLBACK_SESSIONS)).filter(Boolean);
+    if (windowRows.length < 2) return null;
+
+    const first = windowRows[0];
+    const last = windowRows[windowRows.length - 1];
+    if (!first || !last) return null;
+
+    const firstValue = insightsMetric === 'oneRm' ? first.oneRm : first.reps;
+    const lastValue = insightsMetric === 'oneRm' ? last.oneRm : last.reps;
+    const delta = lastValue - firstValue;
+
+    const positive = delta > 0;
+    const negative = delta < 0;
+    const accent = positive ? COLORS.success : negative ? COLORS.warning : COLORS.actionSecondary;
+
+    const signedDelta =
+      insightsMetric === 'oneRm'
+        ? delta > 0
+          ? `+${formatWeight(delta, massUnit, language)}`
+          : formatWeight(delta, massUnit, language)
+        : delta > 0
+          ? `+${Math.round(delta)}`
+          : `${Math.round(delta)}`;
+
+    const windowText =
+      recent.length >= 2
+        ? t(language, 'progress.insight.progression.windowWeeks', { weeks: INSIGHTS_TREND_WINDOW_DAYS / 7 })
+        : t(language, 'progress.insight.progression.windowSessions', { count: windowRows.length });
+    const metricText = insightsMetric === 'oneRm' ? t(language, 'progress.insight.progression.metricOneRm') : t(language, 'reps');
+    const detailText = `${metricText} ${windowText}`;
+
+    let microcopy: string | null = null;
+    if (positive) {
+      let nonDecreasingSteps = 0;
+      for (let i = 1; i < windowRows.length; i += 1) {
+        const prev = windowRows[i - 1];
+        const curr = windowRows[i];
+        if (!prev || !curr) continue;
+        const prevV = insightsMetric === 'oneRm' ? prev.oneRm : prev.reps;
+        const currV = insightsMetric === 'oneRm' ? curr.oneRm : curr.reps;
+        if (currV >= prevV) nonDecreasingSteps += 1;
+      }
+      const looksConsistent = windowRows.length >= 4 && nonDecreasingSteps >= windowRows.length - 2;
+      microcopy = looksConsistent
+        ? t(language, 'progress.insight.feedback.greatConsistency')
+        : t(language, 'progress.insight.feedback.niceWork');
+    } else if (!negative) {
+      microcopy = windowRows.length >= 4 ? t(language, 'progress.insight.feedback.stableTrend') : null;
+    }
+
+    return {
+      accent,
+      deltaText: signedDelta,
+      detailText,
+      microcopy,
+    };
+  }, [language, latestOverall, massUnit, setRows, insightsMetric]);
+
+  const insightsNewPr = useMemo(() => {
+    if (!latestOverall || setRows.length < 2) return null;
+    const latestValue = insightsMetric === 'oneRm' ? latestOverall.oneRm : latestOverall.reps;
+    const prevBest = setRows.slice(0, -1).reduce((max, row) => {
+      const v = insightsMetric === 'oneRm' ? row.oneRm : row.reps;
+      return Math.max(max, v);
+    }, -Infinity);
+
+    if (!Number.isFinite(prevBest) || latestValue <= prevBest) return null;
+    if (insightsMetric === 'oneRm') {
+      return t(language, 'progress.insight.pr.newOneRm', {
+        value: formatWeight(latestOverall.oneRm, massUnit, language),
+        allTime: t(language, 'progress.allTime'),
+      });
+    }
+    return t(language, 'progress.insight.pr.newReps', {
+      value: latestOverall.reps,
+      reps: t(language, 'reps'),
+      allTime: t(language, 'progress.allTime'),
+    });
+  }, [insightsMetric, language, latestOverall, massUnit, setRows]);
+
+  const insightsTarget = useMemo<NextTarget | null>(() => {
+    if (!latestOverall) return null;
+
+    if (insightsMetric === 'reps') {
+      const next = bestAllReps + 1;
+      const progress = next > 0 ? Math.min(1, latestOverall.reps / next) : 0;
+      return {
+        kind: 'reps',
+        next,
+        progress,
+        diff: Math.max(0, next - latestOverall.reps),
+      };
+    }
+
+    const bestValue = bestAllOneRm;
+    const stepKg = toKg(weightStep(massUnit), massUnit);
+    const nextKg = bestValue + stepKg;
+    const current = latestOverall.oneRm;
+    const progress = nextKg > 0 ? Math.min(1, current / nextKg) : 0;
+    return {
+      kind: 'weight',
+      nextKg,
+      progress,
+      diffKg: Math.max(0, nextKg - current),
+    };
+  }, [bestAllOneRm, bestAllReps, insightsMetric, latestOverall, massUnit]);
+
+  useEffect(() => {
+    setShowTable(false);
+    setIsTrayOpen(false);
+    trayAnim.setValue(0);
+  }, [selectedExerciseId, trayAnim]);
+
+  useEffect(() => {
+    if (!selectedExerciseId) return;
+    insightsAnim.setValue(0);
+    Animated.timing(insightsAnim, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [insightsAnim, selectedExerciseId]);
+
   const animateNext = () => {
     if (Platform.OS !== 'web') {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     }
   };
+
+  const controlsSummaryText = `${t(language, 'progress.controls.showing')} ${t(
+    language,
+    RANGE_LONG_LABEL_KEY[timeRange]
+  )} · ${formatMetricLabel(language, metric)}`;
+
+  const trayRangeOptions: TimeRange[] = ['7d', '14d', '30d', '90d', 'all'];
+  const trayResolutionOptions: Aggregation[] = ['auto', 'day', 'week', 'month', 'year'];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1221,30 +1452,6 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>{t(language, 'muscleGroups')}</Text>
-          <View style={styles.modeButtons}>
-            <IconModeButton
-              label={blockLabel('cardio', language)}
-              icon={BLOCK_ICONS.cardio}
-              accent={getBlockTone('cardio').accent}
-              selected={selectedBlockId === 'cardio'}
-              onPress={() => {
-                animateNext();
-                setSelectedBlockId('cardio');
-                setSelectedExerciseId(null);
-              }}
-            />
-            <IconModeButton
-              label={blockLabel('bodyweight', language)}
-              icon={BLOCK_ICONS.bodyweight}
-              accent={getBlockTone('bodyweight').accent}
-              selected={selectedBlockId === 'bodyweight'}
-              onPress={() => {
-                animateNext();
-                setSelectedBlockId('bodyweight');
-                setSelectedExerciseId(null);
-              }}
-            />
-          </View>
         </View>
         <FlatList
           data={primaryBlocks}
@@ -1257,7 +1464,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
             const selected = item.id === selectedBlockId;
             const tone = getBlockTone(item.id);
             const dotColor = getDotColor(item.id);
-            const icon = BLOCK_ICONS[item.id as TrainingBlockId];
+            const icon = BLOCK_ICON_SOURCES[item.id as TrainingBlockId];
             return (
               <View
                 style={[
@@ -1286,34 +1493,474 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
         {exercises.length === 0 ? (
           <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
         ) : (
-          <View style={styles.tileRow}>
-            {exercises.map((ex) => {
-              const selected = ex.id === selectedExerciseId;
-              const subtitle = exerciseSummaries.get(ex.id);
-              return (
-                <SelectableTile
-                  key={ex.id}
-                  label={formatExerciseLabel(ex)}
-                  subtitle={subtitle}
-                  accent={selectedBlockTone.accent}
-                  selected={selected}
-                  variant="secondary"
-                  onPress={() => {
-                    animateNext();
-                    setSelectedExerciseId(ex.id);
-                  }}
-                />
-              );
-            })}
-          </View>
+          <>
+            <View style={styles.tileRow}>
+              {exercises.map((ex, index) => {
+                const selected = ex.id === selectedExerciseId;
+                const subtitle = exerciseSummaries.get(ex.id);
+                return (
+                  <React.Fragment key={ex.id}>
+                    <SelectableTile
+                      label={formatExerciseLabel(ex)}
+                      subtitle={subtitle}
+                      accent={selectedBlockTone.accent}
+                      selected={selected}
+                      variant="secondary"
+                      onPress={() => {
+                        animateNext();
+                        setSelectedExerciseId((prev) => (prev === ex.id ? null : ex.id));
+                      }}
+                    />
+
+                    {insightsInsertAfterIndex === index ? (
+                      <Animated.View
+                        style={[
+                          styles.insightsWrap,
+                          {
+                            opacity: insightsAnim,
+                            transform: [
+                              {
+                                translateY: insightsAnim.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [10, 0],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      >
+                        <View style={styles.progressCard}>
+                          <View style={styles.progressHeader}>
+                            <Text style={styles.progressTitle}>{t(language, 'progress.insight.title')}</Text>
+                          </View>
+                          <Text style={styles.insightsSubtitle}>{t(language, 'progress.insight.subtitle')}</Text>
+
+                          {latestOverall ? (
+                            <>
+                              {selectedExercise ? (
+                                (() => {
+                                  const split = splitLabelParentheses(formatExerciseLabel(selectedExercise));
+                                  return (
+                                    <View style={styles.insightsSelectedExercise}>
+                                      <Text style={styles.insightsSelectedExerciseMain} numberOfLines={1}>
+                                        {split.main}
+                                      </Text>
+                                      {split.parentheses ? (
+                                        <Text style={styles.insightsSelectedExerciseParen} numberOfLines={1}>
+                                          {split.parentheses}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                  );
+                                })()
+                              ) : null}
+
+                              {insightsProgression ? (
+                                <View style={styles.insightsProgression}>
+                                  <Text style={styles.insightsProgressionHeadline}>
+                                    <Text style={[styles.insightsProgressionDelta, { color: insightsProgression.accent }]}>
+                                      {insightsProgression.deltaText}
+                                    </Text>
+                                    <Text style={styles.insightsProgressionDetail}> {insightsProgression.detailText}</Text>
+                                  </Text>
+                                  {insightsProgression.microcopy ? (
+                                    <Text style={[styles.insightsMicrocopy, { color: insightsProgression.accent }]}>
+                                      {insightsProgression.microcopy}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              ) : (
+                                <Text style={styles.insightsEmpty}>{t(language, 'progress.insight.empty')}</Text>
+                              )}
+
+                              <View style={styles.insightsRow}>
+                                <Text style={styles.insightsLabel}>{t(language, 'progress.insight.lastSession')}</Text>
+                                <Text style={styles.insightsValue} numberOfLines={2}>
+                                  {latestOverall.setLabel} — {latestOverall.dateTimeLabel}
+                                </Text>
+                              </View>
+
+                              {insightsNewPr ? (
+                                <View style={styles.insightsRow}>
+                                  <Text style={styles.insightsLabel}>{t(language, 'progress.pr')}</Text>
+                                  <Text style={styles.insightsValue} numberOfLines={2}>
+                                    {insightsNewPr}
+                                  </Text>
+                                </View>
+                              ) : null}
+
+                              {insightsTarget ? (
+                                <View style={styles.targetCard}>
+                                  <View style={styles.targetRow}>
+                                    <Text style={styles.targetLabel}>{t(language, 'progress.insight.nextGoal')}</Text>
+                                    <Text style={[styles.targetValue, { color: selectedBlockTone.accent }]} numberOfLines={1}>
+                                      {insightsTarget.kind === 'weight'
+                                        ? formatWeight(insightsTarget.nextKg, massUnit, language)
+                                        : `${insightsTarget.next} ${t(language, 'reps')}`}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.progressTrack}>
+                                    <View
+                                      style={[
+                                        styles.progressFill,
+                                        {
+                                          width: `${Math.round(insightsTarget.progress * 100)}%`,
+                                          backgroundColor: selectedBlockTone.accent,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                  <Text style={styles.targetHint}>
+                                    {(() => {
+                                      const diffLabel =
+                                        insightsTarget.kind === 'weight'
+                                          ? formatWeight(insightsTarget.diffKg, massUnit, language)
+                                          : `${insightsTarget.diff} ${t(language, 'reps')}`;
+                                      return t(language, 'progress.insight.onlyXToGo', { diff: diffLabel });
+                                    })()}
+                                  </Text>
+                                </View>
+                              ) : null}
+
+                              <View style={styles.insightsDivider} />
+
+                              <TouchableOpacity
+                                onPress={() => {
+                                  animateNext();
+                                  const next = !isTrayOpen;
+                                  setIsTrayOpen(next);
+                                  Animated.timing(trayAnim, {
+                                    toValue: next ? 1 : 0,
+                                    duration: 180,
+                                    useNativeDriver: false,
+                                  }).start();
+                                }}
+                                activeOpacity={0.85}
+                                style={styles.controlsSummary}
+                                accessibilityRole="button"
+                                accessibilityLabel={t(language, isTrayOpen ? 'progress.controls.close' : 'progress.controls.open')}
+                              >
+                                <Text style={styles.controlsSummaryText} numberOfLines={1}>
+                                  {controlsSummaryText}
+                                </Text>
+                                <Text style={styles.controlsSummaryChevron}>{isTrayOpen ? '▴' : '▾'}</Text>
+                              </TouchableOpacity>
+
+                              <Animated.View
+                                pointerEvents={isTrayOpen ? 'auto' : 'none'}
+                                style={[
+                                  styles.controlTray,
+                                  {
+                                    maxHeight: trayAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 520] }),
+                                    opacity: trayAnim,
+                                    marginTop: trayAnim.interpolate({ inputRange: [0, 1], outputRange: [0, SPACING.sm] }),
+                                    transform: [
+                                      {
+                                        translateY: trayAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }),
+                                      },
+                                    ],
+                                  },
+                                ]}
+                              >
+                                <Text style={styles.controlTrayLabel}>{t(language, 'progress.controls.quickRanges')}</Text>
+                                <View style={styles.segment}>
+                                  {trayRangeOptions.map((r) => {
+                                    const selectedRange = r === timeRange;
+                                    return (
+                                      <TouchableOpacity
+                                        key={r}
+                                        onPress={() => {
+                                          animateNext();
+                                          setTimeRange(r);
+                                        }}
+                                        activeOpacity={0.9}
+                                        style={[styles.segmentButton, selectedRange ? styles.segmentButtonSelected : null]}
+                                      >
+                                        <Text style={[styles.segmentText, selectedRange ? styles.segmentTextSelected : null]}>
+                                          {t(language, RANGE_LABEL_KEY[r])}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+
+                                <Text style={styles.controlTrayLabel}>{t(language, 'progress.controls.metric')}</Text>
+                                <View style={styles.segment}>
+                                  {metricOptions.map((opt) => {
+                                    const selectedMetric = metric === opt.key;
+                                    return (
+                                      <TouchableOpacity
+                                        key={opt.key}
+                                        onPress={() => {
+                                          animateNext();
+                                          setMetric(opt.key);
+                                        }}
+                                        activeOpacity={0.9}
+                                        style={[styles.segmentButton, selectedMetric ? styles.segmentButtonSelected : null]}
+                                      >
+                                        <Text style={[styles.segmentText, selectedMetric ? styles.segmentTextSelected : null]}>
+                                          {opt.label}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+
+                                <Text style={styles.controlTrayLabel}>{t(language, 'progress.controls.resolution')}</Text>
+                                <View style={styles.segment}>
+                                  {trayResolutionOptions.map((agg) => {
+                                    const selectedAgg = agg === aggregation;
+                                    return (
+                                      <TouchableOpacity
+                                        key={agg}
+                                        onPress={() => {
+                                          animateNext();
+                                          setAggregation(agg);
+                                        }}
+                                        activeOpacity={0.9}
+                                        style={[styles.segmentButton, selectedAgg ? styles.segmentButtonSelected : null]}
+                                      >
+                                        <Text style={[styles.segmentText, selectedAgg ? styles.segmentTextSelected : null]}>
+                                          {t(language, AGGREGATION_LABEL_KEY[agg])}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+
+                                <Text style={styles.controlTrayLabel}>{t(language, 'progress.controls.view')}</Text>
+                                <View style={styles.chartControls}>
+                                  <TouchableOpacity onPress={handleZoomOut} activeOpacity={0.85} style={styles.chartControlButton}>
+                                    <Text style={styles.chartControlText}>-</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={handleZoomIn} activeOpacity={0.85} style={styles.chartControlButton}>
+                                    <Text style={styles.chartControlText}>+</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={handleResetZoom}
+                                    activeOpacity={0.85}
+                                    style={[styles.chartResetButton, isFullRange ? styles.chartResetButtonDisabled : null]}
+                                    disabled={isFullRange}
+                                  >
+                                    <Text style={[styles.chartResetText, isFullRange ? styles.chartResetTextDisabled : null]}>
+                                      {t(language, 'progress.reset')}
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </Animated.View>
+
+                              {rowsChart.length === 0 ? (
+                                <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
+                              ) : (
+                                <>
+                                  <View ref={chartContainerRef} style={styles.chart} onLayout={registerChartBlocker}>
+                                    <View style={styles.chartRow}>
+                                      <View style={styles.chartYAxis}>
+                                        {chartAxis.ticks.map((tick) => {
+                                          const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
+                                          return (
+                                            <Text key={`y-${tick}`} style={[styles.chartYAxisLabel, { top: y - 7 }]}>
+                                              {formatChartTick(language, tick, metric, massUnit, volumeUsesWeight)}
+                                            </Text>
+                                          );
+                                        })}
+                                      </View>
+
+                                      <View
+                                        style={styles.chartPlot}
+                                        onLayout={(e) => {
+                                          const w = Math.round(e.nativeEvent.layout.width);
+                                          setChartWidth((prev) => (prev === w ? prev : w));
+                                        }}
+                                        {...chartWheelProps}
+                                        {...panResponder.panHandlers}
+                                      >
+                                        {chartAxis.ticks.map((tick) => {
+                                          const y = yForChartValue(tick, chartAxis.min, chartAxis.max);
+                                          const isBaseline = tick === chartAxis.min;
+                                          return (
+                                            <View
+                                              key={`g-${tick}`}
+                                              style={[styles.chartGridLine, { top: y, opacity: isBaseline ? 0.22 : 0.12 }]}
+                                            />
+                                          );
+                                        })}
+
+                                        {chartPoints.map((p, idx) => {
+                                          if (idx === 0) return null;
+                                          const prev = chartPoints[idx - 1];
+                                          if (!prev) return null;
+                                          const dx = p.x - prev.x;
+                                          const dy = p.y - prev.y;
+                                          const length = Math.sqrt(dx * dx + dy * dy);
+                                          const angle = Math.atan2(dy, dx);
+                                          const midX = (prev.x + p.x) / 2;
+                                          const midY = (prev.y + p.y) / 2;
+                                          const isInRange = p.x >= 0 && p.x <= chartWidth;
+                                          if (!isInRange) return null;
+
+                                          return (
+                                            <View
+                                              key={`l-${p.id}`}
+                                              style={[
+                                                styles.chartLine,
+                                                {
+                                                  left: midX - length / 2,
+                                                  top: midY - CHART_LINE_THICKNESS / 2,
+                                                  width: length,
+                                                  height: CHART_LINE_THICKNESS,
+                                                  backgroundColor: selectedBlockTone.accent,
+                                                  transform: [{ rotateZ: `${angle}rad` }],
+                                                  opacity: 0.9,
+                                                },
+                                              ]}
+                                            />
+                                          );
+                                        })}
+
+                                        {chartPoints.map((p) => {
+                                          const isLatest = p.id === latestChartPointId;
+                                          const isSelected = p.id === selectedPointId;
+                                          const isBest = p.id === bestChartPointId;
+                                          const borderColor = isSelected
+                                            ? '#F9FAFB'
+                                            : isBest
+                                              ? COLORS.success
+                                              : selectedBlockTone.accent;
+                                          const fillColor = isSelected ? '#F9FAFB' : isLatest ? selectedBlockTone.accent : '#0B1220';
+                                          return (
+                                            <Pressable
+                                              key={`p-${p.id}`}
+                                              onPress={() => setSelectedPointId(p.id)}
+                                              hitSlop={8}
+                                              style={[
+                                                styles.chartPoint,
+                                                {
+                                                  left: p.x - CHART_POINT_SIZE / 2,
+                                                  top: p.y - CHART_POINT_SIZE / 2,
+                                                  borderColor,
+                                                  backgroundColor: fillColor,
+                                                  opacity: isLatest ? 1 : 0.9,
+                                                },
+                                              ]}
+                                            />
+                                          );
+                                        })}
+
+                                        {selectedChartPoint && chartTooltipStyle ? (
+                                          <View style={[styles.chartTooltip, chartTooltipStyle]} pointerEvents="none">
+                                            {selectedExercise ? (
+                                              <Text style={styles.chartTooltipTitle} numberOfLines={1}>
+                                                {formatExerciseLabel(selectedExercise)}
+                                              </Text>
+                                            ) : null}
+                                            <Text style={styles.chartTooltipValue} numberOfLines={1}>
+                                              {chartMetricLabel}:{' '}
+                                              {formatMetricValue(
+                                                metricValueChart(selectedChartPoint.row, metric),
+                                                metric,
+                                                massUnit,
+                                                language,
+                                                volumeUsesWeight
+                                              )}
+                                            </Text>
+                                            {selectedChartPoint.row.bestSet?.setLabel ? (
+                                              <Text style={styles.chartTooltipDetail} numberOfLines={1}>
+                                                {selectedChartPoint.row.bestSet.setLabel}
+                                              </Text>
+                                            ) : null}
+                                            <Text style={styles.chartTooltipLabel} numberOfLines={1}>
+                                              {selectedChartPoint.row.bestSet?.dateTimeLabel ?? selectedChartPoint.row.dateLabel}
+                                            </Text>
+                                          </View>
+                                        ) : null}
+
+                                        <Text style={styles.chartUnit} numberOfLines={1}>
+                                          {chartUnitLabel}
+                                        </Text>
+                                      </View>
+                                    </View>
+
+                                    <View style={styles.chartXAxis}>
+                                      <Text style={styles.chartXAxisLabel}>{chartStartLabel}</Text>
+                                      <Text style={styles.chartXAxisLabel}>{chartEndLabel}</Text>
+                                    </View>
+                                  </View>
+
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      animateNext();
+                                      setShowTable((prev) => !prev);
+                                    }}
+                                    activeOpacity={0.85}
+                                    style={styles.tableToggle}
+                                  >
+                                    <Text style={styles.tableToggleText}>
+                                      {t(language, showTable ? 'progress.chart.hideTable' : 'progress.chart.showTable')}
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  {showTable ? (
+                                    <View style={styles.table}>
+                                      <View style={[styles.row, styles.headerRow]}>
+                                        <Text style={[styles.cell, styles.cellDate]}>{t(language, 'date')}</Text>
+                                        <Text style={[styles.cell, styles.cellMetric]}>{chartMetricLabel}</Text>
+                                      </View>
+
+                                      {[...rowsChart].reverse().map((r) => {
+                                        const isLatest = latestVisible?.id === r.id;
+                                        const rowIsBest = bestVisible?.id === r.id;
+                                        return (
+                                          <View
+                                            key={r.id}
+                                            style={[
+                                              styles.row,
+                                              isLatest ? { backgroundColor: selectedBlockTone.soft } : null,
+                                              rowIsBest ? { backgroundColor: 'rgba(34, 197, 94, 0.08)' } : null,
+                                            ]}
+                                          >
+                                            <Text style={[styles.cell, styles.cellDate]}>{r.dateLabel}</Text>
+                                            <Text style={[styles.cell, styles.cellMetric]}>
+                                              {formatMetricValue(
+                                                metricValueChart(r, metric),
+                                                metric,
+                                                massUnit,
+                                                language,
+                                                volumeUsesWeight
+                                              )}
+                                            </Text>
+                                          </View>
+                                        );
+                                      })}
+                                    </View>
+                                  ) : null}
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <Text style={styles.emptyText}>{t(language, 'analysis.empty')}</Text>
+                          )}
+                        </View>
+                      </Animated.View>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
+            </View>
+
+            {!selectedExercise ? (
+              <Text style={styles.chooseExerciseHint}>{t(language, 'chooseExerciseToSee')}</Text>
+            ) : null}
+          </>
         )}
 
+        {/*
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressTitle}>{t(language, 'development')}</Text>
           </View>
 
-          {selectedExercise && latestOverall ? (
+          {latestOverall ? (
             <>
               <Text style={[styles.progressSubtitle, { color: selectedBlockTone.accent }]} numberOfLines={1}>
                 {formatExerciseLabel(selectedExercise)}
@@ -1655,9 +2302,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
               )}
             </>
           ) : (
-            <Text style={styles.emptyText}>{t(language, 'chooseExerciseToSee')}</Text>
+            <Text style={styles.emptyText}>{t(language, 'analysis.empty')}</Text>
           )}
         </View>
+        */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -1766,13 +2414,13 @@ const styles = StyleSheet.create({
   },
   groupTileWrap: {
     flex: 1,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   groupTileWrapRight: {
     marginLeft: SPACING.sm,
   },
   groupTile: {
-    minHeight: 78,
+    minHeight: 66,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.2)',
@@ -1780,7 +2428,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     gap: SPACING.sm,
     shadowColor: '#0B1220',
     shadowOpacity: 0.3,
@@ -1789,7 +2437,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   groupTileSelected: {
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.34,
     elevation: 4,
   },
   groupTileDot: {
@@ -1808,8 +2456,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   groupTileIconWrap: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1818,12 +2466,9 @@ const styles = StyleSheet.create({
     borderColor: '#1F2937',
     backgroundColor: '#0F172A',
   },
-  groupTileIconWrapSelected: {
-    borderColor: '#1D4ED8',
-  },
   groupTileIcon: {
-    width: 22,
-    height: 22,
+    width: 30,
+    height: 30,
   },
   groupTileFallbackDot: {
     width: 10,
@@ -1856,11 +2501,18 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   tileSelected: {
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.22,
     elevation: 4,
   },
   tileSecondary: {
     minHeight: 72,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   tilePressed: {
     opacity: 0.9,
@@ -1880,14 +2532,27 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  tileLabelColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
   tileLabel: {
     color: '#E2E8F0',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
   tileLabelSecondary: {
-    color: '#CBD5F5',
-    fontWeight: '600',
+    color: COLORS.textNavyPrimary,
+    fontWeight: '700',
+  },
+  tileLabelSecondaryMain: {
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  tileLabelSecondaryParen: {
+    fontSize: TEXT.xs,
+    fontWeight: '700',
   },
   tileLabelSelected: {
     color: '#F8FAFC',
@@ -1898,7 +2563,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tileSubtitleSecondary: {
-    color: '#8FA3C5',
+    color: COLORS.textSecondaryGray,
   },
   tileSubtitleSelected: {
     color: '#CBD5F5',
@@ -1910,12 +2575,24 @@ const styles = StyleSheet.create({
     width: 14,
     textAlign: 'right',
   },
+  tileChevronSecondary: {
+    color: COLORS.textSecondaryGray,
+  },
   emptyText: {
     color: '#9CA3AF',
     fontSize: TEXT.sm,
   },
+  chooseExerciseHint: {
+    marginTop: SPACING.md,
+    color: '#9CA3AF',
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  insightsWrap: {
+    flexBasis: '100%',
+    margin: SPACING.xs,
+  },
   progressCard: {
-    marginTop: SPACING.xxl,
     backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
@@ -1938,11 +2615,123 @@ const styles = StyleSheet.create({
     fontSize: TEXT.lg,
     fontWeight: '800',
   },
+  insightsSubtitle: {
+    marginTop: 4,
+    marginBottom: SPACING.md,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
   progressSubtitle: {
     color: '#9CA3AF',
     marginBottom: SPACING.sm,
     fontSize: TEXT.sm,
     fontWeight: '700',
+  },
+  insightsSelectedExercise: {
+    marginTop: 2,
+    marginBottom: SPACING.sm,
+    gap: 2,
+  },
+  insightsSelectedExerciseMain: {
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  insightsSelectedExerciseParen: {
+    color: COLORS.textSecondaryGray,
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  insightsProgression: {
+    marginBottom: SPACING.md,
+  },
+  insightsProgressionHeadline: {
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '900',
+    lineHeight: TEXT.md + 4,
+  },
+  insightsProgressionDelta: {
+    fontSize: TEXT.md,
+    fontWeight: '900',
+  },
+  insightsProgressionDetail: {
+    color: '#E2E8F0',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  insightsMicrocopy: {
+    marginTop: 4,
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  insightsEmpty: {
+    marginBottom: SPACING.md,
+    color: '#94A3B8',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  insightsRow: {
+    marginTop: SPACING.sm,
+    gap: 6,
+  },
+  insightsLabel: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  insightsValue: {
+    color: '#F9FAFB',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  insightsDivider: {
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.lg,
+    height: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+  },
+  controlsSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.14)',
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+  },
+  controlsSummaryText: {
+    flex: 1,
+    minWidth: 0,
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  controlsSummaryChevron: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '900',
+  },
+  controlTray: {
+    overflow: 'hidden',
+    backgroundColor: '#111827',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.12)',
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  controlTrayLabel: {
+    color: '#94A3B8',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   kpiGrid: {
     flexDirection: 'row',
@@ -2184,7 +2973,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: '#111827',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   chartLine: {
     position: 'absolute',
@@ -2195,7 +2984,7 @@ const styles = StyleSheet.create({
     width: CHART_POINT_SIZE,
     height: CHART_POINT_SIZE,
     borderRadius: CHART_POINT_SIZE / 2,
-    borderWidth: 2,
+    borderWidth: 1,
   },
   chartUnit: {
     position: 'absolute',
@@ -2252,6 +3041,19 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     borderTopWidth: 1,
     borderTopColor: '#1F2937',
+  },
+  tableToggle: {
+    marginTop: SPACING.sm,
+    alignSelf: 'flex-start',
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+  },
+  tableToggleText: {
+    color: '#CBD5F5',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
   },
   row: {
     flexDirection: 'row',

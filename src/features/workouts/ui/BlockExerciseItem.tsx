@@ -29,6 +29,7 @@ export const BlockExerciseItem: React.FC<Props> = ({
       onLongPress={onLongPress}
       onPressMenu={onPressMenu}
       moving={isMoving}
+      variant="light"
     />
   );
 };

@@ -19,9 +19,17 @@ import type { AppState, TrainingBlockId } from '../features/workouts';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, type GroupedDailySetView } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { formatRelativeDayLabel, formatWeekday, formatDate } from '../shared/utils/dateLabels';
-import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
+import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatWeight, type MassUnit } from '../shared/utils/units';
+
+function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
+  const idx = label.indexOf('(');
+  if (idx <= 0) return { main: label, parentheses: null };
+  const main = label.slice(0, idx).trimEnd();
+  const parentheses = label.slice(idx).trim();
+  return parentheses.startsWith('(') && parentheses.length > 0 ? { main, parentheses } : { main: label, parentheses: null };
+}
 
 type Props = {
   appState: AppState;
@@ -157,7 +165,7 @@ function formatSetParts(
 ): Array<{
   weightValue: string;
   weightUnit: string;
-  repsText: string | null;
+  repsValue: string | null;
   index: number;
 }> {
   const lang = language ?? 'en';
@@ -180,7 +188,7 @@ function formatSetParts(
             ? 'BW'
             : weightValue,
       weightUnit: s.setType === 'cardio' ? '' : s.isBodyweight ? '' : weightUnit,
-      repsText: s.setType === 'cardio' ? null : `${s.reps}r`,
+      repsValue: s.setType === 'cardio' ? null : `${s.reps}`,
       index: idx + 1,
     };
   });
@@ -556,7 +564,21 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                                   <View style={styles.exerciseTitleColumn}>
                                     <View style={styles.exerciseTitleRow}>
                                       <View style={[styles.exerciseDot, { backgroundColor: dotColor }]} />
-                                      <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                                      {(() => {
+                                        const label = group.exerciseLabel;
+                                        const split = splitLabelParentheses(label);
+                                        return split.parentheses ? (
+                                          <Text style={styles.exerciseName} numberOfLines={2}>
+                                            <Text style={styles.exerciseNameMain}>{split.main}</Text>
+                                            {'\n'}
+                                            <Text style={styles.exerciseNameParen}>{split.parentheses}</Text>
+                                          </Text>
+                                        ) : (
+                                          <Text style={styles.exerciseName} numberOfLines={1}>
+                                            {label}
+                                          </Text>
+                                        );
+                                      })()}
                                     </View>
                                     <View style={[styles.exerciseDivider, { backgroundColor: dotColor }]} />
                                   </View>
@@ -564,23 +586,29 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                                     Sett: {group.sets.length} {isExerciseCollapsed ? '>' : 'v'}
                                   </Text>
                                 </TouchableOpacity>
-                                {!isExerciseCollapsed && (
-                                  <View style={styles.setList}>
-                                    {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
-                                      <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
-                                        <Text style={styles.indexText}>[{line.index}] </Text>
-                                        <Text style={styles.goldText}>{line.weightValue}</Text>
-                                        {line.weightUnit ? <Text style={styles.whiteText}>{line.weightUnit}</Text> : null}
-                                        {line.repsText ? (
-                                          <>
-                                            <Text style={styles.mutedText}> x </Text>
-                                            <Text style={styles.goldText}>{line.repsText}</Text>
-                                          </>
-                                        ) : null}
-                                      </Text>
-                                    ))}
-                                  </View>
-                                )}
+                                    {!isExerciseCollapsed && (
+                                      <View style={styles.setList}>
+                                        {formatSetParts(language, massUnit, group.sets).map((line, idx) => (
+                                          <Text key={`${group.id}-set-${idx}`} style={styles.groupDetail}>
+                                            <Text style={styles.indexText}>[{line.index}] </Text>
+                                            <Text style={styles.setValueText}>{line.weightValue}</Text>
+                                            {line.weightUnit ? (
+                                              <>
+                                                <Text style={styles.setUnitText}> </Text>
+                                                <Text style={styles.setUnitText}>{line.weightUnit}</Text>
+                                              </>
+                                            ) : null}
+                                            {line.repsValue ? (
+                                              <>
+                                                <Text style={styles.setUnitText}> x </Text>
+                                                <Text style={styles.setValueText}>{line.repsValue}</Text>
+                                                <Text style={styles.setUnitText}> reps</Text>
+                                              </>
+                                            ) : null}
+                                          </Text>
+                                        ))}
+                                      </View>
+                                    )}
                               </View>
                               <Text style={styles.groupTime}>{group.time}</Text>
                             </View>
@@ -805,7 +833,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerTitle: {
-    color: '#3B82F6',
+    color: '#F9FAFB',
     fontSize: TEXT.xl,
     fontWeight: '700',
     marginLeft: SPACING.sm,
@@ -1185,6 +1213,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.15,
   },
+  exerciseNameMain: {
+    color: '#F9FAFB',
+  },
+  exerciseNameParen: {
+    color: COLORS.textSecondaryGray,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
   exerciseSummary: {
     color: 'rgba(148,163,184,0.75)',
     fontSize: 11,
@@ -1219,6 +1256,16 @@ const styles = StyleSheet.create({
   },
   whiteText: {
     color: '#9CA3AF',
+    fontWeight: '700',
+    fontSize: TEXT.xs,
+  },
+  setValueText: {
+    color: '#F9FAFB',
+    fontWeight: '800',
+    fontSize: TEXT.xs,
+  },
+  setUnitText: {
+    color: COLORS.textSecondaryGray,
     fontWeight: '700',
     fontSize: TEXT.xs,
   },

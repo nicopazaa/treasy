@@ -49,6 +49,13 @@ export const COLORS = {
   blue5: '#1B5FCC',
   blue6: '#13479B',
 
+  treasyNavy: '#020617',
+  surfaceWhite: '#FFFFFF',
+  surfaceCardLight: '#EEF2F7',
+  // Intended for text on white exercise surfaces (should read as "navy", not pure black).
+  textNavyPrimary: '#123B66',
+  textSecondaryGray: '#64748B',
+
   success: PALETTE.GREEN_POSITIVE,
   warning: PALETTE.ORANGE_SOFT,
   neutral: '#94A3B8',

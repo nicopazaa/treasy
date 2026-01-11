@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
 import type { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetadataInput } from '../features/workouts';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
+import { BlockScreenHeader } from '../shared/ui/BlockScreenHeader';
 import { UndoToast } from '../shared/ui/UndoToast';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
@@ -24,6 +25,7 @@ import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { BlockExerciseItem } from '../features/workouts/ui/BlockExerciseItem';
 import { BlockExerciseList } from '../features/workouts/ui/BlockExerciseList';
 import { formatWeight, type MassUnit } from '../shared/utils/units';
+import { BLOCK_ICON_SOURCES } from '../shared/ui/blockIcons';
 
 interface Props {
   language: AppLanguage;
@@ -91,6 +93,11 @@ export const BlockScreen: React.FC<Props> = ({
       ? blockLabel(id, language)
       : block.name;
   }, [block.id, block.name, language]);
+
+  const blockIconSource = useMemo(() => {
+    const id = block.id as TrainingBlockId;
+    return MUSCLE_GROUP_ORDER.includes(id) ? BLOCK_ICON_SOURCES[id] : null;
+  }, [block.id]);
 
   const parseTags = (raw: string): string[] =>
     raw
@@ -266,8 +273,11 @@ export const BlockScreen: React.FC<Props> = ({
           <Text style={styles.back}>{t(language, 'back')}</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.title, { color: tone.accent }]}>{blockTitle}</Text>
-        <Text style={styles.subtitle}>{t(language, 'exercisesInBlock')}</Text>
+        <BlockScreenHeader
+          title={blockTitle}
+          subtitle={t(language, 'exercisesInBlock')}
+          iconSource={blockIconSource}
+        />
 
         {movingExercise ? (
           <View style={[styles.moveBanner, { borderColor: tone.accent }]}>
@@ -436,7 +446,7 @@ export const BlockScreen: React.FC<Props> = ({
             <TextInput
               style={styles.input}
               placeholder={t(language, 'exerciseName')}
-              placeholderTextColor="#4B5563"
+              placeholderTextColor={COLORS.textSecondaryGray}
               value={exerciseName}
               onChangeText={setExerciseName}
               autoFocus
@@ -445,22 +455,22 @@ export const BlockScreen: React.FC<Props> = ({
               onSubmitEditing={handleConfirm}
             />
 
-            <Text style={styles.inputLabel}>{t(language, 'exerciseShortCode')}</Text>
+            <Text style={[styles.inputLabel, styles.inputLabelOptional]}>{t(language, 'exerciseShortCode')}</Text>
             <TextInput
               style={styles.input}
               placeholder={t(language, 'exerciseShortCodePlaceholder')}
-              placeholderTextColor="#4B5563"
+              placeholderTextColor={COLORS.textSecondaryGray}
               value={exerciseShort}
               onChangeText={setExerciseShort}
               autoCapitalize="characters"
               returnKeyType="next"
             />
 
-            <Text style={styles.inputLabel}>{t(language, 'exerciseTags')}</Text>
+            <Text style={[styles.inputLabel, styles.inputLabelOptional]}>{t(language, 'exerciseTags')}</Text>
             <TextInput
               style={styles.input}
               placeholder={t(language, 'exerciseTagsPlaceholder')}
-              placeholderTextColor="#4B5563"
+              placeholderTextColor={COLORS.textSecondaryGray}
               value={exerciseTags}
               onChangeText={setExerciseTags}
               autoCapitalize="characters"
@@ -566,6 +576,8 @@ const styles = StyleSheet.create({
   },
   stickyButton: {
     marginVertical: 0,
+    backgroundColor: COLORS.blue6,
+    borderRadius: RADIUS.lg,
   },
   sheetBackdrop: {
     flex: 1,
@@ -652,18 +664,21 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
     marginBottom: SPACING.xs,
   },
+  inputLabelOptional: {
+    color: COLORS.textSecondaryGray,
+  },
   input: {
-    backgroundColor: '#0B1220',
+    backgroundColor: COLORS.surfaceWhite,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: 'rgba(2, 6, 23, 0.12)',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
-    color: '#F9FAFB',
+    color: COLORS.textNavyPrimary,
     fontSize: TEXT.md,
   },
   inputHint: {
-    color: '#6B7280',
+    color: COLORS.textSecondaryGray,
     fontSize: TEXT.xs,
     marginTop: SPACING.xs,
     marginBottom: SPACING.sm,

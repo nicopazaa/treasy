@@ -1,27 +1,35 @@
 # Decisions (ADR-lite)
 
-Use this file to record lightweight, append-only decisions. Keep entries short and link to relevant code/PRs when possible.
+Append-only, short entries. Prefer clarity over completeness. Link to code paths/PRs/commits when possible.
+
+---
 
 ## Template
 
-### Date
-YYYY-MM-DD
+### ID + Date
+DEC-XXX — YYYY-MM-DD
 
-### Decision
+### Status
+Accepted | Superseded (by DEC-YYY)
+
+### Decision (one-liner)
 One sentence describing the decision.
 
-### Context
-- What problem are we solving?
-- Constraints (product, tech, time).
-- Relevant files/areas.
+### Context (3 bullets max)
+- Problem:
+- Constraints:
+- Affected areas (paths):
 
-### Options Considered
-1) Option A
-2) Option B
-3) Option C (optional)
+### Options (optional)
+- A) ...
+- B) ...
+- C) ... (optional)
 
 ### Consequences
-- Positive outcomes
-- Tradeoffs / risks
-- Follow-ups (if any)
+- ✅ Benefits:
+- ⚠️ Tradeoffs/risks:
+- 🔜 Follow-ups:
 
+### Links
+- Code: `path/to/file.ts`
+- PR/commit: (if available)

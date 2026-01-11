@@ -1,48 +1,39 @@
 # Treasy architecture (high-level)
 
-## Layers
-- `src/app/`: composition root (state wiring, navigation, orchestration).
-- `src/domain/`: pure, deterministic business logic (no UI, no storage).
-- `src/features/`: feature modules (UI + integration around domain logic).
-- `src/shared/`: cross-cutting utilities and primitives.
+## Layering
+- `App.tsx`: composition root (fonts, store, navigation, screen selection).
+- `src/app/`: app wiring (state hydration/persistence, navigation, orchestration/actions).
+- `src/screens/`: screen components rendered by `App.tsx`.
+- `src/domain/`: pure/deterministic logic (workouts, parsing, analytics).
+- `src/features/`: feature modules built on domain logic.
+- `src/shared/`: cross-cutting primitives (theme tokens, i18n, utilities, UI components).
 
-## AppState invariants
-- `AppState` is treated as immutable: never mutate in place; always return new objects/arrays.
-- Entity references are ID-based:
-  - `SetEntry.exerciseId` and `CardioEntry.exerciseId` reference `Exercise.id`.
-  - `Exercise.blockId` references `TrainingBlock.id` (string).
-- Timestamps:
-  - `createdAt` fields are stored as ISO strings.
-  - “day keys” used for grouping are derived deterministically from timestamps.
+## AppState model
+- Defined in `src/domain/workouts/types.ts`.
+- Treated as immutable across the app (copy-on-write updates; no in-place mutation).
+- Core entities:
+  - `TrainingBlock`, `Exercise`, `SetEntry`, `CardioEntry`, plus `logs`/`notes`.
 
-## Persistence guarantees
-- Local-first: the full `AppState` is persisted to `AsyncStorage` under a stable key (`treasy_app_state_v2`).
-- Loading is defensive and normalizing:
-  - Missing/defaulted fields are filled deterministically (e.g. blocks, `userId`, `language`, `massUnit`).
-  - Exercises are normalized (aliases default, canonical name computed, system/custom inference preserved).
-- Saving is best-effort:
-  - Debounced saves reduce write frequency; critical updates may flush immediately.
-  - No persistence format changes are allowed without an explicit migration.
+## State + persistence wiring
+- Hydration: `src/app/state/useAppStore.ts` loads state via `loadAppState()` (`src/features/workouts/data/storage.ts`) and applies light normalization.
+- Persistence: `src/app/state/persist.ts` provides debounced saves (`scheduleSave`) and immediate saves (`saveNow`); `useAppStore` flushes pending saves on app background/unload.
+- Orchestration: `src/app/actions/useAppActions.ts` applies domain mutations and chooses persistence mode per update (critical vs debounced).
 
-## Parsing guarantees
-- Parsing is deterministic and side-effect free:
-  - `parseTrainingText` splits input into segments (newline/`;`) and extracts sets via a stable regex.
-  - `applyParsedChunks` applies parsed data without mutating the input state.
-- Matching/categorization:
-  - Exact match prefers canonical name, then aliases, then normalized `name`.
-  - Fuzzy matching and block inference are deterministic and threshold-based.
-- IDs created by parsing are deterministic for a given `(timestamp, sequence)` input.
+## Storage format
+- `AppState` is stored as a single JSON blob in AsyncStorage under key `treasy_app_state_v2` (`src/features/workouts/data/storage.ts`).
+- There is no standalone migrations framework; `loadAppState()` performs normalization/defaulting on load.
 
-## Navigation model
-- `NavState` is a small, serializable discriminator (`screen`) plus optional parameters.
-- `useNavStack` maintains an in-memory history stack with:
-  - `navigate`/`reset`
-  - `back`/`forward`
-  - swipe back/forward gestures (platform-tuned thresholds)
-- `App.tsx` renders exactly one screen for the active `NavState.screen`.
+## Parsing pipeline (deterministic)
+- Parse: `parseTrainingText` (`src/domain/parsing/parsePipeline.ts`).
+- Apply: `applyParsedChunks` (`src/domain/parsing/applyParsedChunks.ts`).
+- Matching: exact match, then deterministic fuzzy match (`src/domain/quicklog/exerciseLookup.ts`, threshold in `src/shared/constants.ts`).
+- IDs created by parsing use `makeId(prefix, now, seq)`; deterministic for a given `(now, seq)` input.
+
+## Navigation
+- Custom in-memory history stack: `src/app/navigation/useNavStack.ts` (`navigate`, `back`, `forward`, `reset`) plus swipe back/forward gestures.
+- `App.tsx` renders exactly one screen based on `nav.screen` (`src/app/navigation/types.ts`).
+- `@react-navigation/native` is not used for routing; some screens use `NavigationContext`/`useFocusEffect` with fallbacks when the context is absent.
 
 ## Local-first constraints
-- Core functionality does not depend on network availability.
-- “AI” answers are derived from local workout history and app state (no remote calls).
-- Auth flows (e.g. GitHub web OAuth) are optional wiring around local persistence.
-
+- Core workout data is stored locally; no remote workout storage implementation exists in this repo.
+- Web-only GitHub OAuth uses a Netlify Function (`netlify/functions/github-oauth.js`) and a client-side `fetch()` in `src/app/actions/useAppActions.ts`.

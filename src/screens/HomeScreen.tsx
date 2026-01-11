@@ -24,6 +24,7 @@ import { formatRelativeDateTime } from '../shared/utils/dateLabels';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { getWorkoutDates, getDailyWorkout, groupDailySets, type GroupedDailySetView } from '../features/workouts';
 import { fromKg, formatWeight } from '../shared/utils/units';
+import { BLOCK_ICON_SOURCES } from '../shared/ui/blockIcons';
 import {
   buildWorkoutTimeline,
   calcPctChange,
@@ -55,16 +56,6 @@ type Props = {
 };
 
 const ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
-const BLOCK_ICONS: Partial<Record<TrainingBlockId, ImageSourcePropType>> = {
-  chest: require('../assets/chest.png'),
-  shoulders: require('../assets/shoulder.png'),
-  back: require('../assets/back.png'),
-  arms: require('../assets/arms.png'),
-  core: require('../assets/core.png'),
-  legs: require('../assets/leggs.png'),
-  cardio: require('../assets/cardio.png'),
-  bodyweight: require('../assets/bodyweight.png'),
-};
 const EMPTY_EXAMPLES: string[] = [];
 
 type LastWorkoutState =
@@ -581,7 +572,7 @@ export const HomeScreen: React.FC<Props> = ({
 
   const resolveBlockIcon = (blockId: string): ImageSourcePropType | null => {
     const id = blockId as TrainingBlockId;
-    return BLOCK_ICONS[id] ?? null;
+    return BLOCK_ICON_SOURCES[id] ?? null;
   };
 
   
@@ -1255,7 +1246,7 @@ const styles = StyleSheet.create({
     paddingRight: SPACING.sm,
     alignSelf: 'stretch',
     flexShrink: 1,
-    transform: [{ translateY: 1 }],
+    transform: [{ translateY: 4 }],
   },
   wordmarkPressed: {
     opacity: 0.72,
@@ -1279,19 +1270,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   compassButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0B1220',
+    minWidth: 44,
+    minHeight: 44,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 7,
   },
   compassIcon: {
-    width: 52,
-    height: 52,
+    width: 66,
+    height: 75,
+    transform: [{ scale: 1.12 }],
   },
   compassSheetBackdrop: {
     flex: 1,
