@@ -12,6 +12,8 @@ export type VolumeByMuscleRow = {
   pctChange: number;
 };
 
+type TrendStatus = 'up' | 'down' | 'stable';
+
 type Props = {
   language: AppLanguage;
   massUnit: MassUnit;
@@ -28,16 +30,33 @@ function formatNumber(language: AppLanguage, value: number): string {
   return formatter.format(Math.round(value));
 }
 
-function formatChange(language: AppLanguage, pctChange: number): { text: string; color: string } {
+function trendFromPct(pctChange: number): TrendStatus {
+  if (pctChange >= 5) return 'up';
+  if (pctChange <= -5) return 'down';
+  return 'stable';
+}
+
+function arrowForTrend(trend: TrendStatus): string {
+  if (trend === 'up') return '↑';
+  if (trend === 'down') return '↓';
+  return '→';
+}
+
+function colorForTrend(trend: TrendStatus): string {
+  if (trend === 'up') return COLORS.success;
+  if (trend === 'down') return COLORS.warning;
+  return COLORS.neutral;
+}
+
+function formatChangeText(language: AppLanguage, pctChange: number): string {
   const rounded = Math.round(pctChange);
-  if (Math.abs(rounded) < 1) {
-    return { text: t(language, 'analysis.volume.stableLabel'), color: COLORS.neutral };
-  }
-  if (rounded > 0) {
-    return { text: t(language, 'analysis.volume.changeUp', { pct: Math.abs(rounded) }), color: COLORS.success };
-  }
-  // Reduce noise: show subtle down arrow without the numeric to keep UI calmer.
-  return { text: '↓', color: COLORS.warning };
+  if (Math.abs(rounded) < 1) return t(language, 'analysis.volume.changeFlat');
+  if (rounded > 0) return t(language, 'analysis.volume.changeUp', { pct: Math.abs(rounded) });
+  return t(language, 'analysis.volume.changeDown', { pct: Math.abs(rounded) });
+}
+
+function formatChange(language: AppLanguage, pctChange: number): { text: string; trend: TrendStatus } {
+  return { text: formatChangeText(language, pctChange), trend: trendFromPct(pctChange) };
 }
 
 export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, totalLabel, changePct, volumeLabel, rows }) => {
@@ -45,7 +64,9 @@ export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, total
 
   const items = useMemo(() => rows.slice(), [rows]);
   const unit = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
-  const changeDisplay = formatChange(language, changePct);
+  const changeDisplay = hasData ? formatChange(language, changePct) : { text: t(language, 'analysis.empty'), trend: 'stable' as const };
+  const changeColor = hasData ? colorForTrend(changeDisplay.trend) : COLORS.neutral;
+  const changeArrow = arrowForTrend(changeDisplay.trend);
 
   const toggle = () => {
     if (Platform.OS !== 'web') {
@@ -60,9 +81,10 @@ export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, total
 
       <View style={styles.rowBetween}>
         <Text style={styles.label}>{totalLabel}</Text>
-        <Text style={[styles.change, { color: hasData ? changeDisplay.color : COLORS.neutral }]}>
-          {hasData ? changeDisplay.text : t(language, 'analysis.empty')}
-        </Text>
+        <View style={styles.trendWrap}>
+          <Text style={[styles.trendArrow, { color: changeColor }]}>{changeArrow}</Text>
+          <Text style={[styles.change, { color: changeColor }]}>{changeDisplay.text}</Text>
+        </View>
       </View>
 
       <Text style={styles.value}>{hasData ? volumeLabel : t(language, 'analysis.empty')}</Text>
@@ -81,13 +103,14 @@ export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, total
               {items.map((item) => {
                 const volumeText = `${formatNumber(language, fromKg(item.volume7d, massUnit))} ${unit}`;
                 const changeText = formatChange(language, item.pctChange);
+                const color = colorForTrend(changeText.trend);
                 return (
                   <View key={item.id} style={styles.itemRow}>
                     <Text style={styles.itemLabel} numberOfLines={1}>
                       {item.label}
                     </Text>
                     <View style={styles.itemRight}>
-                      <Text style={[styles.itemChange, { color: changeText.color }]}>{changeText.text}</Text>
+                      <Text style={[styles.itemChange, { color }]}>{changeText.text}</Text>
                       <Text style={styles.itemVolume}>{volumeText}</Text>
                     </View>
                   </View>
@@ -121,6 +144,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: SPACING.md,
+  },
+  trendWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  trendArrow: {
+    fontSize: TEXT_TOKENS.sm,
+    fontWeight: '900',
+    lineHeight: TEXT_TOKENS.sm + 2,
   },
   label: {
     flex: 1,

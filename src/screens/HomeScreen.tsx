@@ -35,9 +35,11 @@ import {
   getMomentumStatus,
   getWorkoutsInRange,
 } from '../domain/analytics/insights';
-import { MomentumCard } from '../features/analytics/ui/MomentumCard';
+import { ProgressiveOverloadCard } from '../features/analytics/ui/ProgressiveOverloadCard';
 import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorkoutsTimeline';
 import { VolumeCard, type VolumeByMuscleRow } from '../features/analytics/ui/VolumeCard';
+import { progressiveOverloadSummary } from '../shared/utils/progressiveOverloadSummary';
+import { QuickActionsMenu, type QuickActionsMenuItem } from '../shared/ui/QuickActionsMenu';
 
 type Props = {
   appState: AppState;
@@ -331,6 +333,22 @@ export const HomeScreen: React.FC<Props> = ({
     return hits;
   }, [appState.exercises, appState.sets, formatWeightCompact, logSearchQuery, massUnit]);
 
+  const overload = useMemo(
+    () =>
+      progressiveOverloadSummary({
+        language,
+        massUnit,
+        exercises: appState.exercises,
+        sets: appState.sets,
+      }),
+    [appState.exercises, appState.sets, language, massUnit]
+  );
+
+  const overloadDeltaText = useMemo(() => {
+    if (overload.deltaKg == null || !Number.isFinite(overload.deltaKg) || overload.deltaKg <= 0) return null;
+    return `+${formatWeight(overload.deltaKg, massUnit, language)}`;
+  }, [language, massUnit, overload.deltaKg]);
+
   const analytics = useMemo(() => {
     const { current, previous } = getLastDaysRangesUtc(7, new Date());
     const sets7d = getWorkoutsInRange(appState, current.start, current.end);
@@ -454,31 +472,59 @@ export const HomeScreen: React.FC<Props> = ({
 
   const closeCompass = useCallback(() => setCompassOpen(false), []);
 
-  const compassActions = useMemo(
+  const compassActions = useMemo<QuickActionsMenuItem[]>(
     () => [
       {
         id: 'progress',
+        icon: '📈',
         label: language === 'nb' ? 'Åpne utvikling' : language === 'es' ? 'Abrir progreso' : 'Open progress',
+        subtitle:
+          language === 'nb'
+            ? 'Se progresjon og trender'
+            : language === 'es'
+              ? 'Ver progreso y tendencias'
+              : 'See progress and trends',
         onPress: onOpenProgress,
       },
       {
         id: 'repMax',
+        icon: '🏋️',
         label: language === 'nb' ? 'Åpne beste løft' : language === 'es' ? 'Abrir mejores levantamientos' : 'Open best lifts',
+        subtitle:
+          language === 'nb'
+            ? 'Dine topp-sett'
+            : language === 'es'
+              ? 'Tus mejores series'
+              : 'Your top sets',
         onPress: onOpenRepMax,
       },
       {
         id: 'appa',
+        icon: '🤖',
         label: language === 'nb' ? 'Åpne Appa-AI' : language === 'es' ? 'Abrir Appa-AI' : 'Open Appa-AI',
+        subtitle:
+          language === 'nb'
+            ? 'Spør om trening og logging'
+            : language === 'es'
+              ? 'Preguntar sobre entrenamiento y registro'
+              : 'Ask about training and logging',
         onPress: onOpenAI,
       },
       {
         id: 'analysis',
+        icon: '📊',
         label:
           language === 'nb'
             ? 'Gå til analyseseksjonen'
             : language === 'es'
               ? 'Ir a la sección de análisis'
               : 'Go to analysis section',
+        subtitle:
+          language === 'nb'
+            ? 'Mer detaljer og grafer'
+            : language === 'es'
+              ? 'Más detalles y gráficas'
+              : 'More details and charts',
         onPress: scrollToAnalysis,
       },
     ],
@@ -777,34 +823,12 @@ export const HomeScreen: React.FC<Props> = ({
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
-      <Modal visible={compassOpen} transparent animationType="fade" onRequestClose={closeCompass}>
-        <Pressable style={styles.compassSheetBackdrop} onPress={closeCompass}>
-          <Pressable style={styles.compassSheetCard} onPress={() => {}}>
-            <View style={styles.compassSheetHeader}>
-              <Text style={styles.compassSheetTitle}>
-                {language === 'nb' ? 'Hurtigvalg' : language === 'es' ? 'Atajos' : 'Shortcuts'}
-              </Text>
-            </View>
-            {compassActions.map((action, index) => (
-              <Pressable
-                key={action.id}
-                style={({ pressed }) => [
-                  styles.compassAction,
-                  index > 0 ? styles.compassActionDivider : null,
-                  pressed ? styles.compassActionPressed : null,
-                ]}
-                onPress={() => {
-                  closeCompass();
-                  action.onPress();
-                }}
-              >
-                <Text style={styles.compassActionText}>{action.label}</Text>
-                <Text style={styles.compassActionChevron}>{'>'}</Text>
-              </Pressable>
-            ))}
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <QuickActionsMenu
+        visible={compassOpen}
+        title={language === 'nb' ? 'Hurtigvalg' : language === 'es' ? 'Atajos' : 'Shortcuts'}
+        items={compassActions}
+        onClose={closeCompass}
+      />
       {lastWorkoutPreviewVisible && lastWorkoutPreviewLayout ? (
         <Modal transparent animationType="none" visible onRequestClose={closeLastWorkoutPreview}>
           <Pressable style={styles.lastWorkoutPreviewBackdrop} onPress={closeLastWorkoutPreview}>
@@ -1186,14 +1210,9 @@ export const HomeScreen: React.FC<Props> = ({
           </View>
         </View>
 
-        <View style={styles.analysisWrapper} onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}>
+          <View style={styles.analysisWrapper} onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}>
           <View style={styles.analysisCards}>
-            <MomentumCard
-              language={language}
-              hasData={analytics.hasData}
-              status={analytics.momentum}
-              onPress={onOpenProgress}
-            />
+            <ProgressiveOverloadCard summary={overload.label} deltaText={overloadDeltaText} onPress={onOpenProgress} />
 
             <VolumeCard
               language={language}
@@ -1621,6 +1640,8 @@ const styles = StyleSheet.create({
     color: '#60A5FA',
     fontSize: TEXT.sm,
     fontWeight: '800',
+    textAlign: 'center',
+    width: '100%',
   },
   logSearchInput: {
     backgroundColor: '#0F172A',
@@ -1702,7 +1723,7 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   lastWorkoutTitle: {
-    color: '#60A5FA',
+    color: '#F9FAFB',
     fontSize: TEXT.md,
     fontWeight: '700',
     borderBottomWidth: 1,
@@ -1787,6 +1808,8 @@ const styles = StyleSheet.create({
     color: '#60A5FA',
     fontSize: TEXT.md,
     fontWeight: '700',
+    textAlign: 'center',
+    width: '100%',
   },
   notesInput: {
     backgroundColor: '#0F172A',

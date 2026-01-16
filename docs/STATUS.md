@@ -1,6 +1,6 @@
 # Status Report
 
-Last updated: 2026-01-11 04:52:07 +01:00 (branch `main`, commit `ed549457`)
+Last updated: 2026-01-15 (branch `main`, commit `d3d9e498`)
 
 ## Project mapping (verified)
 - Stack: Expo 54 / React Native 0.81 / React 19 / TypeScript 5.9 (`package.json`).
@@ -12,7 +12,7 @@ Last updated: 2026-01-11 04:52:07 +01:00 (branch `main`, commit `ed549457`)
 
 ## Current screens (verified by `App.tsx`)
 - Onboarding/auth: `LandingScreen`, `LoginScreen`, `WelcomeScreen`.
-- Core: `HomeScreen`, `BlockScreen`, `ExerciseScreen`, `QuickLogScreen`, `HistoryScreen`.
+- Core: `HomeScreen`, `BlockScreen` (inline exercise logger), `QuickLogScreen`, `HistoryScreen`.
 - Insights: `ProgressScreen` (progressive overload), `AnalysisScreen`, `RepMaxScreen`.
 - Other: `AIScreen`, `CardioScreen`, `ProfileScreen`, `SettingsScreen`, `ManageExercisesScreen`.
 

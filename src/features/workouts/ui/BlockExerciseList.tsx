@@ -25,6 +25,7 @@ export function BlockExerciseList<ItemT>({
           data={data}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
+          style={styles.list}
           contentContainerStyle={[
             styles.listContent,
             extraBottomPadding ? { paddingBottom: extraBottomPadding } : null,
@@ -42,6 +43,7 @@ const LIST_RADIUS = RADIUS.lg + 4;
 
 const styles = StyleSheet.create({
   shadowWrap: {
+    flex: 1,
     borderRadius: LIST_RADIUS,
     ...Platform.select({
       web: { boxShadow: '0 10px 20px rgba(2, 6, 23, 0.22)' },
@@ -55,10 +57,14 @@ const styles = StyleSheet.create({
     }),
   },
   container: {
+    flex: 1,
     overflow: 'hidden',
     backgroundColor: COLORS.surfaceWhite,
     borderColor: 'rgba(2, 6, 23, 0.12)',
     borderRadius: LIST_RADIUS,
+  },
+  list: {
+    flex: 1,
   },
   listContent: {
     paddingVertical: 0,

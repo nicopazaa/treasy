@@ -4,7 +4,6 @@ export type ScreenName =
   | 'welcome'
   | 'home'
   | 'block'
-  | 'exercise'
   | 'ai'
   | 'history'
   | 'progress'

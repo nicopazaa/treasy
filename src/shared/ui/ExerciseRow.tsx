@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   },
   rowLight: {
     backgroundColor: COLORS.surfaceWhite,
-    paddingVertical: SPACING.xxl,
+    paddingVertical: SPACING.md,
   },
   rowMoving: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',

@@ -26,6 +26,7 @@ import { BlockExerciseItem } from '../features/workouts/ui/BlockExerciseItem';
 import { BlockExerciseList } from '../features/workouts/ui/BlockExerciseList';
 import { formatWeight, type MassUnit } from '../shared/utils/units';
 import { BLOCK_ICON_SOURCES } from '../shared/ui/blockIcons';
+import { ExerciseLogBottomSheet, type SetLoggerMeta } from '../shared/ui/ExerciseLogBottomSheet';
 
 interface Props {
   language: AppLanguage;
@@ -33,9 +34,10 @@ interface Props {
   block: TrainingBlock;
   exercises: Exercise[];
   sets: SetEntry[];
+  setsByExerciseId?: Map<string, SetEntry[]>;
   allBlocks: TrainingBlock[];
   onBack: () => void;
-  onSelectExercise: (exerciseId: string) => void;
+  onAddSetToExercise: (exerciseId: string, weightKg: number, reps: number, meta?: SetLoggerMeta) => void;
   onAddExercise: (name: string, metadata?: ExerciseMetadataInput) => void;
   onRenameExercise: (exerciseId: string, name: string, metadata?: ExerciseMetadataInput) => void;
   onDeleteExercise: (exerciseId: string) => void;
@@ -53,9 +55,10 @@ export const BlockScreen: React.FC<Props> = ({
   block,
   exercises,
   sets,
+  setsByExerciseId,
   allBlocks,
   onBack,
-  onSelectExercise,
+  onAddSetToExercise,
   onAddExercise,
   onRenameExercise,
   onDeleteExercise,
@@ -63,6 +66,8 @@ export const BlockScreen: React.FC<Props> = ({
   onReorderExercises,
   onMoveExercise,
 }) => {
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  const [isLogSheetOpen, setIsLogSheetOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseShort, setExerciseShort] = useState('');
@@ -201,6 +206,22 @@ export const BlockScreen: React.FC<Props> = ({
   };
 
   const movingExercise = movingExerciseId ? exercises.find((e) => e.id === movingExerciseId) ?? null : null;
+  const selectedExercise = selectedExerciseId ? exercises.find((e) => e.id === selectedExerciseId) ?? null : null;
+
+  const selectedExerciseSets = useMemo(() => {
+    if (!selectedExerciseId) return [];
+    const cached = setsByExerciseId?.get(selectedExerciseId);
+    if (cached) return cached;
+    return sets
+      .filter((s) => s.exerciseId === selectedExerciseId)
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }, [selectedExerciseId, sets, setsByExerciseId]);
+
+  const closeLogSheet = () => {
+    setIsLogSheetOpen(false);
+    setSelectedExerciseId(null);
+  };
 
   const bestSetLabel = (exerciseId: string): string | null => {
     const relevant = sets.filter((s) => s.exerciseId === exerciseId && s.setType !== 'cardio');
@@ -250,7 +271,8 @@ export const BlockScreen: React.FC<Props> = ({
         reorderTo(item.id);
         return;
       }
-      onSelectExercise(item.id);
+      setSelectedExerciseId(item.id);
+      setIsLogSheetOpen(true);
     };
 
     return (
@@ -423,6 +445,22 @@ export const BlockScreen: React.FC<Props> = ({
         />
       </View>
 
+      {selectedExercise ? (
+        <ExerciseLogBottomSheet
+          visible={isLogSheetOpen}
+          language={language}
+          massUnit={massUnit}
+          exercise={selectedExercise}
+          sets={selectedExerciseSets}
+          onAddSet={(weightKg, reps, meta) => {
+            if (!selectedExerciseId) return;
+            onAddSetToExercise(selectedExerciseId, weightKg, reps, meta);
+          }}
+          onCopyLastSet={() => {}}
+          onClose={closeLogSheet}
+        />
+      ) : null}
+
       <View style={styles.stickyBar}>
         <PrimaryButton title={t(language, 'addExercise')} onPress={openAddModal} style={styles.stickyButton} />
       </View>
@@ -537,6 +575,8 @@ const styles = StyleSheet.create({
   },
   listWrapper: {
     marginTop: SPACING.lg,
+    flex: 1,
+    minHeight: 0,
   },
   moveBanner: {
     marginTop: SPACING.md,

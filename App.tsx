@@ -9,7 +9,6 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BlockScreen } from './src/screens/BlockScreen';
-import { ExerciseScreen } from './src/screens/ExerciseScreen';
 import { AIScreen } from './src/screens/AIScreen';
 import { CardioScreen } from './src/screens/CardioScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
@@ -29,7 +28,6 @@ import { useNavStack } from './src/app/navigation/useNavStack';
 import { useAppStore } from './src/app/state/useAppStore';
 import { useDerivedCache } from './src/app/state/useDerivedCache';
 import { assertNever } from './src/shared/assert';
-import { t } from './src/shared/i18n/i18n';
 
 export default function App() {
   const [fontsLoaded, fontsError] = useFonts({
@@ -81,9 +79,6 @@ export default function App() {
     deleteExerciseById,
     restoreExerciseEntry,
     addSetToExercise,
-    updateSetById,
-    deleteSetById,
-    restoreSetEntry,
     categorizeExercise,
     saveCardio,
     mergeExercisesById,
@@ -94,13 +89,6 @@ export default function App() {
 
   const currentBlock = nav.selectedBlockId ? appState.blocks.find((b) => b.id === nav.selectedBlockId) : null;
   const currentBlockId = currentBlock?.id ?? null;
-
-  const currentExercise = nav.selectedExerciseId
-    ? derivedCache.exerciseById.get(nav.selectedExerciseId) ?? null
-    : null;
-  const currentExerciseId = currentExercise?.id ?? null;
-  const currentExerciseBlockId = currentExercise?.blockId ?? null;
-  const currentExerciseName = currentExercise?.name ?? null;
 
   const goHome = useCallback(() => navigate('home'), [navigate]);
   const goToLogin = useCallback(() => navigate('login'), [navigate]);
@@ -134,14 +122,6 @@ export default function App() {
   const handleHomeOpenRepMax = useCallback(() => navigate('repMax'), [navigate]);
   const handleHomeOpenAnalysis = useCallback(() => navigate('analysis'), [navigate]);
 
-  const handleBlockSelectExercise = useCallback(
-    (exerciseId: string) => {
-      if (!currentBlockId) return;
-      navigate('exercise', { selectedBlockId: currentBlockId, selectedExerciseId: exerciseId });
-    },
-    [currentBlockId, navigate]
-  );
-
   const handleBlockReorderExercises = useCallback(
     (orderedExerciseIds: string[]) => {
       if (!currentBlockId) return;
@@ -157,34 +137,6 @@ export default function App() {
     },
     [addExerciseToBlock, currentBlockId]
   );
-
-  const handleExerciseBack = useCallback(() => {
-    if (!currentExerciseId || !currentExerciseBlockId) return;
-    navigate('block', { selectedBlockId: currentExerciseBlockId, selectedExerciseId: currentExerciseId });
-  }, [currentExerciseBlockId, currentExerciseId, navigate]);
-
-  const handleExerciseAddSet = useCallback(
-    (weight: number, reps: number, meta?: Parameters<typeof addSetToExercise>[3]) => {
-      if (!currentExerciseId) return;
-      addSetToExercise(currentExerciseId, weight, reps, meta);
-    },
-    [addSetToExercise, currentExerciseId]
-  );
-
-  const handleExerciseUpdateSet = useCallback(
-    (setId: string, weight: number, reps: number, meta?: Parameters<typeof updateSetById>[3]) => {
-      updateSetById(setId, weight, reps, meta);
-    },
-    [updateSetById]
-  );
-
-  const handleExerciseAskAI = useCallback(() => {
-    if (!currentExerciseId || !currentExerciseName) return;
-    navigate('ai', {
-      selectedExerciseId: currentExerciseId,
-      aiInitialQuestion: t(language, 'appa.prompt.lastForExercise', { exercise: currentExerciseName }),
-    });
-  }, [currentExerciseId, currentExerciseName, language, navigate]);
 
   const handleCardioSave = useCallback(
     (data: Parameters<typeof saveCardio>[0]) => {
@@ -263,31 +215,16 @@ export default function App() {
             block={currentBlock}
             exercises={derivedCache.exercisesByBlockId.get(currentBlock.id) ?? []}
             sets={appState.sets}
+            setsByExerciseId={derivedCache.setsByExerciseId}
             allBlocks={appState.blocks}
             onBack={goHome}
-            onSelectExercise={handleBlockSelectExercise}
+            onAddSetToExercise={addSetToExercise}
             onReorderExercises={handleBlockReorderExercises}
             onMoveExercise={moveExercise}
             onAddExercise={handleBlockAddExercise}
             onRenameExercise={renameExerciseById}
             onDeleteExercise={deleteExerciseById}
             onRestoreExercise={restoreExerciseEntry}
-          />
-        );
-      case 'exercise':
-        if (!currentExercise) return null;
-        return (
-          <ExerciseScreen
-            language={language}
-            massUnit={massUnit}
-            exercise={currentExercise}
-            sets={derivedCache.setsByExerciseId.get(currentExercise.id) ?? []}
-            onBack={handleExerciseBack}
-            onAddSet={handleExerciseAddSet}
-            onUpdateSet={handleExerciseUpdateSet}
-            onDeleteSet={deleteSetById}
-            onRestoreSet={restoreSetEntry}
-            onAskAIForExercise={handleExerciseAskAI}
           />
         );
       case 'ai':
@@ -316,7 +253,7 @@ export default function App() {
       case 'progress':
         return <ProgressScreen appState={appState} onBack={goHome} />;
       case 'analysis':
-        return <AnalysisScreen language={language} onBack={goHome} />;
+        return <AnalysisScreen appState={appState} derivedCache={derivedCache} onBack={goHome} />;
       case 'repMax':
         return <RepMaxScreen appState={appState} onBack={goHome} />;
       case 'quickLog':

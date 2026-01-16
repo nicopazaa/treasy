@@ -2,32 +2,58 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { RADIUS, SPACING, TEXT } from '../theme/tokens';
 
-type Props = {
-  value?: string | null;
-  onChange: (next: string) => void;
+const BACKSPACE_KEY = '⌫';
+const CLEAR_KEY = 'C';
+
+type BaseProps = {
   rows: string[][];
   style?: ViewStyle;
   disabled?: boolean;
 };
 
-export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, disabled = false }) => {
+type ChangeProps = BaseProps & {
+  value?: string | null;
+  onChange: (next: string) => void;
+  onKeyPress?: never;
+};
+
+type KeyPressProps = BaseProps & {
+  onKeyPress: (key: string) => void;
+  value?: never;
+  onChange?: never;
+};
+
+type Props = ChangeProps | KeyPressProps;
+
+function isChangeProps(props: Props): props is ChangeProps {
+  return 'onChange' in props;
+}
+
+export const QuickKeypad: React.FC<Props> = (props) => {
+  const { rows, style, disabled = false } = props;
+
   const press = (key: string) => {
     if (disabled) return;
 
-    const currentValue = value ?? '';
+    if (!isChangeProps(props)) {
+      props.onKeyPress(key);
+      return;
+    }
 
-    if (key === '⌫' || key === 'ƒO®') {
+    const currentValue = props.value ?? '';
+
+    if (key === BACKSPACE_KEY) {
       if (!currentValue) return;
-      onChange(currentValue.slice(0, -1));
+      props.onChange(currentValue.slice(0, -1));
       return;
     }
 
-    if (key === 'C') {
-      onChange('');
+    if (key === CLEAR_KEY) {
+      props.onChange('');
       return;
     }
 
-    onChange(currentValue + key);
+    props.onChange(currentValue + key);
   };
 
   return (
@@ -37,7 +63,7 @@ export const QuickKeypad: React.FC<Props> = ({ value, onChange, rows, style, dis
           {row.map((key) => (
             <TouchableOpacity
               key={key}
-              style={[styles.key, (key === '⌫' || key === 'ƒO®' || key === 'C') && styles.keySecondary]}
+              style={[styles.key, (key === BACKSPACE_KEY || key === CLEAR_KEY) && styles.keySecondary]}
               onPress={() => press(key)}
               activeOpacity={0.8}
             >

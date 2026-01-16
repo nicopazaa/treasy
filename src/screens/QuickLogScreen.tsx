@@ -19,6 +19,7 @@ import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t } from '../shared/i18n/i18n';
+import { useKeyboardInset } from '../shared/hooks/useKeyboardInset';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { toKg } from '../shared/utils/units';
 
@@ -54,6 +55,8 @@ const REPS_KEYS = [
   ['7', '8', '9'],
   ['0', '⌫'],
 ];
+
+const HEADER_SIDE_WIDTH = 96;
 
 export const QuickLogScreen: React.FC<Props> = ({
   appState,
@@ -91,6 +94,7 @@ export const QuickLogScreen: React.FC<Props> = ({
   const [showAllLogs, setShowAllLogs] = useState(false);
   const placeholderOpacity = useRef(new Animated.Value(1)).current;
   const [isFocused, setIsFocused] = useState(false);
+  const { keyboardHeight, isKeyboardVisible } = useKeyboardInset();
 
   const placeholderText = t(language, 'quicklog.placeholder.start');
 
@@ -241,7 +245,6 @@ export const QuickLogScreen: React.FC<Props> = ({
 
   const quickLogInputSection = (
     <View style={styles.inputCard}>
-      <Text style={styles.guidedTitle}>{t(language, 'home.quickLog.title')}</Text>
       <View style={styles.inputWrapper}>
         <View style={styles.placeholderWrapper} pointerEvents="none">
           <Animated.Text
@@ -265,7 +268,20 @@ export const QuickLogScreen: React.FC<Props> = ({
           blurOnSubmit={false}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          selectionColor={COLORS.blue3}
         />
+      </View>
+
+      <View style={styles.actionBar}>
+        <Pressable
+          onPress={handleSave}
+          style={({ pressed }) => [
+            styles.primaryActionButton,
+            pressed && styles.primaryActionButtonPressed,
+          ]}
+        >
+          <Text style={styles.primaryActionText}>{t(language, 'quickLogButton')}</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -393,9 +409,17 @@ export const QuickLogScreen: React.FC<Props> = ({
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-          <Text style={styles.back}>{'< Tilbake'}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRow}>
+          <View style={styles.headerSide}>
+            <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+              <Text style={styles.back}>{'< Tilbake'}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>{'📌 Hurtiglogg'}</Text>
+          </View>
+          <View style={styles.headerSide} />
+        </View>
 
         {showLocalNoticeLine ? (
           <Text style={styles.localOnlyNotice}>
@@ -407,13 +431,19 @@ export const QuickLogScreen: React.FC<Props> = ({
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingBottom:
+                SPACING.xxl + (Platform.OS === 'android' && isKeyboardVisible ? keyboardHeight : 0),
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.guidedCard}>
             {quickLogInputSection}
             {muscleGroupSection}
-            {exerciseSection}
+            {selectedBlockId ? exerciseSection : null}
 
             {selectedExercise ? (
               <View style={styles.quickActions}>
@@ -493,18 +523,6 @@ export const QuickLogScreen: React.FC<Props> = ({
         )}
 
         {savedNotice ? <Text style={styles.savedNotice}>{savedNotice}</Text> : null}
-
-        <View style={styles.actionBar}>
-          <Pressable
-            onPress={handleSave}
-            style={({ pressed }) => [
-              styles.primaryActionButton,
-              pressed && styles.primaryActionButtonPressed,
-            ]}
-          >
-            <Text style={styles.primaryActionText}>{t(language, 'quickLogButton')}</Text>
-          </Pressable>
-        </View>
 
         <View style={[styles.liveLogCard, { marginTop: SPACING.md }]}>
           <Text style={styles.liveLogTitle}>{t(language, 'liveLogTitle')}</Text>
@@ -752,6 +770,26 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SCREEN_PADDING,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  headerSide: {
+    width: HEADER_SIDE_WIDTH,
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    color: '#F9FAFB',
+    fontSize: TEXT.md,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   scroll: {
     flex: 1,
   },
@@ -763,7 +801,6 @@ const styles = StyleSheet.create({
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
-    marginBottom: SPACING.sm,
   },
   back: {
     color: '#93C5FD',
@@ -787,21 +824,22 @@ const styles = StyleSheet.create({
     minHeight: 140,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#111827',
+    borderColor: COLORS.surfaceCardLight,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    color: '#F9FAFB',
+    color: COLORS.blue5,
     fontSize: TEXT.md,
-    backgroundColor: '#020617',
+    backgroundColor: COLORS.surfaceWhite,
   },
   placeholderWrapper: {
     position: 'absolute',
     left: SPACING.md,
     right: SPACING.md,
     top: SPACING.sm,
+    zIndex: 2,
   },
   placeholderOverlay: {
-    color: '#6B7280',
+    color: COLORS.textSecondaryGray,
     fontSize: TEXT.md,
     fontWeight: '600',
     opacity: 0.9,
