@@ -8,7 +8,8 @@ type Props = {
   summary: string;
   deltaText?: string | null;
   onPress?: () => void;
-  theme: Pick<TreasyThemeTokens, 'surfaceAlt' | 'stroke' | 'accent' | 'text' | 'success'>;
+  theme: Pick<TreasyThemeTokens, 'surface' | 'stroke' | 'accent' | 'text' | 'success'>;
+  borderless?: boolean;
 };
 
 function splitAroundDelta(summary: string, deltaText: string): { before: string; after: string } | null {
@@ -20,11 +21,11 @@ function splitAroundDelta(summary: string, deltaText: string): { before: string;
   };
 }
 
-export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, onPress, theme }) => {
+export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, onPress, theme, borderless = false }) => {
   const split = deltaText ? splitAroundDelta(summary, deltaText) : null;
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.stroke }]}
+      style={[styles.card, borderless ? styles.cardBorderless : null, { backgroundColor: theme.surface, borderColor: theme.stroke }]}
       onPress={onPress}
       disabled={!onPress}
       activeOpacity={0.9}
@@ -48,11 +49,18 @@ export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, o
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: RADIUS.lg,
+    borderRadius: 0,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
     minHeight: 84,
+  },
+  cardBorderless: {
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
   },
   title: {
     fontSize: TEXT_TOKENS.sm,

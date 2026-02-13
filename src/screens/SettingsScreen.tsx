@@ -260,6 +260,22 @@ export const SettingsScreen: React.FC<Props> = ({
 
           <Text style={styles.title}>{t(language, 'settings.title')}</Text>
 
+          <View style={styles.topThemeSection}>
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardTitle}>{themeTitle}</Text>
+                <View style={styles.unitPill}>
+                  <Text style={styles.unitPillText}>{themeBadgeLabel}</Text>
+                </View>
+              </View>
+              <Text style={styles.cardSubtitle}>{themeSubtitle}</Text>
+
+              <TouchableOpacity style={styles.manageButton} onPress={handleToggleTheme} activeOpacity={0.9}>
+                <Text style={styles.manageButtonText}>{themeButtonLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.accordionList}>
             <View style={styles.accordionItem}>
               <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('profile')} activeOpacity={0.85}>
@@ -374,19 +390,6 @@ export const SettingsScreen: React.FC<Props> = ({
                     </View>
                   </View>
 
-                  <View style={styles.card}>
-                    <View style={styles.cardHeaderRow}>
-                      <Text style={styles.cardTitle}>{themeTitle}</Text>
-                      <View style={styles.unitPill}>
-                        <Text style={styles.unitPillText}>{themeBadgeLabel}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.cardSubtitle}>{themeSubtitle}</Text>
-
-                    <TouchableOpacity style={styles.manageButton} onPress={handleToggleTheme} activeOpacity={0.9}>
-                      <Text style={styles.manageButtonText}>{themeButtonLabel}</Text>
-                    </TouchableOpacity>
-                  </View>
                 </View>
               ) : null}
             </View>
@@ -528,6 +531,9 @@ const styles = StyleSheet.create({
     fontSize: TEXT.xl,
     fontWeight: '800',
     color: '#F9FAFB',
+    marginBottom: SPACING.md,
+  },
+  topThemeSection: {
     marginBottom: SPACING.md,
   },
   accordionList: {

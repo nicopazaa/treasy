@@ -2,7 +2,6 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   ScrollView,
   Platform,
@@ -10,6 +9,7 @@ import {
   ImageSourcePropType,
   TextInput,
   Animated,
+  Easing,
   AccessibilityInfo,
   Modal,
   Pressable,
@@ -18,13 +18,20 @@ import {
   type TextStyle,
   type ViewStyle,
   type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContext } from '@react-navigation/native';
 import type { AppState, TrainingBlock, TrainingBlockId } from '../features/workouts';
 import type { NoteEntry } from '../domain/workouts/types';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
-import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS, PALETTE } from '../shared/theme/tokens';
+import {
+  SPACING,
+  RADIUS,
+  SCREEN_PADDING,
+  COLORS,
+} from '../shared/theme/tokens';
 import { resolveThemeTokens } from '../shared/theme/themes';
 import { STAT_NUMBER_STYLE } from '../shared/theme/typography';
 import { blockLabel, t } from '../shared/i18n/i18n';
@@ -49,6 +56,9 @@ import { progressiveOverloadSummary } from '../shared/utils/progressiveOverloadS
 import { QuickActionsMenu, type QuickActionsMenuItem } from '../shared/ui/QuickActionsMenu';
 import { relativeDayLabel } from '../shared/time';
 import { listNotes } from '../features/notes';
+import { styles } from './HomeScreen.styles';
+import { QuickLogCard } from './HomeScreen/sections/QuickLogCard';
+import { MuscleGroupGrid } from './HomeScreen/sections/MuscleGroupGrid';
 
 type Props = {
   appState: AppState;
@@ -72,20 +82,20 @@ const ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 
 const LAST_WORKOUT_GROUP_ORDER: TrainingBlockId[] = [...ORDER, 'cardio', 'bodyweight'];
 const LAST_WORKOUT_GROUP_SET = new Set<TrainingBlockId>(LAST_WORKOUT_GROUP_ORDER);
 const EMPTY_EXAMPLES: string[] = [];
-const MAX_MUSCLE_CHIPS = 5;
+const MAX_MUSCLE_CHIPS = 4;
 const TILE_PRESS_SCALE = 0.985;
 const TILE_PRESS_IN_MS = 110;
 const TILE_PRESS_OUT_MS = 110;
-const TILE_ICON_WEIGHT_OPACITY = 0.35;
-const TILE_ICON_ACTIVE_OPACITY = 0.3;
+const TILE_ICON_ACTIVE_OPACITY = 0.24;
 const GROUP_ICON_DARK_BLUE = '#1E3A8A';
 const TWO_COLUMN_MIN_WIDTH = 640;
 const NAV_CHEVRON = '\u203A';
-const HOME_SURFACE_DARK = '#162539';
 const HOME_SURFACE_DARK_BORDER = '#2E415A';
-const HOME_SURFACE_MUTED = HOME_SURFACE_DARK;
-const HOME_SURFACE_MUTED_BORDER = HOME_SURFACE_DARK_BORDER;
 const NOTERT_PREVIEW_ROWS = 3;
+const QUICKLOG_HERO_CYAN = '#00E5FF';
+const QUICKLOG_HERO_TEAL = '#0D9488';
+const WORDMARK_MAIN_CYAN = '#8CF7FF';
+const LAST_WORKOUT_TITLE_UNDERLINE_DARK = '#457DCC';
 
 function getLatestPreviewNotes(notes: NoteEntry[]): NoteEntry[] {
   return notes
@@ -203,12 +213,6 @@ const HomeTileIcon: React.FC<HomeTileIconProps> = ({ source, active, tintColor, 
   return (
     <View style={styles.groupIconStack}>
       <Image source={source} style={styles.groupIcon} resizeMode="contain" tintColor={tintColor} />
-      <Image
-        source={source}
-        style={[styles.groupIcon, styles.groupIconOverlay, { opacity: TILE_ICON_WEIGHT_OPACITY }]}
-        resizeMode="contain"
-        tintColor={tintColor}
-      />
       {active ? (
         <Image
           source={source}
@@ -444,6 +448,7 @@ export const HomeScreen: React.FC<Props> = ({
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
   const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const isDarkTheme = themeTokens.id === 'darkBlue';
   const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
   const insets = useSafeAreaInsets();
   const { height: viewportHeight } = useWindowDimensions();
@@ -456,10 +461,10 @@ export const HomeScreen: React.FC<Props> = ({
   const [notesNotice, setNotesNotice] = useState<string | null>(null);
   const [volumeExpanded, setVolumeExpanded] = useState(false);
   const [recentNotes, setRecentNotes] = useState<NoteEntry[]>([]);
+  const [allNotes, setAllNotes] = useState<NoteEntry[]>([]);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [analysisAnchorY, setAnalysisAnchorY] = useState<number | null>(null);
   const [layoutWidth, setLayoutWidth] = useState<number | null>(null);
-  const [chipRowHeight, setChipRowHeight] = useState<number | null>(null);
   const [lastWorkoutCardHeight, setLastWorkoutCardHeight] = useState<number | null>(null);
   const [compassOpen, setCompassOpen] = useState(false);
   const [lastWorkoutPreviewVisible, setLastWorkoutPreviewVisible] = useState(false);
@@ -476,6 +481,7 @@ export const HomeScreen: React.FC<Props> = ({
   const [lastExampleIndex, setLastExampleIndex] = useState(0);
   const lastExampleAnim = useMemo(() => new Animated.Value(1), []);
   const scrollRef = useRef<ScrollView | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
   const lastWorkoutCardRef = useRef<View | null>(null);
   const lastWorkoutPreviewAnim = useRef(new Animated.Value(0)).current;
   const todayPanelAnim = useRef(new Animated.Value(0)).current;
@@ -548,20 +554,13 @@ export const HomeScreen: React.FC<Props> = ({
     setLayoutWidth((prev) => (prev === nextWidth ? prev : nextWidth));
   }, []);
 
-  const handleChipLayout = useCallback(({ nativeEvent }: LayoutChangeEvent) => {
-    const nextHeight = Math.round(nativeEvent.layout.height);
-    if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
-    setChipRowHeight((prev) => (prev ?? nextHeight));
-  }, []);
-
   const handleLastWorkoutCardLayout = useCallback(
     ({ nativeEvent }: LayoutChangeEvent) => {
-      if (lastWorkoutCardHeight != null || chipRowHeight == null) return;
       const nextHeight = Math.round(nativeEvent.layout.height);
       if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
-      setLastWorkoutCardHeight(nextHeight);
+      setLastWorkoutCardHeight((prev) => (prev == null ? nextHeight : prev));
     },
-    [chipRowHeight, lastWorkoutCardHeight]
+    []
   );
 
   useEffect(() => {
@@ -585,11 +584,36 @@ export const HomeScreen: React.FC<Props> = ({
   const notesCardHeightStyle = isTwoColumn ? styles.notesCardStretchWrap : null;
   const notesCardFillStyle = notesCardHeightStyle ? styles.notesCardFill : null;
   const notesInputFillStyle = notesCardHeightStyle ? styles.notesInputFill : null;
-  const chipListMaxHeightStyle = chipRowHeight ? { maxHeight: chipRowHeight } : null;
-  const lastWorkoutCardHeightStyle = lastWorkoutCardHeight ? { height: lastWorkoutCardHeight } : null;
+  const lastWorkoutCardHeightStyle = isTwoColumn && lastWorkoutCardHeight ? { height: lastWorkoutCardHeight } : null;
   const themeSurfaceStyle = useMemo(
     () => ({ backgroundColor: themeTokens.surface, borderColor: themeTokens.stroke }),
     [themeTokens.surface, themeTokens.stroke]
+  );
+  const analysisSectionTheme = useMemo(
+    () => (isDarkTheme ? { ...themeTokens, surface: 'transparent' } : themeTokens),
+    [isDarkTheme, themeTokens]
+  );
+  const analysisSectionSurfaceStyle = useMemo(
+    () => ({ backgroundColor: analysisSectionTheme.surface, borderColor: analysisSectionTheme.stroke }),
+    [analysisSectionTheme.surface, analysisSectionTheme.stroke]
+  );
+  const analysisSectionBorderlessStyle = isDarkTheme ? styles.analysisSectionBorderless : null;
+  const analysisSectionVolumeListStyle = useMemo(
+    () => (isDarkTheme ? styles.volumeListWrapperBorderless : { borderTopColor: analysisSectionTheme.stroke }),
+    [isDarkTheme, analysisSectionTheme.stroke]
+  );
+  const analysisSectionTextStyle = useMemo(() => ({ color: analysisSectionTheme.text }), [analysisSectionTheme.text]);
+  const analysisSectionTextMutedStyle = useMemo(
+    () => ({ color: analysisSectionTheme.textMuted }),
+    [analysisSectionTheme.textMuted]
+  );
+  const analysisSectionAccentTextStyle = useMemo(
+    () => ({ color: analysisSectionTheme.accent }),
+    [analysisSectionTheme.accent]
+  );
+  const analysisSectionLinkTextStyle = useMemo(
+    () => ({ color: analysisSectionTheme.link }),
+    [analysisSectionTheme.link]
   );
   const themeSurfaceAltStyle = useMemo(
     () => ({ backgroundColor: themeTokens.surfaceAlt, borderColor: themeTokens.stroke }),
@@ -611,15 +635,101 @@ export const HomeScreen: React.FC<Props> = ({
   const themeTextMutedStyle = useMemo(() => ({ color: themeTokens.textMuted }), [themeTokens.textMuted]);
   const themeAccentTextStyle = useMemo(() => ({ color: themeTokens.accent }), [themeTokens.accent]);
   const themeLinkTextStyle = useMemo(() => ({ color: themeTokens.link }), [themeTokens.link]);
+  const lastWorkoutTitleToneStyle = useMemo(
+    () =>
+      themeTokens.id === 'darkBlue'
+        ? {
+            color: '#F8FAFC',
+            borderBottomColor: LAST_WORKOUT_TITLE_UNDERLINE_DARK,
+            textShadowColor: 'rgba(2, 6, 23, 0.36)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 1,
+            letterSpacing: 0.15,
+          }
+        : {
+            color: themeTokens.text,
+            borderBottomColor: themeTokens.accent,
+          },
+    [themeTokens.accent, themeTokens.id, themeTokens.text]
+  );
+  const quickLogHeroTitleColor = useMemo(() => (themeTokens.id === 'calmLight' ? '#111827' : '#F8FAFC'), [themeTokens.id]);
   const quickLogTitleToneStyle = useMemo(
-    () => ({ color: themeTokens.id === 'darkBlue' ? '#FDE68A' : '#A16207' }),
+    () =>
+      themeTokens.id === 'calmLight'
+        ? {
+            color: quickLogHeroTitleColor,
+            textShadowColor: 'rgba(255, 255, 255, 0.34)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 1,
+            letterSpacing: 0.14,
+          }
+        : {
+            color: quickLogHeroTitleColor,
+            textShadowColor: 'rgba(2, 6, 23, 0.32)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 1,
+            letterSpacing: 0.14,
+          },
+    [quickLogHeroTitleColor, themeTokens.id]
+  );
+  const quickLogExampleToneStyle = useMemo(
+    () => ({ color: themeTokens.id === 'darkBlue' ? '#8FA1BC' : '#5F6B7A' }),
     [themeTokens.id]
+  );
+  const wordmarkMainToneStyle = useMemo(
+    () => ({ color: themeTokens.id === 'calmLight' ? themeTokens.link : WORDMARK_MAIN_CYAN }),
+    [themeTokens.id, themeTokens.link]
+  );
+  const stickyWordmarkOpacity = useMemo(
+    () =>
+      scrollY.interpolate({
+        inputRange: [0, 120, 360],
+        outputRange: [1, 0.84, 0.72],
+        extrapolate: 'clamp',
+      }),
+    [scrollY]
+  );
+  const handleMainScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollY.setValue(event.nativeEvent.contentOffset.y);
+    },
+    [scrollY]
   );
   const quickLogCardToneStyle = useMemo(
     () =>
       themeTokens.id === 'darkBlue'
-        ? { backgroundColor: '#0B1730', borderColor: 'rgba(245, 199, 79, 0.52)' }
-        : { backgroundColor: '#FFFCF2', borderColor: '#D4A74D' },
+        ? {
+            backgroundColor: '#08172F',
+            borderColor: HOME_SURFACE_DARK_BORDER,
+            ...Platform.select({
+              web: {
+                boxShadow: '0 0 0 1px rgba(148, 163, 184, 0.08), 0 8px 18px rgba(2, 6, 23, 0.3)',
+              },
+              default: {
+                shadowColor: '#020617',
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              },
+            }),
+          }
+        : {
+            backgroundColor: '#E9EDF2',
+            borderColor: '#C8D0DA',
+            ...Platform.select({
+              web: {
+                boxShadow: '0 0 0 1px rgba(148, 163, 184, 0.16), 0 10px 20px rgba(15, 23, 42, 0.08)',
+              },
+              default: {
+                shadowColor: '#334155',
+                shadowOpacity: 0.07,
+                shadowRadius: 9,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              },
+            }),
+          },
     [themeTokens.id]
   );
   const themeChipStyle = useMemo(
@@ -641,6 +751,7 @@ export const HomeScreen: React.FC<Props> = ({
     try {
       const notes = await listNotes();
       if (!isMountedRef.current) return;
+      setAllNotes(notes);
       const newest = getLatestPreviewNotes(notes);
       setRecentNotes(newest);
     } catch (e) {
@@ -1201,8 +1312,9 @@ export const HomeScreen: React.FC<Props> = ({
 
     stopTickerAnimation();
     const fadeOut = Animated.timing(exampleAnim, {
-      toValue: 0,
-      duration: 180,
+      toValue: 0.46,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: shouldUseNativeDriver,
     });
     tickerAnimationRef.current = fadeOut;
@@ -1213,11 +1325,12 @@ export const HomeScreen: React.FC<Props> = ({
       }
 
       setExampleIndex((idx) => (idx + 1) % quickLogExamples.length);
-      exampleAnim.setValue(0);
+      exampleAnim.setValue(0.46);
 
       const fadeIn = Animated.timing(exampleAnim, {
         toValue: 1,
-        duration: 180,
+        duration: 420,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: shouldUseNativeDriver,
       });
       tickerAnimationRef.current = fadeIn;
@@ -1235,7 +1348,7 @@ export const HomeScreen: React.FC<Props> = ({
     resetTicker();
     if (reduceMotionEnabled) return;
     runTickerCycle();
-    tickerIntervalRef.current = setInterval(runTickerCycle, 3200);
+    tickerIntervalRef.current = setInterval(runTickerCycle, 4400);
   }, [clearTickerInterval, resetTicker, reduceMotionEnabled, runTickerCycle]);
 
   const stopTicker = useCallback(() => {
@@ -1270,6 +1383,7 @@ export const HomeScreen: React.FC<Props> = ({
       return byId.get(blockId) ?? null;
     };
   }, [appState.blocks, language]);
+  const resolveBlockColor = useCallback((blockId: string): string => getDotColor(blockId), []);
 
   const openHistoryForDate = (dateKey: string) => {
     if (onOpenHistoryForDate) {
@@ -1474,22 +1588,14 @@ export const HomeScreen: React.FC<Props> = ({
     return (
       <>
         <Text style={[styles.lastWorkoutDate, themeLinkTextStyle, STAT_NUMBER_STYLE]}>{lastWorkout.dateLabel}</Text>
-        <Text style={[styles.lastWorkoutTitle, themeTextStyle, { borderBottomColor: themeTokens.accent }]}>
+        <Text style={[styles.lastWorkoutTitle, lastWorkoutTitleToneStyle]}>
           {lastWorkoutTitle(language)}
         </Text>
         {visibleGroups.length ? (
           <>
-            <Text style={[styles.lastWorkoutSectionLabel, themeTextMutedStyle]}>{t(language, 'muscleGroups')}</Text>
-            <ScrollView
-              style={[styles.lastWorkoutChipScroll, chipListMaxHeightStyle ?? undefined]}
-              contentContainerStyle={styles.lastWorkoutChips}
-            >
-              {visibleGroups.map((blockId, index) => (
-                <View
-                  key={blockId}
-                  style={[styles.muscleChip, themeChipStyle]}
-                  onLayout={index === 0 ? handleChipLayout : undefined}
-                >
+            <View style={styles.lastWorkoutChips}>
+              {visibleGroups.map((blockId) => (
+                <View key={blockId} style={[styles.muscleChip, themeChipStyle]}>
                   <View style={[styles.muscleChipDot, { backgroundColor: getDotColor(blockId) }]} />
                   <Text style={[styles.muscleChipText, themeTextStyle]}>{blockLabel(blockId, language)}</Text>
                 </View>
@@ -1500,8 +1606,7 @@ export const HomeScreen: React.FC<Props> = ({
                   <Text style={[styles.muscleChipText, themeTextStyle]}>{`+${hiddenCount}`}</Text>
                 </View>
               ) : null}
-            </ScrollView>
-            <View style={[styles.lastWorkoutDivider, { backgroundColor: themeTokens.stroke }]} />
+            </View>
           </>
         ) : null}
         <View style={styles.lastWorkoutTotalStack}>
@@ -1511,6 +1616,7 @@ export const HomeScreen: React.FC<Props> = ({
             {totalVolumeUnitLabel ? <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}>{` ${totalVolumeUnitLabel}`}</Text> : null}
           </Text>
         </View>
+        {lastWorkoutExamples.length ? <View style={[styles.lastWorkoutDivider, { backgroundColor: themeTokens.stroke }]} /> : null}
         {lastWorkoutExamples.length ? (
           reduceMotionEnabled || expanded ? (
             <View style={styles.lastWorkoutExampleBlock}>
@@ -1626,6 +1732,20 @@ export const HomeScreen: React.FC<Props> = ({
     () => recentNotes.map((note) => note.text.trim()).filter((text) => text.length > 0),
     [recentNotes]
   );
+  const timelineNotesByDate = useMemo(() => {
+    const byDate: Record<string, string> = {};
+    const sorted = allNotes
+      .filter((note) => note.text.trim().length > 0 && typeof note.createdAt === 'string' && note.createdAt.length >= 10)
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    for (const note of sorted) {
+      const dateKey = note.createdAt.slice(0, 10);
+      if (!byDate[dateKey]) {
+        byDate[dateKey] = note.text.trim();
+      }
+    }
+    return byDate;
+  }, [allNotes]);
 
   const renderRecentNotesList = ({
     lines,
@@ -1786,6 +1906,7 @@ export const HomeScreen: React.FC<Props> = ({
     !todayWorkout.sessionIsActive && todayWorkout.sessionDurationSeconds != null
       ? formatDurationForTodayCard(language, todayWorkout.sessionDurationSeconds)
       : null;
+  const todayCompletedMetricToneStyle = themeTokens.id === 'calmLight' ? styles.todayWorkoutMetricValueCompletedLight : null;
   const todayTimerHelpText = todayWorkout.sessionIsActive
     ? language === 'nb'
       ? 'Tid siden \u00F8kten startet'
@@ -2012,10 +2133,36 @@ export const HomeScreen: React.FC<Props> = ({
           </View>
         </Modal>
       ) : null}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.stickyWordmarkWrap,
+          {
+            top: headerTopPadding,
+            opacity: stickyWordmarkOpacity,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={handlePressWordmark}
+          onLongPress={() => setCompassOpen(true)}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          accessibilityRole="button"
+          accessibilityLabel="Treasy"
+          style={({ pressed }) => [styles.wordmarkButton, styles.stickyWordmarkButton, pressed ? styles.wordmarkPressed : null]}
+        >
+          <Text style={styles.wordmarkText}>
+            <Text style={[styles.wordmarkTextMain, wordmarkMainToneStyle]}>Treasy</Text>
+            <Text style={[styles.wordmarkDot, wordmarkDotGlowStyle]}>{'\u00B7'}</Text>
+          </Text>
+        </Pressable>
+      </Animated.View>
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
+        onScroll={handleMainScroll}
+        scrollEventThrottle={16}
         bounces
         scrollEnabled={!lastWorkoutPreviewVisible && !todayPanelVisible}
       >
@@ -2025,19 +2172,7 @@ export const HomeScreen: React.FC<Props> = ({
             { paddingTop: headerTopPadding, paddingBottom: headerBottomPadding, marginBottom: headerToQuickLogGap },
           ]}
         >
-          <Pressable
-            onPress={handlePressWordmark}
-            onLongPress={() => setCompassOpen(true)}
-            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            accessibilityRole="button"
-            accessibilityLabel="Treasy"
-            style={({ pressed }) => [styles.wordmarkButton, pressed ? styles.wordmarkPressed : null]}
-          >
-            <Text style={styles.wordmarkText}>
-              <Text style={[styles.wordmarkTextMain, themeAccentTextStyle]}>Treasy</Text>
-              <Text style={[styles.wordmarkDot, wordmarkDotGlowStyle]}>{'\u00B7'}</Text>
-            </Text>
-          </Pressable>
+          <View style={styles.headerWordmarkSpacer} />
           <View style={styles.headerActions}>
             <TouchableOpacity
               onPress={onOpenSettings}
@@ -2051,111 +2186,51 @@ export const HomeScreen: React.FC<Props> = ({
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.quickLogCard, themeSurfaceStyle, quickLogCardToneStyle]}
-          onPress={onOpenQuickLog}
-          activeOpacity={0.9}
-        >
-          <View style={styles.quickLogTopSection}>
-            <View style={styles.quickLogTitleRow}>
-              <View style={styles.quickLogTitleCluster}>
-                <Text style={[styles.quickLogTitle, quickLogTitleToneStyle]}>{t(language, 'quickLogTitle')}</Text>
-              </View>
-              <Text style={[styles.quickLogEmoji, themeTextStyle]}>{'\uD83D\uDCDD'}</Text>
-            </View>
-            <Text style={[styles.quickLogSubtitle, themeTextMutedStyle]}>
-              {language === 'nb' ? 'Trykk her for \u00E5 komme i gang' : 'Press here to start'}
-            </Text>
-            <View style={styles.quickLogExampleRow}>
-              {reduceMotionEnabled ? (
-                <Text style={[styles.quickLogExampleText, themeTextStyle]}>
-                  {(language === 'nb' ? 'Skriv: ' : language === 'es' ? 'Escribe: ' : 'Type: ') + quickLogExamples[exampleIndex]}
-                </Text>
-              ) : (
-                <Animated.Text
-                  style={[
-                    styles.quickLogExampleText,
-                    themeTextStyle,
-                    {
-                      opacity: exampleAnim,
-                      transform: [
-                        {
-                          translateY: exampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  {(language === 'nb' ? 'Skriv: ' : language === 'es' ? 'Escribe: ' : 'Type: ') + quickLogExamples[exampleIndex]}
-                </Animated.Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.quickLogMomentum}>
-            <Text style={[styles.quickLogMomentumMain, { color: momentumColor }]}>
-              {analytics.momentum === 'up' ? '\u2191 ' : analytics.momentum === 'down' ? '\u2193 ' : ''}
-              {momentumMain}
-            </Text>
-            <Text style={[styles.quickLogMomentumSub, themeTextMutedStyle]}>{momentumBasedOn}</Text>
-            <TouchableOpacity onPress={scrollToAnalysis} hitSlop={8} activeOpacity={0.8}>
-              <Text style={[styles.quickLogMomentumLink, themeLinkTextStyle]}>
-                {language === 'nb' ? 'Mer detaljer' : 'More details'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+        <QuickLogCard
+          styles={styles}
+          themeSurfaceStyle={themeSurfaceStyle}
+          quickLogCardToneStyle={quickLogCardToneStyle}
+          onOpenQuickLog={onOpenQuickLog}
+          quickLogTitleToneStyle={quickLogTitleToneStyle}
+          quickLogTitleText={t(language, 'quickLogTitle')}
+          themeTextStyle={themeTextStyle}
+          reduceMotionEnabled={reduceMotionEnabled}
+          quickLogExampleToneStyle={quickLogExampleToneStyle}
+          language={language}
+          quickLogExamples={quickLogExamples}
+          exampleIndex={exampleIndex}
+          exampleAnim={exampleAnim}
+          themeLinkTextStyle={themeLinkTextStyle}
+          momentumColor={momentumColor}
+          momentumTrend={analytics.momentum}
+          momentumMain={momentumMain}
+          momentumBasedOn={momentumBasedOn}
+          themeTextMutedStyle={themeTextMutedStyle}
+          scrollToAnalysis={scrollToAnalysis}
+        />
 
         <View style={styles.groupsWrapper}>
           <View style={[styles.twoColumnRow, styles.twoColumnRowStretch]} onLayout={handleColumnsLayout}>
             <View style={styles.leftColumn}>
-              <View style={styles.groupsColumn}>
-                <Text style={[styles.groupsTitle, themeTextStyle]}>{t(language, 'muscleGroups')}</Text>
-                <View style={styles.groupsList}>
-                  {primaryBlocks.map((block) => {
-                    const tone = getBlockTone(block.id);
-                    const icon = resolveBlockIcon(block.id);
-                    return (
-                      <HomeTileButton
-                        key={block.id}
-                        style={[styles.groupRow, themeSurfaceStyle]}
-                        onPress={() => onSelectBlock(block.id)}
-                      >
-                        {({ pressed, hovered }) => (
-                          <>
-                            <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
-                            <Text style={[styles.groupRowText, themeTextStyle]} numberOfLines={1} ellipsizeMode="tail">
-                              {labelForBlock(block)}
-                            </Text>
-                            {block.id === 'cardio' ? (
-                  <TouchableOpacity
-                                onPress={(e) => {
-                                  e.stopPropagation();
-                                  onStartCardio();
-                                }}
-                                style={[styles.groupAction, { backgroundColor: tone.accent }]}
-                                activeOpacity={0.9}
-                              >
-                                <Text style={styles.groupActionText}>Start</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                            <View
-                              style={[styles.groupIconWrap, groupIconWrapStyle]}
-                            >
-                              <HomeTileIcon
-                                source={icon}
-                                active={pressed || hovered}
-                                tintColor={groupIconTintColor}
-                                activeTintColor={groupIconActiveTintColor}
-                              />
-                            </View>
-                          </>
-                        )}
-                      </HomeTileButton>
-                    );
-                  })}
-                </View>
-              </View>
+              <MuscleGroupGrid
+                styles={styles}
+                title={t(language, 'muscleGroups')}
+                showList
+                blocks={primaryBlocks}
+                themeTextStyle={themeTextStyle}
+                themeSurfaceStyle={themeSurfaceStyle}
+                groupIconWrapStyle={groupIconWrapStyle}
+                groupIconTintColor={groupIconTintColor}
+                groupIconActiveTintColor={groupIconActiveTintColor}
+                onSelectBlock={onSelectBlock}
+                onStartCardio={onStartCardio}
+                showCardioStartAction
+                labelForBlock={labelForBlock}
+                resolveBlockIcon={resolveBlockIcon}
+                resolveDotColor={getDotColor}
+                HomeTileButton={HomeTileButton}
+                HomeTileIcon={HomeTileIcon}
+              />
 
               <View style={styles.lowerGap} />
               <View style={styles.lowerSection}>
@@ -2194,7 +2269,16 @@ export const HomeScreen: React.FC<Props> = ({
                             ) : null}
                           </View>
                         </View>
-                        <Text style={[styles.todayWorkoutMetricValue, themeTextStyle]} numberOfLines={1} ellipsizeMode="tail">
+                        <Text
+                          style={[
+                            styles.todayWorkoutMetricValue,
+                            themeTextStyle,
+                            todayWorkoutLifecycleState === 'finished' ? styles.todayWorkoutMetricValueCompleted : null,
+                            todayWorkoutLifecycleState === 'finished' ? todayCompletedMetricToneStyle : null,
+                          ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
                           {todayPrimaryMetric}
                           {todayWorkoutLifecycleState === 'finished' ? (
                             <Text style={styles.todayWorkoutMetricCheckmark}>{' \u2713'}</Text>
@@ -2322,43 +2406,25 @@ export const HomeScreen: React.FC<Props> = ({
             </View>
 
             <View style={[styles.sideColumn, styles.rightColumn]}>
-              <View style={styles.groupsColumn}>
-                {/* Andre stays on the right so Cardio aligns with Bryst in the grid. */}
-                {otherBlocks.length > 0 ? (
-                  <Text style={[styles.groupsTitle, themeTextStyle]}>{t(language, 'otherSectionTitle')}</Text>
-                ) : null}
-                {otherBlocks.length > 0 ? (
-                  <View style={styles.groupsList}>
-                    {otherBlocks.map((block) => {
-                      const icon = resolveBlockIcon(block.id);
-                      return (
-                        <HomeTileButton
-                          key={block.id}
-                          style={[styles.groupRow, themeSurfaceStyle]}
-                          onPress={() => onSelectBlock(block.id)}
-                        >
-                          {({ pressed, hovered }) => (
-                            <>
-                              <View style={[styles.groupDotSmall, { backgroundColor: getDotColor(block.id) }]} />
-                              <Text style={[styles.groupRowText, themeTextStyle]} numberOfLines={1} ellipsizeMode="tail">
-                                {labelForBlock(block)}
-                              </Text>
-                              <View style={[styles.groupIconWrap, groupIconWrapStyle]}>
-                                <HomeTileIcon
-                                  source={icon}
-                                  active={pressed || hovered}
-                                  tintColor={groupIconTintColor}
-                                  activeTintColor={groupIconActiveTintColor}
-                                />
-                              </View>
-                            </>
-                          )}
-                        </HomeTileButton>
-                      );
-                    })}
-                  </View>
-                ) : null}
-              </View>
+              {/* Andre stays on the right so Cardio aligns with Bryst in the grid. */}
+              <MuscleGroupGrid
+                styles={styles}
+                title={otherBlocks.length > 0 ? t(language, 'otherSectionTitle') : null}
+                showList={otherBlocks.length > 0}
+                blocks={otherBlocks}
+                themeTextStyle={themeTextStyle}
+                themeSurfaceStyle={themeSurfaceStyle}
+                groupIconWrapStyle={groupIconWrapStyle}
+                groupIconTintColor={groupIconTintColor}
+                groupIconActiveTintColor={groupIconActiveTintColor}
+                onSelectBlock={onSelectBlock}
+                showCardioStartAction={false}
+                labelForBlock={labelForBlock}
+                resolveBlockIcon={resolveBlockIcon}
+                resolveDotColor={getDotColor}
+                HomeTileButton={HomeTileButton}
+                HomeTileIcon={HomeTileIcon}
+              />
               {otherBlocks.length > 0 ? <View style={styles.lowerGap} /> : null}
               {lastWorkoutCard}
               <View style={styles.lastWorkoutToNotesGap} />
@@ -2367,24 +2433,27 @@ export const HomeScreen: React.FC<Props> = ({
           </View>
         </View>
 
+        {isDarkTheme ? <View style={[styles.notesToAnalysisDivider, { backgroundColor: themeTokens.stroke }]} /> : null}
+
         <View style={styles.analysisWrapper} onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}>
-          <View style={[styles.analysisCards, themeSurfaceStyle]}>
+          <View style={[styles.analysisCards, styles.analysisCardsPlain]}>
             <ProgressiveOverloadCard
               summary={overload.label}
               deltaText={overloadDeltaText}
               onPress={onOpenProgress}
-              theme={themeTokens}
+              theme={analysisSectionTheme}
+              borderless={isDarkTheme}
             />
 
-            <View style={[styles.volumeCard, themeSurfaceStyle]}>
-              <Text style={[styles.volumeTitle, themeAccentTextStyle]}>{t(language, 'analysis.volume.title')}</Text>
+            <View style={[styles.volumeCard, analysisSectionSurfaceStyle, analysisSectionBorderlessStyle]}>
+              <Text style={[styles.volumeTitle, analysisSectionAccentTextStyle]}>{t(language, 'analysis.volume.title')}</Text>
               <View style={styles.volumeTopRow}>
-                <Text style={[styles.volumeLabel, themeTextMutedStyle]}>{volumeCardProps.totalLabel}</Text>
+                <Text style={[styles.volumeLabel, analysisSectionTextMutedStyle]}>{volumeCardProps.totalLabel}</Text>
                 <View style={[styles.volumeDeltaChip, volumeDeltaTone]}>
                   <Text style={[styles.volumeDeltaText, { color: volumeChangeColor }]}>{volumeChangeText}</Text>
                 </View>
               </View>
-              <Text style={[styles.volumeValue, themeTextStyle, STAT_NUMBER_STYLE]}>
+              <Text style={[styles.volumeValue, analysisSectionTextStyle, STAT_NUMBER_STYLE]}>
                 {analytics.hasData ? volumeCardProps.volumeLabel : t(language, 'analysis.empty')}
               </Text>
               <TouchableOpacity
@@ -2393,13 +2462,15 @@ export const HomeScreen: React.FC<Props> = ({
                 style={styles.volumeToggleRow}
                 hitSlop={8}
               >
-                <Text style={[styles.volumeToggleText, themeLinkTextStyle]}>{t(language, 'analysis.volume.byMuscle.toggle')}</Text>
-                <Text style={[styles.volumeToggleChevron, themeTextMutedStyle]}>{volumeExpanded ? 'v' : '>'}</Text>
+                <Text style={[styles.volumeToggleText, analysisSectionLinkTextStyle]}>
+                  {t(language, 'analysis.volume.byMuscle.toggle')}
+                </Text>
+                <Text style={[styles.volumeToggleChevron, analysisSectionTextMutedStyle]}>{volumeExpanded ? 'v' : '>'}</Text>
               </TouchableOpacity>
               {volumeExpanded ? (
-                <View style={[styles.volumeListWrapper, { borderTopColor: themeTokens.stroke }]}>
+                <View style={[styles.volumeListWrapper, analysisSectionVolumeListStyle]}>
                   {!analytics.hasData ? (
-                    <Text style={[styles.volumeEmptyText, themeTextMutedStyle]}>{t(language, 'analysis.empty')}</Text>
+                    <Text style={[styles.volumeEmptyText, analysisSectionTextMutedStyle]}>{t(language, 'analysis.empty')}</Text>
                   ) : (
                     <View style={styles.volumeList}>
                       {volumeCardProps.rows.map((row) => {
@@ -2409,14 +2480,16 @@ export const HomeScreen: React.FC<Props> = ({
                         const rowVolumeText = `${formatVolumeNumber(fromKg(row.volume7d, massUnit))} ${unitLabel}`;
                         return (
                           <View key={row.id} style={styles.volumeRow}>
-                            <Text style={[styles.volumeRowLabel, themeTextStyle]} numberOfLines={1}>
+                            <Text style={[styles.volumeRowLabel, analysisSectionTextStyle]} numberOfLines={1}>
                               {row.label}
                             </Text>
                             <View style={styles.volumeRowRight}>
                               <Text style={[styles.volumeRowChange, STAT_NUMBER_STYLE, { color: rowColor }]}>
                                 {rowChangeText}
                               </Text>
-                              <Text style={[styles.volumeRowValue, themeTextMutedStyle, STAT_NUMBER_STYLE]}>{rowVolumeText}</Text>
+                              <Text style={[styles.volumeRowValue, analysisSectionTextMutedStyle, STAT_NUMBER_STYLE]}>
+                                {rowVolumeText}
+                              </Text>
                             </View>
                           </View>
                         );
@@ -2429,15 +2502,23 @@ export const HomeScreen: React.FC<Props> = ({
 
             <PreviousWorkoutsTimeline
               language={language}
+              massUnit={massUnit}
               items={analytics.timeline}
               resolveBlockLabel={resolveBlockLabel}
+              resolveBlockColor={resolveBlockColor}
+              notesByDate={timelineNotesByDate}
               onPressDay={openHistoryForDate}
-              theme={themeTokens}
+              theme={analysisSectionTheme}
+              borderless={isDarkTheme}
             />
 
-            <TouchableOpacity style={[styles.analysisCard, themeSurfaceStyle]} onPress={onOpenRepMax} activeOpacity={0.9}>
-              <Text style={[styles.cardTitle, themeAccentTextStyle]}>{t(language, 'analysis.bestLifts.title')}</Text>
-              <Text style={[styles.cardText, themeTextMutedStyle]}>{t(language, 'analysis.bestLifts.subtitle')}</Text>
+            <TouchableOpacity
+              style={[styles.analysisCard, analysisSectionSurfaceStyle, analysisSectionBorderlessStyle]}
+              onPress={onOpenRepMax}
+              activeOpacity={0.9}
+            >
+              <Text style={[styles.cardTitle, analysisSectionAccentTextStyle]}>{t(language, 'analysis.bestLifts.title')}</Text>
+              <Text style={[styles.cardText, analysisSectionTextMutedStyle]}>{t(language, 'analysis.bestLifts.subtitle')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2448,1471 +2529,3 @@ export const HomeScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#020617',
-    ...Platform.select({
-      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-    }),
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: SCREEN_PADDING,
-    paddingTop: 0,
-  },
-  wordmarkButton: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingRight: SPACING.sm,
-    alignSelf: 'stretch',
-    flexShrink: 1,
-    transform: [{ translateY: 4 }],
-  },
-  wordmarkPressed: {
-    opacity: 0.72,
-  },
-  wordmarkText: {
-    fontSize: Platform.OS === 'web' ? 26 : 26,
-    letterSpacing: -0.2,
-    fontWeight: '600',
-  },
-  wordmarkTextMain: {
-    color: COLORS.blue1,
-    ...Platform.select({ web: { fontWeight: '600' } }),
-  },
-  wordmarkDot: {
-    color: '#2DD4BF',
-    ...Platform.select({ web: { fontWeight: '600' } }),
-  },
-  wordmarkDotGlow: {
-    textShadowColor: 'rgba(45, 212, 191, 0.35)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  compassSheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  compassSheetCard: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: '#0A111F',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    paddingBottom: SPACING.xs,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 10,
-  },
-  compassSheetHeader: {
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1E293B',
-  },
-  compassSheetTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.md,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  compassAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-  },
-  compassActionDivider: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#1E293B',
-  },
-  compassActionPressed: {
-    backgroundColor: 'rgba(96, 165, 250, 0.08)',
-  },
-  compassActionText: {
-    color: '#E2E8F0',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-  },
-  compassActionChevron: {
-    color: '#64748B',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  headerActions: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  settingsButton: {
-    minWidth: 44,
-    minHeight: 44,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIcon: {
-    fontSize: TEXT.md + 2,
-    lineHeight: TEXT.md + 2,
-  },
-  sectionTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-    marginBottom: SPACING.sm,
-  },
-  section: {
-    gap: SPACING.md,
-    marginBottom: SPACING.xxl,
-  },
-  quickLogCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    borderWidth: 1,
-    marginBottom: SPACING.xl,
-    ...Platform.select({
-      web: { minHeight: 120 },
-    }),
-  },
-  quickLogTopSection: {
-    flexGrow: 1,
-    gap: SPACING.xs,
-  },
-  quickLogTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-    marginTop: 0,
-    marginBottom: SPACING.xs,
-  },
-  quickLogTitleCluster: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.sm,
-    alignSelf: 'flex-start',
-  },
-  quickLogMomentum: {
-    alignSelf: 'flex-end',
-    alignItems: 'flex-end',
-    justifyContent: 'flex-end',
-    marginTop: SPACING.sm,
-    marginBottom: 4,
-    width: '100%',
-  },
-  quickLogMomentumMain: {
-    color: '#22C55E',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  quickLogMomentumSub: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  quickLogMomentumLink: {
-    color: '#60A5FA',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    marginTop: 6,
-    textDecorationLine: 'underline',
-  },
-  quickLogTitle: {
-    color: '#F9FAFB',
-    fontSize: TEXT.lg,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    textShadowColor: 'rgba(2, 6, 23, 0.55)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-    marginBottom: 0,
-  },
-  quickLogEmoji: {
-    alignSelf: 'flex-start',
-    fontSize: TEXT.lg,
-    color: '#F9FAFB',
-  },
-  quickLogSubtitle: {
-    color: '#6B7280',
-    fontSize: TEXT.sm,
-    marginBottom: SPACING.xs,
-  },
-  quickLogExampleRow: {
-    marginTop: SPACING.xs,
-    minHeight: 24,
-  },
-  quickLogExampleText: {
-    color: '#CBD5E1',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  blockButton: {
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    justifyContent: 'center',
-    borderWidth: 1,
-    minHeight: 52,
-  },
-  blockLabel: {
-    fontSize: TEXT.lg,
-    fontWeight: '600',
-  },
-  groupsWrapper: {
-    marginBottom: SPACING.sm,
-  },
-  twoColumnRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    columnGap: SPACING.lg,
-    rowGap: SPACING.lg,
-    width: '100%',
-  },
-  twoColumnRowStretch: {
-    alignItems: 'stretch',
-  },
-  twoColumnRowSectionGap: {
-    marginTop: SPACING.xs,
-  },
-  lowerSection: {
-    width: '100%',
-  },
-  lowerRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    columnGap: SPACING.lg,
-    width: '100%',
-    height: '100%',
-  },
-  leftCol: {
-    flex: 1,
-    height: '100%',
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
-    minWidth: 0,
-  },
-  rightCol: {
-    flex: 1,
-    height: '100%',
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
-    minWidth: 0,
-  },
-  notertFill: {
-    flex: 1,
-    alignSelf: 'stretch',
-  },
-  notertMeasure: {
-    alignSelf: 'stretch',
-  },
-  lowerGap: {
-    height: SPACING.sm,
-  },
-  lastWorkoutToNotesGap: {
-    height: SPACING.md,
-  },
-  groupsColumn: {
-    gap: SPACING.md,
-  },
-  leftColumn: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
-  },
-  sideColumn: {
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    alignItems: 'stretch',
-  },
-  rightColumn: {
-    flex: 1,
-    minWidth: 0,
-    alignSelf: 'stretch',
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
-  },
-  groupsTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-    marginBottom: SPACING.sm,
-  },
-  groupsList: {
-    gap: SPACING.sm,
-  },
-  groupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: '#DBEAFE',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: HOME_SURFACE_DARK_BORDER,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.sm,
-    minHeight: 48,
-    width: '100%',
-    alignSelf: 'stretch',
-  },
-  groupIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 'auto',
-    borderWidth: 1,
-  },
-  groupIconStack: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groupIcon: {
-    width: 24,
-    height: 24,
-  },
-  groupIconOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  groupDotSmall: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    opacity: 0.7,
-  },
-  groupDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  groupRowText: {
-    flex: 1,
-    color: COLORS.blue1,
-    fontSize: TEXT.md,
-    fontWeight: '700',
-    marginHorizontal: SPACING.xs,
-    minWidth: 0,
-  },
-  groupAction: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.md,
-    marginRight: SPACING.sm,
-  },
-  groupActionText: {
-    color: '#0B1220',
-    fontWeight: '800',
-    fontSize: TEXT.sm,
-  },
-  analysisNavRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: HOME_SURFACE_DARK,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: HOME_SURFACE_DARK_BORDER,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.sm,
-    minHeight: 48,
-    width: '100%',
-  },
-  largeNavTile: {
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.lg,
-  },
-  statusNavTile: {
-    height: 100,
-    paddingVertical: SPACING.lg,
-  },
-  notertTallTile: {
-    height: 112,
-    alignSelf: 'stretch',
-  },
-  notertCardSurface: {
-    backgroundColor: HOME_SURFACE_MUTED,
-    borderColor: HOME_SURFACE_MUTED_BORDER,
-    overflow: 'hidden',
-  },
-  analysisTallTile: {
-    minHeight: 100,
-  },
-  analysisCardSurface: {
-    backgroundColor: HOME_SURFACE_MUTED,
-    borderColor: HOME_SURFACE_MUTED_BORDER,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  analysisCardAccentTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(75, 85, 99, 0.06)',
-  },
-  analysisCardAccentStripe: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: '#4B5563',
-  },
-  analysisCardForeground: {
-    position: 'relative',
-    zIndex: 1,
-  },
-  todayWorkoutTile: {
-    minHeight: 100,
-    justifyContent: 'space-between',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  todayWorkoutCardSurface: {
-    backgroundColor: HOME_SURFACE_MUTED,
-    borderColor: HOME_SURFACE_MUTED_BORDER,
-  },
-  todayWorkoutAccentTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(107, 114, 128, 0.05)',
-  },
-  todayWorkoutAccentStripe: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: '#4B5563',
-  },
-  todayWorkoutForeground: {
-    position: 'relative',
-    zIndex: 1,
-  },
-  todayWorkoutTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 22,
-    gap: SPACING.sm,
-  },
-  todayWorkoutTitleText: {
-    color: '#A3B3C8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
-  todayLiveBadge: {
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    width: 56,
-    minHeight: 20,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayLiveBadgeActive: {
-    borderColor: '#22C55E',
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-  },
-  todayLiveBadgeIdle: {
-    borderColor: '#4B5563',
-    backgroundColor: 'rgba(75, 85, 99, 0.06)',
-  },
-  todayLiveBadgeText: {
-    color: '#22C55E',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  analysisAlignWrap: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    justifyContent: 'flex-end',
-    width: '100%',
-  },
-  analysisAlignStretch: {
-    flexGrow: 1,
-    alignSelf: 'stretch',
-  },
-  analysisNavText: {
-    color: '#93C5FD',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  analysisCardTitleText: {
-    color: '#60A5FA',
-  },
-  navTileTitleCompact: {
-    color: '#BFDBFE',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  largeNavText: {
-    fontSize: TEXT.lg,
-    fontWeight: '800',
-  },
-  navTileTitleSoft: {
-    color: '#BFDBFE',
-    fontWeight: '800',
-  },
-  navTileLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.sm,
-    minWidth: 0,
-  },
-  notertTileLeft: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: SPACING.xs,
-    justifyContent: 'center',
-  },
-  notertHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-  },
-  notertHeaderText: {
-    color: '#93C5FD',
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    flex: 1,
-  },
-  notertCountChip: {
-    minWidth: 24,
-    minHeight: 20,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.xs,
-  },
-  notertCountText: {
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  notertContentDivider: {
-    height: StyleSheet.hairlineWidth,
-    width: '100%',
-  },
-  notertPreviewList: {
-    gap: SPACING.xs,
-  },
-  notertLineText: {
-    color: '#E2E8F0',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  notertEmptyText: {
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  notePreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.xs,
-    width: '100%',
-  },
-  notePreviewBullet: {
-    flexShrink: 0,
-  },
-  notePreviewText: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  notePreviewPlaceholder: {
-    color: 'transparent',
-  },
-  navTileIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    marginTop: 1,
-  },
-  navTileIconWrapNote: {
-    backgroundColor: 'rgba(96, 165, 250, 0.14)',
-    borderColor: 'rgba(96, 165, 250, 0.28)',
-  },
-  navTileIconWrapAnalysis: {
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-    borderColor: 'rgba(34, 197, 94, 0.22)',
-  },
-  todayWorkoutIconWrap: {
-    backgroundColor: 'rgba(56, 189, 248, 0.14)',
-    borderColor: 'rgba(56, 189, 248, 0.28)',
-  },
-  navTileIconText: {
-    color: '#93C5FD',
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-  navTileTextStack: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    minWidth: 0,
-  },
-  navTileSubText: {
-    marginTop: 6,
-    color: '#A3B3C8',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  navTileMetricValue: {
-    marginTop: 4,
-    color: '#F8FAFC',
-    fontSize: TEXT.xl,
-    fontWeight: '900',
-  },
-  analysisCardMetricValue: {
-    color: '#22C55E',
-  },
-  navTileMetricContext: {
-    marginTop: 3,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  analysisCardMetricContext: {
-    color: '#94A3B8',
-  },
-  todayWorkoutMetricValue: {
-    marginTop: 4,
-    color: '#60A5FA',
-    fontSize: TEXT.lg,
-    fontWeight: '800',
-  },
-  todayWorkoutMetricCheckmark: {
-    color: '#22C55E',
-  },
-  todayWorkoutSecondaryText: {
-    marginTop: 3,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  todayWorkoutMetaText: {
-    marginTop: 6,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-    ...Platform.select({
-      web: { fontFeatureSettings: '"tnum"' },
-    }),
-  },
-  navTileSubLabel: {
-    color: '#94A3B8',
-    fontWeight: '700',
-  },
-  navTileSubValue: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-  },
-  navTileSubEmpty: {
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  analysisCardSubText: {
-    color: '#94A3B8',
-  },
-  analysisNavChevron: {
-    marginLeft: 'auto',
-    color: '#93C5FD',
-    fontSize: TEXT.xl,
-    fontWeight: '700',
-    lineHeight: TEXT.xl,
-  },
-  analysisCardChevron: {
-    color: '#93C5FD',
-  },
-  lastWorkoutCard: {
-    backgroundColor: HOME_SURFACE_DARK,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: HOME_SURFACE_DARK_BORDER,
-    padding: SPACING.xl,
-    gap: SPACING.md,
-    width: '100%',
-    alignItems: 'center',
-  },
-  lastWorkoutPressWrap: {
-    width: '100%',
-  },
-  lastWorkoutCardHidden: {
-    opacity: 0,
-  },
-  lastWorkoutTitle: {
-    color: '#E2E8F0',
-    fontSize: TEXT.md,
-    fontWeight: '800',
-    borderBottomWidth: 1,
-    borderBottomColor: '#60A5FA',
-    paddingBottom: 4,
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
-  },
-  lastWorkoutSectionLabel: {
-    color: '#64748B',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
-  },
-  lastWorkoutChipScroll: {
-    width: '100%',
-  },
-  lastWorkoutChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs,
-    justifyContent: 'center',
-  },
-  muscleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0F172A',
-  },
-  muscleChipDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-  },
-  muscleChipText: {
-    color: '#CBD5E1',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  lastWorkoutDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#1F2937',
-    width: '100%',
-  },
-  lastWorkoutDate: {
-    color: '#93C5FD',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  lastWorkoutList: {
-    gap: SPACING.sm,
-  },
-  lastWorkoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
-  },
-  lastDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  lastWorkoutName: {
-    color: '#F9FAFB',
-    fontWeight: '700',
-    fontSize: TEXT.sm,
-  },
-  lastWorkoutDetail: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    marginTop: 2,
-  },
-  lastWorkoutTotalStack: {
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-    gap: 2,
-  },
-  lastWorkoutTotalLabel: {
-    color: '#94A3B8',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  lastWorkoutTotalValue: {
-    color: '#CBD5E1',
-    fontSize: TEXT.md,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  lastWorkoutMetricNumber: {
-    color: '#FFFFFF',
-  },
-  lastWorkoutMetricUnit: {
-    color: '#1E3A8A',
-  },
-  lastWorkoutMetricSeparator: {
-    color: '#CBD5E1',
-  },
-  lastWorkoutExampleBlock: {
-    alignItems: 'center',
-    gap: 2,
-    marginBottom: SPACING.xs,
-  },
-  lastWorkoutExampleName: {
-    color: '#CBD5E1',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  lastWorkoutExampleDetail: {
-    color: '#CBD5E1',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  lastWorkoutEmpty: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  lastWorkoutLink: {
-    color: '#93C5FD',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  lastWorkoutPreviewBackdrop: {
-    flex: 1,
-  },
-  lastWorkoutPreviewDim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#020617',
-  },
-  lastWorkoutPreviewCard: {
-    position: 'absolute',
-    zIndex: 2,
-  },
-  todayPanelOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  todayPanelBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  todayPanelBackdropDim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#020617',
-  },
-  todayPanelSheet: {
-    backgroundColor: '#081224',
-    borderTopLeftRadius: RADIUS.lg,
-    borderTopRightRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2A44',
-    borderBottomWidth: 0,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0 -10px 30px rgba(2, 6, 23, 0.55)' },
-      default: {
-        shadowColor: '#020617',
-        shadowOpacity: 0.45,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: -6 },
-      },
-    }),
-  },
-  todayPanelHandle: {
-    alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: RADIUS.pill,
-    backgroundColor: '#334155',
-    marginBottom: SPACING.sm,
-  },
-  todayPanelHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  todayPanelHeaderTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  todayPanelTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  todayPanelHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  todayPanelTitle: {
-    color: '#A3B3C8',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  todayPanelDateText: {
-    marginTop: 4,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  todayPanelLiveBadge: {
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayPanelLiveBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  todayPanelHeaderAccent: {
-    height: 1,
-    borderRadius: RADIUS.pill,
-    marginBottom: SPACING.md,
-  },
-  todayFinishButton: {
-    minHeight: 36,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.45)',
-    backgroundColor: 'rgba(34, 197, 94, 0.16)',
-    paddingHorizontal: SPACING.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayFinishButtonText: {
-    color: '#DCFCE7',
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-  },
-  todayPanelCloseButton: {
-    minWidth: 36,
-    minHeight: 36,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0F172A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayPanelCloseText: {
-    color: '#CBD5E1',
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-  todayPanelScroll: {
-    flex: 1,
-  },
-  todayPanelScrollContent: {
-    paddingBottom: SPACING.md,
-    gap: SPACING.md,
-  },
-  todayTimerCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  todayTimerTintLayer: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: RADIUS.lg,
-  },
-  todayTimerForeground: {
-    position: 'relative',
-    zIndex: 1,
-  },
-  todayTimerValue: {
-    color: '#F8FAFC',
-    fontSize: TEXT.xxl,
-    fontWeight: '900',
-    letterSpacing: 0.25,
-  },
-  todayTimerHelp: {
-    marginTop: 4,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  todaySummaryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-  },
-  todaySummaryCard: {
-    flexGrow: 1,
-    minWidth: 124,
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  todaySummaryLabel: {
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  todaySummaryValue: {
-    marginTop: 4,
-    color: '#F8FAFC',
-    fontSize: TEXT.md,
-    fontWeight: '900',
-  },
-  todaySummaryTopValue: {
-    color: '#BFDBFE',
-    fontSize: TEXT.sm,
-  },
-  todayMuscleRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs,
-  },
-  todayMuscleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0F172A',
-  },
-  todayMuscleDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-  },
-  todayMuscleText: {
-    color: '#CBD5E1',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  todayTimelineList: {
-    gap: SPACING.xs,
-    marginTop: SPACING.xs,
-  },
-  todayExerciseRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  todayTimelineRail: {
-    width: 16,
-    alignItems: 'center',
-    paddingTop: SPACING.sm,
-  },
-  todayTimelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: '#60A5FA',
-  },
-  todayTimelineLine: {
-    flex: 1,
-    width: 1,
-    backgroundColor: '#1F2A44',
-    marginTop: 2,
-    marginBottom: -2,
-  },
-  todayExerciseCard: {
-    flex: 1,
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  todayExerciseHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-    marginBottom: SPACING.xs,
-  },
-  todayExerciseMetaRight: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  todayExerciseTitle: {
-    flex: 1,
-    color: '#F8FAFC',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-  },
-  todayExerciseTime: {
-    color: '#64748B',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  todayExerciseVolume: {
-    color: '#93C5FD',
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-  },
-  todayExerciseSetLine: {
-    color: '#CBD5E1',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  todayEmptyCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.xl,
-    alignItems: 'center',
-  },
-  todayEmptyIcon: {
-    fontSize: 28,
-    color: '#93C5FD',
-    marginBottom: SPACING.sm,
-  },
-  todayEmptyTitle: {
-    color: '#E2E8F0',
-    fontSize: TEXT.md,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  todayEmptyHint: {
-    marginTop: SPACING.sm,
-    color: '#94A3B8',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  notesCard: {
-    backgroundColor: HOME_SURFACE_MUTED,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: HOME_SURFACE_MUTED_BORDER,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.xl,
-    gap: SPACING.sm,
-    width: '100%',
-    minHeight: 194,
-  },
-  notesHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 22,
-  },
-  notesCardFill: {
-    flex: 1,
-  },
-  notesCardStretchWrap: {
-    flex: 0,
-    alignSelf: 'stretch',
-    minHeight: 194,
-  },
-  notesTitle: {
-    color: '#60A5FA',
-    fontSize: TEXT.md,
-    fontWeight: '800',
-    textAlign: 'center',
-    width: '100%',
-  },
-  notesInput: {
-    backgroundColor: 'transparent',
-    borderRadius: RADIUS.md,
-    borderWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    color: '#E5E7EB',
-    minHeight: 76,
-    textAlignVertical: 'top',
-    fontSize: TEXT.sm,
-    lineHeight: 20,
-  },
-  notesInputNudged: {
-    transform: [{ translateY: 4 }],
-  },
-  notesInputFill: {
-    flex: 1,
-  },
-  notesInputFocused: {
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: SPACING.xs,
-  },
-  notesButton: {
-    backgroundColor: '#0D9488',
-    borderWidth: 1,
-    borderColor: '#14B8A6',
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'stretch',
-    minHeight: 48,
-    ...Platform.select({
-      web: { boxShadow: '0 8px 16px rgba(19, 32, 51, 0.32)' },
-      default: {
-        shadowColor: HOME_SURFACE_DARK,
-        shadowOpacity: 0.24,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 3,
-      },
-    }),
-  },
-  notesButtonNudged: {
-    transform: [{ translateY: 8 }],
-  },
-  notesButtonHover: {
-    backgroundColor: '#14B8A6',
-  },
-  notesButtonPressed: {
-    backgroundColor: '#0F766E',
-  },
-  notesButtonDisabled: {
-    backgroundColor: '#0B5A57',
-    opacity: 0.5,
-    ...Platform.select({
-      web: { boxShadow: 'none' },
-      default: { shadowOpacity: 0, elevation: 0 },
-    }),
-  },
-  notesButtonText: {
-    color: '#F9FAFB',
-    fontWeight: '800',
-    fontSize: TEXT.md,
-  },
-  notesNotice: {
-    color: '#86EFAC',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    textAlign: 'center',
-    minHeight: 16,
-  },
-  notesNoticeHidden: {
-    color: 'transparent',
-  },
-  cardioCard: {
-    backgroundColor: '#0A1A33',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#113268',
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-    width: '100%',
-  },
-  cardioTitle: {
-    color: '#E5E7EB',
-    fontSize: TEXT.md,
-    fontWeight: '700',
-  },
-  cardioSubtitle: {
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-  },
-  cardioButton: {
-    backgroundColor: '#2E7CF6',
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-  },
-  cardioButtonText: {
-    color: '#F9FAFB',
-    fontSize: TEXT.md,
-    fontWeight: '700',
-  },
-  cardioHint: {
-    color: '#9CA3AF',
-    fontSize: TEXT.xs,
-  },
-  analysisWrapper: {
-    marginTop: 0,
-    marginBottom: SPACING.xxl,
-  },
-  analysisCards: {
-    gap: SPACING.md,
-    backgroundColor: '#0A1023',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2A44',
-    padding: SPACING.md,
-    ...Platform.select({
-      web: { boxShadow: '0 8px 12px rgba(11, 18, 32, 0.35)' },
-      default: {
-        shadowColor: '#0B1220',
-        shadowOpacity: 0.35,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 8 },
-      },
-    }),
-  },
-  volumeCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-  },
-  volumeTitle: {
-    color: COLORS.blue1,
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-    marginBottom: SPACING.sm,
-  },
-  volumeTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-  },
-  volumeLabel: {
-    flex: 1,
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  volumeDeltaChip: {
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  volumeDeltaText: {
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-  },
-  volumeValue: {
-    marginTop: 4,
-    color: '#F8FAFC',
-    fontSize: TEXT.xl,
-    fontWeight: '900',
-  },
-  volumeToggleRow: {
-    marginTop: SPACING.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingVertical: SPACING.xs,
-  },
-  volumeToggleText: {
-    color: '#93C5FD',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  volumeToggleChevron: {
-    color: '#9CA3AF',
-    fontSize: TEXT.md,
-    fontWeight: '800',
-  },
-  volumeListWrapper: {
-    marginTop: SPACING.xs,
-    borderTopWidth: 1,
-    borderTopColor: '#111827',
-    paddingTop: SPACING.sm,
-  },
-  volumeList: {
-    gap: SPACING.xs,
-  },
-  volumeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingVertical: SPACING.xs,
-  },
-  volumeRowLabel: {
-    flex: 1,
-    paddingRight: SPACING.md,
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  volumeRowRight: {
-    alignItems: 'flex-end',
-  },
-  volumeRowChange: {
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-  },
-  volumeRowValue: {
-    marginTop: 2,
-    color: '#E2E8F0',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  volumeEmptyText: {
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-    paddingVertical: SPACING.xs,
-  },
-  analysisCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    minHeight: 72,
-  },
-  cardTitle: {
-    fontSize: TEXT.md,
-    fontWeight: '700',
-    color: COLORS.blue1,
-    marginBottom: SPACING.xs,
-  },
-  cardText: {
-    fontSize: TEXT.xs,
-    color: '#9CA3AF',
-  },
-});

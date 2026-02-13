@@ -7,13 +7,16 @@ export type MomentumStatus = 'up' | 'stable' | 'down';
 export type WorkoutTimelineItem = {
   dateKey: string;
   dominantBlockId: string | null;
+  blockIds: string[];
   exerciseCount: number;
   setCount: number;
+  totalVolumeKg: number;
 };
 
 type DateRange = { start: Date; end: Date };
 
 const DAY_MS = 86400000;
+const BLOCK_ORDER: string[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'];
 
 function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -29,6 +32,15 @@ function toDateKey(iso: string): string {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function compareBlockIds(a: string, b: string): number {
+  const ai = BLOCK_ORDER.indexOf(a);
+  const bi = BLOCK_ORDER.indexOf(b);
+  const aRank = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+  const bRank = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+  if (aRank !== bRank) return aRank - bRank;
+  return a.localeCompare(b);
 }
 
 export function getLastDaysRangesUtc(
@@ -134,6 +146,8 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
       exerciseIds: Set<string>;
       setCount: number;
       volumeByBlock: Map<string, number>;
+      blockIds: Set<string>;
+      totalVolumeKg: number;
     }
   >();
 
@@ -141,14 +155,24 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
     const key = s.createdAt ? toDateKey(s.createdAt) : '';
     if (!key) continue;
 
-    const day = byDay.get(key) ?? { exerciseIds: new Set<string>(), setCount: 0, volumeByBlock: new Map() };
+    const day = byDay.get(key) ?? {
+      exerciseIds: new Set<string>(),
+      setCount: 0,
+      volumeByBlock: new Map(),
+      blockIds: new Set<string>(),
+      totalVolumeKg: 0,
+    };
     day.setCount += 1;
     day.exerciseIds.add(s.exerciseId);
 
     const blockId = exerciseToBlock.get(s.exerciseId);
-    if (blockId && isFiniteNumber(s.weight) && isFiniteNumber(s.reps) && s.weight >= 0 && s.reps > 0) {
+    if (blockId) day.blockIds.add(blockId);
+    if (isFiniteNumber(s.weight) && isFiniteNumber(s.reps) && s.weight >= 0 && s.reps > 0) {
       const vol = s.weight * s.reps;
-      day.volumeByBlock.set(blockId, (day.volumeByBlock.get(blockId) ?? 0) + vol);
+      day.totalVolumeKg += vol;
+      if (blockId) {
+        day.volumeByBlock.set(blockId, (day.volumeByBlock.get(blockId) ?? 0) + vol);
+      }
     }
 
     byDay.set(key, day);
@@ -163,12 +187,18 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
         dominantBlockId = blockId;
       }
     }
+    const blockIds = Array.from(day.blockIds).sort(compareBlockIds);
+    if (!dominantBlockId && blockIds.length > 0) {
+      dominantBlockId = blockIds[0];
+    }
 
     return {
       dateKey,
       dominantBlockId,
+      blockIds,
       exerciseCount: day.exerciseIds.size,
       setCount: day.setCount,
+      totalVolumeKg: day.totalVolumeKg,
     };
   });
 

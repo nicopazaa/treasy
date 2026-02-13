@@ -1,6 +1,6 @@
 # Status Report
 
-Last updated: 2026-02-10 (branch `main`, commit `2a5ebee0`)
+Last updated: 2026-02-13 (branch `main`, commit `2a5ebee0`)
 
 ## Project snapshot (verified)
 - Stack: Expo 54, React Native 0.81, React 19, TypeScript 5.9 (`package.json`).
@@ -23,6 +23,7 @@ Last updated: 2026-02-10 (branch `main`, commit `2a5ebee0`)
 - Insights flows:
   - Home-level momentum/volume snapshots.
   - `ProgressScreen`, `AnalysisScreen`, `RepMaxScreen`, and `HistoryScreen` for deeper drill-downs.
+  - `HistoryScreen` now reuses the same "Tidligere økter" timeline data model as Home (`buildWorkoutTimeline`), supports enlarged newest rows that compress while scrolling, and preserves per-date drilldown to block -> exercise -> set lines with default-collapsed date cards and nested drilldown that reset when leaving the screen, with reduced visual contrast in nested set details for readability.
 - Profile/settings flows:
   - Backup export/copy/local save.
   - Unit/language/profile fields and danger-zone destructive actions.
@@ -34,6 +35,8 @@ Last updated: 2026-02-10 (branch `main`, commit `2a5ebee0`)
 - Last workout card uses fixed height after measurement.
 - Muscle chips inside last workout use internal scroll with constrained chip area.
 - Home color system supports persisted `darkBlue` / `calmLight` theme modes via header toggle.
+- Home now applies a fixed typography system (`T0..T6` => `22/20/18/16/15/14/13`) plus dark-theme contrast tiers (`92/85/70/60` white) across key cards and panels.
+- Home wordmark (`Treasy`) is sticky in top-left while scrolling, tap-scrolls back to top, and fades slightly as scroll depth increases.
 - "Dagens økt" and "Analyse" cards use iconless compact headers, emphasized metric line, and a consistent `›` chevron.
 - `LIVE` appears only when workout session is active; once finished, Home shows workout duration.
 - "Dagens økt" primary text is lifecycle-driven: `Start en økt` (idle), `Fullfør økten` (active), `Økt fullført ✓` (finished).

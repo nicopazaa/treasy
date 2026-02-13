@@ -20,6 +20,24 @@ export const TEXT = {
   title: 32,
 };
 
+export const TREASY_TYPE_SCALE = {
+  t0: { size: 22, lineHeight: 26, weight: 700 as const }, // Hero numbers only
+  t1: { size: 20, lineHeight: 24, weight: 600 as const }, // Screen titles
+  t2: { size: 18, lineHeight: 22, weight: 600 as const }, // Card/primary section titles
+  t3: { size: 16, lineHeight: 20, weight: 600 as const }, // Important secondary labels
+  // The app currently ships Inter Regular/SemiBold/Bold; map medium-like usage to SemiBold.
+  t4: { size: 15, lineHeight: 20, weight: 600 as const }, // Exercise names
+  t5: { size: 14, lineHeight: 18, weight: 400 as const }, // Metadata/information
+  t6: { size: 13, lineHeight: 16, weight: 400 as const }, // Micro labels/chips/help text
+} as const;
+
+export const TREASY_DARK_TEXT = {
+  emphasis: 'rgba(255, 255, 255, 0.92)',
+  primary: 'rgba(255, 255, 255, 0.85)',
+  secondary: 'rgba(255, 255, 255, 0.70)',
+  metadata: 'rgba(255, 255, 255, 0.60)',
+} as const;
+
 export const RADIUS = {
   sm: 8,
   md: 12,
@@ -61,6 +79,11 @@ export const COLORS = {
   neutral: '#94A3B8',
   actionSecondary: '#8FB5FF',
 } as const;
+
+export const HOME_SURFACE_DARK = '#162539';
+export const HOME_SURFACE_DARK_BORDER = '#2E415A';
+export const HOME_SURFACE_MUTED = HOME_SURFACE_DARK;
+export const HOME_SURFACE_MUTED_BORDER = HOME_SURFACE_DARK_BORDER;
 
 export const MUSCLE_ACCENT = {
   chest: PALETTE.BLUE_DEEP,

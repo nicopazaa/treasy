@@ -154,3 +154,22 @@ Home uses a persisted two-theme token system (`darkBlue` / `calmLight`) with an 
 - Benefits: One semantic color source for Home; instant theme switching with persisted selection.
 - Tradeoffs/risks: Home now carries token-driven color overrides alongside legacy static style entries, which increases style maintenance complexity.
 - Follow-ups: Consider extending shared token usage to remaining screens for full app-wide visual consistency.
+
+---
+
+### DEC-008 - 2026-02-13
+### Status
+Accepted
+
+### Decision (one line)
+Home typography uses a fixed Treasy T0-T6 scale (22/20/18/16/15/14/13) with dark-mode contrast tiers instead of ad hoc font sizes.
+
+### Context
+- Problem: Home typography had mixed font sizes/weights (including non-system values), which weakened hierarchy and visual consistency in key cards.
+- Constraints: Keep existing Home layout/flows intact, no new dependencies, and stay compatible with the existing Inter font loading setup.
+- Affected paths: `src/shared/theme/tokens.ts`, `src/screens/HomeScreen.tsx`.
+
+### Consequences
+- Benefits: Deterministic hierarchy for key Home surfaces (`Dagens økt`, `Forrige økt`, notes/analysis metadata), with reusable text tiers and less per-screen tweaking.
+- Tradeoffs/risks: The current font assets do not include Inter Medium, so T4 "500-like" intent is approximated with semi-bold (600).
+- Follow-ups: Roll the same scale into other screens/components to complete app-wide typography consistency.
