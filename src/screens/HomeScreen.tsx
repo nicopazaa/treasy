@@ -49,8 +49,6 @@ import {
   getMomentumStatus,
   getWorkoutsInRange,
 } from '../domain/analytics/insights';
-import { ProgressiveOverloadCard } from '../features/analytics/ui/ProgressiveOverloadCard';
-import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorkoutsTimeline';
 import type { VolumeByMuscleRow } from '../features/analytics/ui/VolumeCard';
 import { progressiveOverloadSummary } from '../shared/utils/progressiveOverloadSummary';
 import { QuickActionsMenu, type QuickActionsMenuItem } from '../shared/ui/QuickActionsMenu';
@@ -59,6 +57,8 @@ import { listNotes } from '../features/notes';
 import { styles } from './HomeScreen.styles';
 import { QuickLogCard } from './HomeScreen/sections/QuickLogCard';
 import { MuscleGroupGrid } from './HomeScreen/sections/MuscleGroupGrid';
+import { PreviousWorkoutCard, type PreviousWorkoutCardDisplay } from './HomeScreen/sections/PreviousWorkoutCard';
+import { AnalysisSection } from './HomeScreen/sections/AnalysisSection';
 
 type Props = {
   appState: AppState;
@@ -92,10 +92,79 @@ const TWO_COLUMN_MIN_WIDTH = 640;
 const NAV_CHEVRON = '\u203A';
 const HOME_SURFACE_DARK_BORDER = '#2E415A';
 const NOTERT_PREVIEW_ROWS = 3;
+const STICKY_WORDMARK_MIN_TRANSLATE_Y = -6;
 const QUICKLOG_HERO_CYAN = '#00E5FF';
 const QUICKLOG_HERO_TEAL = '#0D9488';
 const WORDMARK_MAIN_CYAN = '#8CF7FF';
 const LAST_WORKOUT_TITLE_UNDERLINE_DARK = '#457DCC';
+
+const MUSCLE_GROUP_GRID_STYLES = {
+  groupsColumn: styles.groupsColumn,
+  groupsTitle: styles.groupsTitle,
+  groupsList: styles.groupsList,
+  groupRow: styles.groupRow,
+  groupDotSmall: styles.groupDotSmall,
+  groupRowText: styles.groupRowText,
+  groupRowTextTight: styles.groupRowTextTight,
+  groupAction: styles.groupAction,
+  groupActionText: styles.groupActionText,
+  groupIconWrap: styles.groupIconWrap,
+};
+
+const PREVIOUS_WORKOUT_CARD_STYLES = {
+  lastWorkoutCard: styles.lastWorkoutCard,
+  lastWorkoutEmpty: styles.lastWorkoutEmpty,
+  lastWorkoutDate: styles.lastWorkoutDate,
+  lastWorkoutTitle: styles.lastWorkoutTitle,
+  lastWorkoutChips: styles.lastWorkoutChips,
+  previousWorkoutChipsReserved: styles.previousWorkoutChipsReserved,
+  muscleChip: styles.muscleChip,
+  muscleChipDot: styles.muscleChipDot,
+  muscleChipText: styles.muscleChipText,
+  previousWorkoutChipCompact: styles.previousWorkoutChipCompact,
+  previousWorkoutChipTwoColumn: styles.previousWorkoutChipTwoColumn,
+  previousWorkoutChipDotCompact: styles.previousWorkoutChipDotCompact,
+  previousWorkoutChipTextCompact: styles.previousWorkoutChipTextCompact,
+  previousWorkoutChipOverflowCompact: styles.previousWorkoutChipOverflowCompact,
+  lastWorkoutTotalStack: styles.lastWorkoutTotalStack,
+  lastWorkoutTotalLabel: styles.lastWorkoutTotalLabel,
+  lastWorkoutTotalValue: styles.lastWorkoutTotalValue,
+  lastWorkoutMetricNumber: styles.lastWorkoutMetricNumber,
+  lastWorkoutMetricUnit: styles.lastWorkoutMetricUnit,
+  lastWorkoutMetricSeparator: styles.lastWorkoutMetricSeparator,
+  lastWorkoutDivider: styles.lastWorkoutDivider,
+  lastWorkoutExampleBlock: styles.lastWorkoutExampleBlock,
+  lastWorkoutExampleName: styles.lastWorkoutExampleName,
+  lastWorkoutExampleDetail: styles.lastWorkoutExampleDetail,
+  lastWorkoutLink: styles.lastWorkoutLink,
+};
+
+const ANALYSIS_SECTION_STYLES = {
+  analysisWrapper: styles.analysisWrapper,
+  analysisCards: styles.analysisCards,
+  analysisCardsPlain: styles.analysisCardsPlain,
+  volumeCard: styles.volumeCard,
+  volumeTitle: styles.volumeTitle,
+  volumeTopRow: styles.volumeTopRow,
+  volumeLabel: styles.volumeLabel,
+  volumeDeltaChip: styles.volumeDeltaChip,
+  volumeDeltaText: styles.volumeDeltaText,
+  volumeValue: styles.volumeValue,
+  volumeToggleRow: styles.volumeToggleRow,
+  volumeToggleText: styles.volumeToggleText,
+  volumeToggleChevron: styles.volumeToggleChevron,
+  volumeListWrapper: styles.volumeListWrapper,
+  volumeEmptyText: styles.volumeEmptyText,
+  volumeList: styles.volumeList,
+  volumeRow: styles.volumeRow,
+  volumeRowLabel: styles.volumeRowLabel,
+  volumeRowRight: styles.volumeRowRight,
+  volumeRowChange: styles.volumeRowChange,
+  volumeRowValue: styles.volumeRowValue,
+  analysisCard: styles.analysisCard,
+  cardTitle: styles.cardTitle,
+  cardText: styles.cardText,
+};
 
 function getLatestPreviewNotes(notes: NoteEntry[]): NoteEntry[] {
   return notes
@@ -593,6 +662,38 @@ export const HomeScreen: React.FC<Props> = ({
     () => (isDarkTheme ? { ...themeTokens, surface: 'transparent' } : themeTokens),
     [isDarkTheme, themeTokens]
   );
+  const progressiveOverloadTheme = useMemo(
+    () => ({
+      surface: analysisSectionTheme.surface,
+      stroke: analysisSectionTheme.stroke,
+      accent: analysisSectionTheme.accent,
+      text: analysisSectionTheme.text,
+      success: analysisSectionTheme.success,
+    }),
+    [
+      analysisSectionTheme.accent,
+      analysisSectionTheme.success,
+      analysisSectionTheme.stroke,
+      analysisSectionTheme.surface,
+      analysisSectionTheme.text,
+    ]
+  );
+  const previousWorkoutsTheme = useMemo(
+    () => ({
+      surface: analysisSectionTheme.surface,
+      stroke: analysisSectionTheme.stroke,
+      accent: analysisSectionTheme.accent,
+      textMuted: analysisSectionTheme.textMuted,
+      text: analysisSectionTheme.text,
+    }),
+    [
+      analysisSectionTheme.accent,
+      analysisSectionTheme.stroke,
+      analysisSectionTheme.surface,
+      analysisSectionTheme.text,
+      analysisSectionTheme.textMuted,
+    ]
+  );
   const analysisSectionSurfaceStyle = useMemo(
     () => ({ backgroundColor: analysisSectionTheme.surface, borderColor: analysisSectionTheme.stroke }),
     [analysisSectionTheme.surface, analysisSectionTheme.stroke]
@@ -685,6 +786,15 @@ export const HomeScreen: React.FC<Props> = ({
       scrollY.interpolate({
         inputRange: [0, 120, 360],
         outputRange: [1, 0.84, 0.72],
+        extrapolate: 'clamp',
+      }),
+    [scrollY]
+  );
+  const stickyWordmarkTranslateY = useMemo(
+    () =>
+      scrollY.interpolate({
+        inputRange: [0, 120, 360],
+        outputRange: [0, -3, STICKY_WORDMARK_MIN_TRANSLATE_Y],
         extrapolate: 'clamp',
       }),
     [scrollY]
@@ -1124,6 +1234,26 @@ export const HomeScreen: React.FC<Props> = ({
         backgroundColor: toRgba(themeTokens.neutral, 0.12),
         borderColor: toRgba(themeTokens.neutral, 0.3),
       };
+  const analysisVolumeRows = useMemo(
+    () =>
+      volumeCardProps.rows.map((row) => {
+        const rowTrend = trendFromPct(row.pctChange);
+        const rowColor = colorForVolumeTrend(rowTrend);
+        const rowChangeText = formatVolumeChangeText(language, row.pctChange);
+        const rowVolumeText = `${formatVolumeNumber(fromKg(row.volume7d, massUnit))} ${unitLabel}`;
+        return {
+          id: row.id,
+          label: row.label,
+          changeText: rowChangeText,
+          changeColor: rowColor,
+          volumeText: rowVolumeText,
+        };
+      }),
+    [formatVolumeNumber, language, massUnit, unitLabel, volumeCardProps.rows]
+  );
+  const toggleVolumeExpanded = useCallback(() => {
+    setVolumeExpanded((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1556,13 +1686,12 @@ export const HomeScreen: React.FC<Props> = ({
     stopLastExampleAnimation,
   ]);
 
-  const renderLastWorkoutBody = (expanded: boolean) => {
+  const lastWorkoutDisplay = useMemo<PreviousWorkoutCardDisplay>(() => {
     if (lastWorkout.status !== 'ready') {
-      return <Text style={[styles.lastWorkoutEmpty, themeTextMutedStyle]}>{lastWorkout.message}</Text>;
+      return { status: 'empty', message: lastWorkout.message };
     }
-    const exampleText = lastWorkoutExamples.length
-      ? lastWorkoutExamples[lastExampleIndex % lastWorkoutExamples.length]
-      : '';
+
+    const exampleText = lastWorkoutExamples.length ? lastWorkoutExamples[lastExampleIndex % lastWorkoutExamples.length] : '';
     const muscleGroups = lastWorkout.muscleGroups ?? [];
     const hasOverflow = muscleGroups.length > MAX_MUSCLE_CHIPS;
     const visibleGroups = hasOverflow ? muscleGroups.slice(0, MAX_MUSCLE_CHIPS - 1) : muscleGroups;
@@ -1581,124 +1710,37 @@ export const HomeScreen: React.FC<Props> = ({
       ? `${totalVolumeUnit.slice(0, 1).toUpperCase()}${totalVolumeUnit.slice(1).toLowerCase()}`
       : '';
     const setLineMatch = exampleSetLine.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)\s*x\s*(\d+)\s*r$/i);
-    const setLineWeight = setLineMatch ? setLineMatch[1] : null;
-    const setLineUnit = setLineMatch ? setLineMatch[2] : null;
-    const setLineReps = setLineMatch ? setLineMatch[3] : null;
-    const setLineUnitLabel = setLineUnit ? `${setLineUnit.slice(0, 1).toUpperCase()}${setLineUnit.slice(1).toLowerCase()}` : null;
-    return (
-      <>
-        <Text style={[styles.lastWorkoutDate, themeLinkTextStyle, STAT_NUMBER_STYLE]}>{lastWorkout.dateLabel}</Text>
-        <Text style={[styles.lastWorkoutTitle, lastWorkoutTitleToneStyle]}>
-          {lastWorkoutTitle(language)}
-        </Text>
-        {visibleGroups.length ? (
-          <>
-            <View style={styles.lastWorkoutChips}>
-              {visibleGroups.map((blockId) => (
-                <View key={blockId} style={[styles.muscleChip, themeChipStyle]}>
-                  <View style={[styles.muscleChipDot, { backgroundColor: getDotColor(blockId) }]} />
-                  <Text style={[styles.muscleChipText, themeTextStyle]}>{blockLabel(blockId, language)}</Text>
-                </View>
-              ))}
-              {hiddenCount > 0 ? (
-                <View style={[styles.muscleChip, themeChipStyle]}>
-                  <View style={[styles.muscleChipDot, { backgroundColor: themeTokens.iconMuted }]} />
-                  <Text style={[styles.muscleChipText, themeTextStyle]}>{`+${hiddenCount}`}</Text>
-                </View>
-              ) : null}
-            </View>
-          </>
-        ) : null}
-        <View style={styles.lastWorkoutTotalStack}>
-          <Text style={[styles.lastWorkoutTotalLabel, themeTextMutedStyle]}>{totalVolumeTitleText}</Text>
-          <Text style={[styles.lastWorkoutTotalValue, themeTextStyle, STAT_NUMBER_STYLE]}>
-            <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle]}>{totalVolumeNumber}</Text>
-            {totalVolumeUnitLabel ? <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}>{` ${totalVolumeUnitLabel}`}</Text> : null}
-          </Text>
-        </View>
-        {lastWorkoutExamples.length ? <View style={[styles.lastWorkoutDivider, { backgroundColor: themeTokens.stroke }]} /> : null}
-        {lastWorkoutExamples.length ? (
-          reduceMotionEnabled || expanded ? (
-            <View style={styles.lastWorkoutExampleBlock}>
-              <Text
-                style={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {exampleName}
-              </Text>
-              {exampleSetLine ? (
-                setLineWeight && setLineUnitLabel && setLineReps ? (
-                  <Text
-                    style={[styles.lastWorkoutExampleDetail, themeTextStyle, STAT_NUMBER_STYLE]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle]}>{setLineWeight}</Text>
-                    <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}>{` ${setLineUnitLabel}`}</Text>
-                    <Text style={[styles.lastWorkoutMetricSeparator, themeTextStyle]}> x </Text>
-                    <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle]}>{setLineReps}</Text>
-                    <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}> reps</Text>
-                  </Text>
-                ) : (
-                  <Text
-                    style={[styles.lastWorkoutExampleDetail, themeTextStyle, STAT_NUMBER_STYLE]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {exampleSetLine}
-                  </Text>
-                )
-              ) : null}
-            </View>
-          ) : (
-            <Animated.View
-              style={[
-                styles.lastWorkoutExampleBlock,
-                {
-                  opacity: lastExampleAnim,
-                  transform: [
-                    { translateY: lastExampleAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) },
-                  ],
-                },
-              ]}
-            >
-              <Text
-                style={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {exampleName}
-              </Text>
-              {exampleSetLine ? (
-                setLineWeight && setLineUnitLabel && setLineReps ? (
-                  <Text
-                    style={[styles.lastWorkoutExampleDetail, themeTextStyle, STAT_NUMBER_STYLE]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle]}>{setLineWeight}</Text>
-                    <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}>{` ${setLineUnitLabel}`}</Text>
-                    <Text style={[styles.lastWorkoutMetricSeparator, themeTextStyle]}> x </Text>
-                    <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle]}>{setLineReps}</Text>
-                    <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle]}> reps</Text>
-                  </Text>
-                ) : (
-                  <Text
-                    style={[styles.lastWorkoutExampleDetail, themeTextStyle, STAT_NUMBER_STYLE]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {exampleSetLine}
-                  </Text>
-                )
-              ) : null}
-            </Animated.View>
-          )
-        ) : null}
-      </>
-    );
-  };
+    const setLineUnitLabel = setLineMatch
+      ? `${setLineMatch[2].slice(0, 1).toUpperCase()}${setLineMatch[2].slice(1).toLowerCase()}`
+      : null;
+
+    return {
+      status: 'ready',
+      dateLabel: lastWorkout.dateLabel,
+      titleText: lastWorkoutTitle(language),
+      muscleGroups: visibleGroups.map((blockId) => ({
+        id: blockId,
+        label: blockLabel(blockId, language),
+        dotColor: getDotColor(blockId),
+      })),
+      hiddenCount,
+      totalVolumeTitleText,
+      totalVolumeNumber,
+      totalVolumeUnitLabel,
+      hasExamples: lastWorkoutExamples.length > 0,
+      exampleName,
+      exampleSetLine,
+      parsedSetLine:
+        setLineMatch && setLineUnitLabel
+          ? {
+              weight: setLineMatch[1],
+              unitLabel: setLineUnitLabel,
+              reps: setLineMatch[3],
+            }
+          : null,
+    };
+  }, [language, lastExampleIndex, lastWorkout, lastWorkoutExamples]);
+  const lastWorkoutOpenLogLabel = openLogLabel(language);
 
   const lastWorkoutCard = (
     <PressScale
@@ -1707,21 +1749,32 @@ export const HomeScreen: React.FC<Props> = ({
       delayLongPress={220}
       style={styles.lastWorkoutPressWrap}
     >
-      <View
-        ref={lastWorkoutCardRef}
-        onLayout={handleLastWorkoutCardLayout}
-        style={[
-          styles.lastWorkoutCard,
+      <PreviousWorkoutCard
+        styles={PREVIOUS_WORKOUT_CARD_STYLES}
+        display={lastWorkoutDisplay}
+        wrapInCard
+        cardStyle={[
           themeSurfaceStyle,
           lastWorkoutPreviewVisible ? styles.lastWorkoutCardHidden : null,
           lastWorkoutCardHeightStyle,
         ]}
-      >
-        {renderLastWorkoutBody(false)}
-        <TouchableOpacity onPress={onOpenHistory} activeOpacity={0.85} hitSlop={8}>
-          <Text style={[styles.lastWorkoutLink, themeLinkTextStyle]}>{openLogLabel(language)}</Text>
-        </TouchableOpacity>
-      </View>
+        cardRef={lastWorkoutCardRef}
+        onCardLayout={handleLastWorkoutCardLayout}
+        themeTextStyle={themeTextStyle}
+        themeTextMutedStyle={themeTextMutedStyle}
+        themeAccentTextStyle={themeAccentTextStyle}
+        themeLinkTextStyle={themeLinkTextStyle}
+        themeChipStyle={themeChipStyle}
+        lastWorkoutTitleToneStyle={lastWorkoutTitleToneStyle}
+        dividerColor={themeTokens.stroke}
+        overflowChipDotColor={themeTokens.iconMuted}
+        reduceMotionEnabled={reduceMotionEnabled}
+        expanded={false}
+        exampleAnim={lastExampleAnim}
+        openLogLabel={lastWorkoutOpenLogLabel}
+        openLogAction="button"
+        onOpenHistory={onOpenHistory}
+      />
     </PressScale>
   );
 
@@ -1960,8 +2013,24 @@ export const HomeScreen: React.FC<Props> = ({
                 },
               ]}
             >
-              {renderLastWorkoutBody(true)}
-              <Text style={[styles.lastWorkoutLink, themeLinkTextStyle]}>{openLogLabel(language)}</Text>
+              <PreviousWorkoutCard
+                styles={PREVIOUS_WORKOUT_CARD_STYLES}
+                display={lastWorkoutDisplay}
+                wrapInCard={false}
+                themeTextStyle={themeTextStyle}
+                themeTextMutedStyle={themeTextMutedStyle}
+                themeAccentTextStyle={themeAccentTextStyle}
+                themeLinkTextStyle={themeLinkTextStyle}
+                themeChipStyle={themeChipStyle}
+                lastWorkoutTitleToneStyle={lastWorkoutTitleToneStyle}
+                dividerColor={themeTokens.stroke}
+                overflowChipDotColor={themeTokens.iconMuted}
+                reduceMotionEnabled={reduceMotionEnabled}
+                expanded
+                exampleAnim={lastExampleAnim}
+                openLogLabel={lastWorkoutOpenLogLabel}
+                openLogAction="text"
+              />
             </Animated.View>
           </Pressable>
         </Modal>
@@ -2140,6 +2209,7 @@ export const HomeScreen: React.FC<Props> = ({
           {
             top: headerTopPadding,
             opacity: stickyWordmarkOpacity,
+            transform: [{ translateY: stickyWordmarkTranslateY }],
           },
         ]}
       >
@@ -2213,7 +2283,7 @@ export const HomeScreen: React.FC<Props> = ({
           <View style={[styles.twoColumnRow, styles.twoColumnRowStretch]} onLayout={handleColumnsLayout}>
             <View style={styles.leftColumn}>
               <MuscleGroupGrid
-                styles={styles}
+                styles={MUSCLE_GROUP_GRID_STYLES}
                 title={t(language, 'muscleGroups')}
                 showList
                 blocks={primaryBlocks}
@@ -2408,7 +2478,7 @@ export const HomeScreen: React.FC<Props> = ({
             <View style={[styles.sideColumn, styles.rightColumn]}>
               {/* Andre stays on the right so Cardio aligns with Bryst in the grid. */}
               <MuscleGroupGrid
-                styles={styles}
+                styles={MUSCLE_GROUP_GRID_STYLES}
                 title={otherBlocks.length > 0 ? t(language, 'otherSectionTitle') : null}
                 showList={otherBlocks.length > 0}
                 blocks={otherBlocks}
@@ -2435,93 +2505,55 @@ export const HomeScreen: React.FC<Props> = ({
 
         {isDarkTheme ? <View style={[styles.notesToAnalysisDivider, { backgroundColor: themeTokens.stroke }]} /> : null}
 
-        <View style={styles.analysisWrapper} onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}>
-          <View style={[styles.analysisCards, styles.analysisCardsPlain]}>
-            <ProgressiveOverloadCard
-              summary={overload.label}
-              deltaText={overloadDeltaText}
-              onPress={onOpenProgress}
-              theme={analysisSectionTheme}
-              borderless={isDarkTheme}
-            />
-
-            <View style={[styles.volumeCard, analysisSectionSurfaceStyle, analysisSectionBorderlessStyle]}>
-              <Text style={[styles.volumeTitle, analysisSectionAccentTextStyle]}>{t(language, 'analysis.volume.title')}</Text>
-              <View style={styles.volumeTopRow}>
-                <Text style={[styles.volumeLabel, analysisSectionTextMutedStyle]}>{volumeCardProps.totalLabel}</Text>
-                <View style={[styles.volumeDeltaChip, volumeDeltaTone]}>
-                  <Text style={[styles.volumeDeltaText, { color: volumeChangeColor }]}>{volumeChangeText}</Text>
-                </View>
-              </View>
-              <Text style={[styles.volumeValue, analysisSectionTextStyle, STAT_NUMBER_STYLE]}>
-                {analytics.hasData ? volumeCardProps.volumeLabel : t(language, 'analysis.empty')}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setVolumeExpanded((prev) => !prev)}
-                activeOpacity={0.85}
-                style={styles.volumeToggleRow}
-                hitSlop={8}
-              >
-                <Text style={[styles.volumeToggleText, analysisSectionLinkTextStyle]}>
-                  {t(language, 'analysis.volume.byMuscle.toggle')}
-                </Text>
-                <Text style={[styles.volumeToggleChevron, analysisSectionTextMutedStyle]}>{volumeExpanded ? 'v' : '>'}</Text>
-              </TouchableOpacity>
-              {volumeExpanded ? (
-                <View style={[styles.volumeListWrapper, analysisSectionVolumeListStyle]}>
-                  {!analytics.hasData ? (
-                    <Text style={[styles.volumeEmptyText, analysisSectionTextMutedStyle]}>{t(language, 'analysis.empty')}</Text>
-                  ) : (
-                    <View style={styles.volumeList}>
-                      {volumeCardProps.rows.map((row) => {
-                        const rowTrend = trendFromPct(row.pctChange);
-                        const rowColor = colorForVolumeTrend(rowTrend);
-                        const rowChangeText = formatVolumeChangeText(language, row.pctChange);
-                        const rowVolumeText = `${formatVolumeNumber(fromKg(row.volume7d, massUnit))} ${unitLabel}`;
-                        return (
-                          <View key={row.id} style={styles.volumeRow}>
-                            <Text style={[styles.volumeRowLabel, analysisSectionTextStyle]} numberOfLines={1}>
-                              {row.label}
-                            </Text>
-                            <View style={styles.volumeRowRight}>
-                              <Text style={[styles.volumeRowChange, STAT_NUMBER_STYLE, { color: rowColor }]}>
-                                {rowChangeText}
-                              </Text>
-                              <Text style={[styles.volumeRowValue, analysisSectionTextMutedStyle, STAT_NUMBER_STYLE]}>
-                                {rowVolumeText}
-                              </Text>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-              ) : null}
-            </View>
-
-            <PreviousWorkoutsTimeline
-              language={language}
-              massUnit={massUnit}
-              items={analytics.timeline}
-              resolveBlockLabel={resolveBlockLabel}
-              resolveBlockColor={resolveBlockColor}
-              notesByDate={timelineNotesByDate}
-              onPressDay={openHistoryForDate}
-              theme={analysisSectionTheme}
-              borderless={isDarkTheme}
-            />
-
-            <TouchableOpacity
-              style={[styles.analysisCard, analysisSectionSurfaceStyle, analysisSectionBorderlessStyle]}
-              onPress={onOpenRepMax}
-              activeOpacity={0.9}
-            >
-              <Text style={[styles.cardTitle, analysisSectionAccentTextStyle]}>{t(language, 'analysis.bestLifts.title')}</Text>
-              <Text style={[styles.cardText, analysisSectionTextMutedStyle]}>{t(language, 'analysis.bestLifts.subtitle')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <AnalysisSection
+          styles={ANALYSIS_SECTION_STYLES}
+          onLayout={({ nativeEvent }) => setAnalysisAnchorY(nativeEvent.layout.y)}
+          progressiveOverload={{
+            summary: overload.label,
+            deltaText: overloadDeltaText,
+            onPress: onOpenProgress,
+            theme: progressiveOverloadTheme,
+            borderless: isDarkTheme,
+          }}
+          volume={{
+            title: t(language, 'analysis.volume.title'),
+            totalLabel: volumeCardProps.totalLabel,
+            changeText: volumeChangeText,
+            changeColor: volumeChangeColor,
+            deltaToneStyle: volumeDeltaTone,
+            valueText: analytics.hasData ? volumeCardProps.volumeLabel : t(language, 'analysis.empty'),
+            toggleLabel: t(language, 'analysis.volume.byMuscle.toggle'),
+            toggleChevron: volumeExpanded ? 'v' : '>',
+            expanded: volumeExpanded,
+            hasData: analytics.hasData,
+            emptyText: t(language, 'analysis.empty'),
+            rows: analysisVolumeRows,
+            onToggleExpanded: toggleVolumeExpanded,
+          }}
+          timeline={{
+            language,
+            massUnit,
+            items: analytics.timeline,
+            resolveBlockLabel,
+            resolveBlockColor,
+            notesByDate: timelineNotesByDate,
+            onPressDay: openHistoryForDate,
+            theme: previousWorkoutsTheme,
+            borderless: isDarkTheme,
+          }}
+          bestLifts={{
+            title: t(language, 'analysis.bestLifts.title'),
+            subtitle: t(language, 'analysis.bestLifts.subtitle'),
+            onPress: onOpenRepMax,
+          }}
+          sectionSurfaceStyle={analysisSectionSurfaceStyle}
+          sectionBorderlessStyle={analysisSectionBorderlessStyle}
+          sectionAccentTextStyle={analysisSectionAccentTextStyle}
+          sectionTextStyle={analysisSectionTextStyle}
+          sectionTextMutedStyle={analysisSectionTextMutedStyle}
+          sectionLinkTextStyle={analysisSectionLinkTextStyle}
+          volumeListStyle={analysisSectionVolumeListStyle}
+        />
 
         <View style={{ height: Platform.OS === 'web' ? 32 : 48 }} />
       </ScrollView>

@@ -832,12 +832,18 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   lastWorkoutChips: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignContent: 'flex-start',
     gap: SPACING.xs,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     maxHeight: LAST_WORKOUT_CHIP_MAX_HEIGHT,
     overflow: 'hidden',
+  },
+  previousWorkoutChipsReserved: {
+    minHeight: LAST_WORKOUT_CHIP_MAX_HEIGHT,
   },
   muscleChip: {
     flexDirection: 'row',
@@ -860,6 +866,30 @@ const styles = StyleSheet.create({
     fontSize: TREASY_TYPE_SCALE.t3.size,
     lineHeight: TREASY_TYPE_SCALE.t3.lineHeight,
     fontWeight: '600',
+  },
+  previousWorkoutChipCompact: {
+    gap: 6,
+    minHeight: 24,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+  },
+  previousWorkoutChipTwoColumn: {
+    flexBasis: '48.5%',
+    maxWidth: '48.5%',
+    minWidth: 0,
+    flexGrow: 0,
+  },
+  previousWorkoutChipDotCompact: {
+    width: 6,
+    height: 6,
+  },
+  previousWorkoutChipTextCompact: {
+    fontSize: TREASY_TYPE_SCALE.t5.size,
+    lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
+  },
+  previousWorkoutChipOverflowCompact: {
+    minWidth: 30,
+    justifyContent: 'center',
   },
   lastWorkoutDivider: {
     height: StyleSheet.hairlineWidth,
@@ -918,6 +948,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  previousWorkoutTotalVolumeValueCompact: {
+    fontSize: TREASY_TYPE_SCALE.t0.size - 2,
+    lineHeight: TREASY_TYPE_SCALE.t0.lineHeight - 2,
+  },
   lastWorkoutMetricNumber: {
     color: TREASY_DARK_TEXT.emphasis,
     fontSize: TREASY_TYPE_SCALE.t0.size,
@@ -929,6 +963,10 @@ const styles = StyleSheet.create({
     fontSize: TREASY_TYPE_SCALE.t5.size,
     lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
     fontWeight: '600',
+  },
+  previousWorkoutTotalVolumeUnitCompact: {
+    fontSize: TREASY_TYPE_SCALE.t5.size - 1,
+    lineHeight: TREASY_TYPE_SCALE.t5.lineHeight - 1,
   },
   lastWorkoutMetricSeparator: {
     color: TREASY_DARK_TEXT.secondary,
@@ -948,12 +986,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  previousWorkoutExerciseNameCompact: {
+    fontSize: TREASY_TYPE_SCALE.t4.size - 2,
+    lineHeight: TREASY_TYPE_SCALE.t4.lineHeight - 2,
+  },
   lastWorkoutExampleDetail: {
     color: TREASY_DARK_TEXT.secondary,
     fontSize: TREASY_TYPE_SCALE.t6.size,
     lineHeight: TREASY_TYPE_SCALE.t6.lineHeight,
     fontWeight: '400',
     textAlign: 'center',
+  },
+  previousWorkoutExerciseMetricsCompact: {
+    fontSize: TREASY_TYPE_SCALE.t6.size - 2,
+    lineHeight: TREASY_TYPE_SCALE.t6.lineHeight - 2,
+  },
+  previousWorkoutExerciseMetricUnitCompact: {
+    fontSize: TREASY_TYPE_SCALE.t5.size - 1,
+    lineHeight: TREASY_TYPE_SCALE.t5.lineHeight - 1,
+  },
+  previousWorkoutExercisePreviewReserved: {
+    minHeight: (TREASY_TYPE_SCALE.t4.lineHeight - 2) + (TREASY_TYPE_SCALE.t6.lineHeight - 2) + 2 + SPACING.xs,
+  },
+  previousWorkoutExercisePreviewHidden: {
+    opacity: 0,
   },
   lastWorkoutEmpty: {
     color: TREASY_DARK_TEXT.metadata,
