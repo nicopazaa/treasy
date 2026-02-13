@@ -4,14 +4,10 @@ import type { AppState, ExerciseMetadataInput } from '../../features/workouts';
 import {
   addCardioEntry,
   addExercise,
-  addExerciseWithSetsResult,
   addLogEntry,
-  addNoteEntry,
   addSet,
-  addSetsForExercise,
   deleteExercise,
   deleteSet,
-  findExerciseByNameOrAlias,
   mergeExercises,
   renameExercise,
   reorderExercisesInBlock,
@@ -21,49 +17,17 @@ import {
   updateSet,
   createInitialState,
 } from '../../features/workouts';
-import { findExerciseFuzzy, inferBlockIdFromExercise } from '../../features/quicklog';
-import { applyParsedChunks } from '../../domain/parsing/applyParsedChunks';
-import { parseTrainingText } from '../../domain/parsing/parsePipeline';
+import { addNote, listNotes, replaceNotes } from '../../features/notes';
+import { applyParsedWorkoutAction, parseInputToAction } from '../../domain/quicklog/parseInputToAction';
+import { buildNotesMigration } from '../../features/notes/model/notesMigration';
 import { t } from '../../shared/i18n/i18n';
 import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
 import { normalizeExerciseName } from '../../domain/workouts/nameNormalize';
 import { now } from '../../shared/time';
 import { SYSTEM_EXERCISE_IDS } from '../../shared/systemEntities';
-import { assertNever } from '../../shared/assert';
 import type { NavState, ScreenName } from '../navigation/types';
 import type { DerivedCache } from '../state/derivedCache';
 import type { AppStatePersister } from '../state/persist';
-
-function splitNameAndCodes(raw: string): { name: string; metadata: ExerciseMetadataInput } {
-  const matches = Array.from(raw.matchAll(/\(([^)]+)\)/g))
-    .map((m) => (m[1] ?? '').trim())
-    .filter(Boolean);
-  const name = raw.replace(/\s*\([^)]+\)\s*/g, ' ').replace(/\s+/g, ' ').trim() || raw.trim();
-  const [shortCode, ...tags] = matches;
-  return {
-    name,
-    metadata: {
-      shortCode: shortCode ?? null,
-      tags,
-    },
-  };
-}
-
-function applyTrainingTextToState(state: AppState, text: string): AppState {
-  const language = state.language ?? 'en';
-  const defaultUnit = state.massUnit ?? 'kg';
-  const chunks = parseTrainingText(text, { language, defaultUnit });
-  if (chunks.length === 0) return state;
-  const applied = applyParsedChunks(state, chunks, { language });
-  switch (applied.kind) {
-    case 'applied':
-    case 'needsAliasConfirmation':
-    case 'createdExerciseNeedsCategorization':
-      return applied.next;
-    default:
-      return assertNever(applied);
-  }
-}
 
 function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
   const existing = state.exercises.find((ex) => ex.blockId === SYSTEM_EXERCISE_IDS.CARDIO);
@@ -87,7 +51,95 @@ function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
   };
 }
 
+function isValidISODate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+function toDateKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+function findEarliestSetISOForDate(state: AppState, dateKey: string): string | null {
+  let earliestISO: string | null = null;
+  let earliestMs = Number.POSITIVE_INFINITY;
+
+  for (const set of state.sets) {
+    const createdAt = set?.createdAt;
+    if (!isValidISODate(createdAt)) continue;
+    if (toDateKey(createdAt) !== dateKey) continue;
+    const ms = Date.parse(createdAt);
+    if (!Number.isFinite(ms) || ms >= earliestMs) continue;
+    earliestMs = ms;
+    earliestISO = createdAt;
+  }
+
+  return earliestISO;
+}
+
+function findAddedSetCreatedAtISO(prev: AppState, next: AppState): string | null {
+  if (next.sets.length <= prev.sets.length) return null;
+
+  const prevIds = new Set(prev.sets.map((set) => set.id));
+  let candidateISO: string | null = null;
+  let candidateMs = Number.NEGATIVE_INFINITY;
+
+  for (const set of next.sets) {
+    if (prevIds.has(set.id)) continue;
+    const createdAt = set?.createdAt;
+    if (!isValidISODate(createdAt)) continue;
+    const ms = Date.parse(createdAt);
+    if (!Number.isFinite(ms) || ms < candidateMs) continue;
+    candidateMs = ms;
+    candidateISO = createdAt;
+  }
+
+  if (candidateISO) return candidateISO;
+
+  const fallbackCreatedAt = next.sets[next.sets.length - 1]?.createdAt;
+  return isValidISODate(fallbackCreatedAt) ? fallbackCreatedAt : null;
+}
+
+function withStartedWorkoutSession(state: AppState, startedAtISO: string): AppState {
+  if (!isValidISODate(startedAtISO)) return state;
+
+  const startedDateKey = toDateKey(startedAtISO);
+  const todayDateKey = new Date().toISOString().slice(0, 10);
+  if (startedDateKey !== todayDateKey) return state;
+
+  const current = state.activeWorkout;
+  const currentStartedAtISO = current?.startedAtISO;
+  const currentFinishedAtISO = current?.finishedAtISO;
+  const currentDateKey = isValidISODate(currentStartedAtISO) ? toDateKey(currentStartedAtISO) : null;
+
+  if (!currentStartedAtISO || currentDateKey !== startedDateKey) {
+    return { ...state, activeWorkout: { startedAtISO } };
+  }
+
+  // If a session was finished and a new set is logged on the same day, start a new active session.
+  if (isValidISODate(currentFinishedAtISO)) {
+    return { ...state, activeWorkout: { startedAtISO } };
+  }
+
+  const currentStartedMs = Date.parse(currentStartedAtISO);
+  const startedMs = Date.parse(startedAtISO);
+  if (!Number.isFinite(currentStartedMs) || !Number.isFinite(startedMs)) {
+    return state;
+  }
+
+  if (startedMs >= currentStartedMs) {
+    return state;
+  }
+
+  return { ...state, activeWorkout: { startedAtISO } };
+}
+
 type UpdateMode = 'critical' | 'debounced' | 'none';
+
+type ParsedInputResult = { kind: 'note' } | { kind: 'workout' };
+type QuickLogSaveResult = ParsedInputResult & {
+  newExerciseId?: string;
+  newExerciseName?: string;
+};
 
 export function useAppActions(opts: {
   appState: AppState;
@@ -113,21 +165,20 @@ export function useAppActions(opts: {
 
   // Orchestration / mutations
   handleStartCardio: () => void;
-  handleAddNote: (text: string) => void;
-  handleQuickLogSave: (text: string, options?: { blockId?: string | null }) => {
-    newExerciseId?: string;
-    newExerciseName?: string;
-  };
+  handleAddNote: (text: string) => Promise<ParsedInputResult>;
+  handleQuickLogSave: (text: string, options?: { blockId?: string | null }) => Promise<QuickLogSaveResult>;
   handleQuickLogSet: (
     exerciseId: string,
     weight: number,
     reps: number,
     options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
   ) => void;
+  finishWorkoutSession: () => void;
 
   // Screen passthrough updates (behavior-preserving)
   updateProfile: (next: AppState) => void;
   updateSettings: (next: AppState) => void;
+  setThemeMode: (theme: AppState['theme']) => void;
   reorderExercises: (blockId: string, orderedExerciseIds: string[]) => void;
   moveExercise: (exerciseId: string, blockId: string) => void;
   addExerciseToBlock: (blockId: string, name: string, metadata?: ExerciseMetadataInput) => void;
@@ -169,6 +220,7 @@ export function useAppActions(opts: {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [historyInitialDateKey, setHistoryInitialDateKey] = useState<string | null>(null);
   const githubHandledRef = useRef(false);
+  const notesMigrationRef = useRef(false);
 
   // Imperative "latest state" mirror: lets actions compute `nextState` synchronously,
   // update React state, and trigger persistence with the exact state that was set.
@@ -340,6 +392,42 @@ export function useAppActions(opts: {
     })();
   }, [applyUpdate, loading, navigate]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (notesMigrationRef.current) return;
+    notesMigrationRef.current = true;
+
+    void (async () => {
+      try {
+        const current = stateRef.current ?? createInitialState();
+        const existingNotes = await listNotes();
+        const migration = buildNotesMigration({ appState: current, existingNotes });
+        const notesChanged = migration.nextNotes.length !== existingNotes.length;
+
+        if (notesChanged) {
+          await replaceNotes(migration.nextNotes);
+        }
+
+        if (migration.logIdsToRemove.length > 0 || migration.shouldClearLegacyNotes) {
+          const removeIds = new Set(migration.logIdsToRemove);
+          applyUpdate((prev) => {
+            const prevLogs = prev.logs ?? [];
+            const nextLogs =
+              removeIds.size > 0 ? prevLogs.filter((log) => !removeIds.has(log.id)) : prevLogs;
+            const shouldClearNotes = migration.shouldClearLegacyNotes && (prev.notes?.length ?? 0) > 0;
+            const nextNotes = shouldClearNotes ? [] : prev.notes ?? [];
+
+            const logsChanged = nextLogs.length !== prevLogs.length;
+            if (!logsChanged && !shouldClearNotes) return prev;
+            return { ...prev, logs: nextLogs, notes: nextNotes };
+          }, 'critical');
+        }
+      } catch (e) {
+        console.warn('Failed to migrate notes', e);
+      }
+    })();
+  }, [applyUpdate, loading]);
+
   const handleStartCardio = useCallback(() => {
     const prev = stateRef.current ?? createInitialState();
     const ensured = ensureCardioExercise(prev);
@@ -350,71 +438,55 @@ export function useAppActions(opts: {
   }, [applyUpdate, navigate]);
 
   const handleAddNote = useCallback(
-    (text: string) => {
-      applyUpdate((prev) => {
-        let next = addNoteEntry(prev, text);
-        next = addLogEntry(next, text);
-        next = applyTrainingTextToState(next, text);
-        return next;
-      }, 'critical');
+    async (text: string): Promise<ParsedInputResult> => {
+      const trimmed = text.trim();
+      if (!trimmed) return { kind: 'note' };
+
+      const current = stateRef.current ?? createInitialState();
+      const parsed = parseInputToAction(trimmed, { appState: current });
+
+      if (parsed.kind === 'workout') {
+        applyUpdate((prev) => {
+          let next = addLogEntry(prev, trimmed);
+          next = applyParsedWorkoutAction(next, parsed.payload);
+          const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+          if (startedAtISO) {
+            next = withStartedWorkoutSession(next, startedAtISO);
+          }
+          return next;
+        }, 'critical');
+        return { kind: 'workout' };
+      }
+
+      await addNote(trimmed, 'home_notes');
+      return { kind: 'note' };
     },
     [applyUpdate]
   );
 
   const handleQuickLogSave = useCallback(
-    (text: string, options?: { blockId?: string | null }) => {
-      let created: { newExerciseId?: string; newExerciseName?: string } = {};
+    async (text: string, _options?: { blockId?: string | null }): Promise<QuickLogSaveResult> => {
+      const trimmed = text.trim();
+      if (!trimmed) return { kind: 'note' };
 
-      applyUpdate((prev) => {
-        const blockHint = options?.blockId ?? null;
-        let next = addLogEntry(prev, text, { pinned: false });
-        const language = next.language ?? 'en';
-        const defaultUnit = next.massUnit ?? 'kg';
-        const chunks = parseTrainingText(text, { language, defaultUnit });
-        const first = chunks[0] ?? null;
-        if (!first) return next;
+      const current = stateRef.current ?? createInitialState();
+      const parsed = parseInputToAction(trimmed, { appState: current });
 
-        const sets = first.sets.map((s) => ({ weight: s.weight, reps: s.reps }));
-        const { name: parsedName, metadata } = splitNameAndCodes(first.rawExerciseName);
-        const lookupName = parsedName || first.rawExerciseName;
-
-        const exact =
-          findExerciseByNameOrAlias(next, first.rawExerciseName) ??
-          (lookupName !== first.rawExerciseName ? findExerciseByNameOrAlias(next, lookupName) : null);
-
-        const existing =
-          exact ??
-          findExerciseFuzzy(next, first.rawExerciseName) ??
-          (lookupName !== first.rawExerciseName ? findExerciseFuzzy(next, lookupName) : null);
-
-        if (existing) {
-          const allBodyweight = first.sets.every((s) => s.isBodyweight === true || s.weight === 0);
-          next = addSetsForExercise(next, existing.id, sets, allBodyweight ? { isBodyweight: true } : undefined);
+      if (parsed.kind === 'workout') {
+        applyUpdate((prev) => {
+          let next = addLogEntry(prev, trimmed, { pinned: false });
+          next = applyParsedWorkoutAction(next, parsed.payload);
+          const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+          if (startedAtISO) {
+            next = withStartedWorkoutSession(next, startedAtISO);
+          }
           return next;
-        }
+        }, 'critical');
+        return { kind: 'workout' };
+      }
 
-        const inferredBlock =
-          inferBlockIdFromExercise(first.rawExerciseName) ??
-          (lookupName !== first.rawExerciseName ? inferBlockIdFromExercise(lookupName) : null);
-        const allowedBlocks = new Set(next.blocks.map((b) => b.id));
-        const targetBlock =
-          (blockHint && allowedBlocks.has(blockHint) ? blockHint : null) ??
-          (inferredBlock && allowedBlocks.has(inferredBlock) ? inferredBlock : null) ??
-          next.blocks[0]?.id ??
-          'chest';
-
-        const createdResult = addExerciseWithSetsResult(next, targetBlock, lookupName, sets, metadata);
-        if (createdResult) {
-          next = createdResult.nextState;
-          const createdExercise = next.exercises.find((ex) => ex.id === createdResult.exerciseId) ?? null;
-          const label = createdExercise ? formatExerciseLabel(createdExercise) : lookupName;
-          created = { newExerciseId: createdResult.exerciseId, newExerciseName: label };
-        }
-
-        return next;
-      }, 'critical');
-
-      return created;
+      await addNote(trimmed, 'quicklog');
+      return { kind: 'note' };
     },
     [applyUpdate]
   );
@@ -452,11 +524,53 @@ export function useAppActions(opts: {
         const next = addSet(prev, exerciseId, weight, reps, {
           isBodyweight: options?.bodyweight,
         });
-        return addLogEntry(next, logText);
+        const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+        const withSession = startedAtISO ? withStartedWorkoutSession(next, startedAtISO) : next;
+        return addLogEntry(withSession, logText);
       }, 'critical');
     },
     [applyUpdate]
   );
+
+  const finishWorkoutSession = useCallback(() => {
+    applyUpdate((prev) => {
+      const nowISO = new Date().toISOString();
+      const todayDateKey = toDateKey(nowISO);
+      const current = prev.activeWorkout;
+
+      const currentStartedAtISO = isValidISODate(current?.startedAtISO) ? current.startedAtISO : null;
+      const currentStartedDateKey = currentStartedAtISO ? toDateKey(currentStartedAtISO) : null;
+      const inferredStartedAtISO = findEarliestSetISOForDate(prev, todayDateKey);
+      const startedAtISO =
+        currentStartedDateKey === todayDateKey ? currentStartedAtISO : inferredStartedAtISO;
+      if (!startedAtISO) return prev;
+
+      const startedAtMs = Date.parse(startedAtISO);
+      if (!Number.isFinite(startedAtMs)) return prev;
+
+      const currentFinishedAtISO =
+        currentStartedDateKey === todayDateKey && isValidISODate(current?.finishedAtISO)
+          ? current.finishedAtISO
+          : null;
+      const nowMs = Date.now();
+      const safeFinishedMs = Math.max(startedAtMs, nowMs);
+
+      if (currentFinishedAtISO) {
+        const existingFinishedMs = Date.parse(currentFinishedAtISO);
+        if (Number.isFinite(existingFinishedMs) && existingFinishedMs >= safeFinishedMs) {
+          return prev;
+        }
+      }
+
+      return {
+        ...prev,
+        activeWorkout: {
+          startedAtISO,
+          finishedAtISO: new Date(safeFinishedMs).toISOString(),
+        },
+      };
+    }, 'critical');
+  }, [applyUpdate]);
 
   const updateProfile = useCallback(
     (next: AppState) => {
@@ -468,6 +582,17 @@ export function useAppActions(opts: {
   const updateSettings = useCallback(
     (next: AppState) => {
       applyUpdate(() => next, 'critical');
+    },
+    [applyUpdate]
+  );
+
+  const setThemeMode = useCallback(
+    (theme: AppState['theme']) => {
+      if (!theme) return;
+      applyUpdate((prev) => {
+        if (prev.theme === theme) return prev;
+        return { ...prev, theme };
+      }, 'critical');
     },
     [applyUpdate]
   );
@@ -516,7 +641,11 @@ export function useAppActions(opts: {
 
   const addSetToExercise = useCallback(
     (exerciseId: string, weight: number, reps: number, meta?: Parameters<typeof addSet>[4]) => {
-      applyUpdate((prev) => addSet(prev, exerciseId, weight, reps, meta), 'critical');
+      applyUpdate((prev) => {
+        const next = addSet(prev, exerciseId, weight, reps, meta);
+        const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+        return startedAtISO ? withStartedWorkoutSession(next, startedAtISO) : next;
+      }, 'critical');
     },
     [applyUpdate]
   );
@@ -537,7 +666,11 @@ export function useAppActions(opts: {
 
   const restoreSetEntry = useCallback(
     (setEntry: Parameters<typeof restoreSet>[1]) => {
-      applyUpdate((prev) => restoreSet(prev, setEntry), 'critical');
+      applyUpdate((prev) => {
+        const next = restoreSet(prev, setEntry);
+        const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+        return startedAtISO ? withStartedWorkoutSession(next, startedAtISO) : next;
+      }, 'critical');
     },
     [applyUpdate]
   );
@@ -601,9 +734,11 @@ export function useAppActions(opts: {
     handleAddNote,
     handleQuickLogSave,
     handleQuickLogSet,
+    finishWorkoutSession,
 
     updateProfile,
     updateSettings,
+    setThemeMode,
     reorderExercises,
     moveExercise,
     addExerciseToBlock,

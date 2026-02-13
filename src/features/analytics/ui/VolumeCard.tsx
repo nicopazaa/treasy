@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, LayoutAnimation } from 'react-native';
 import type { AppLanguage } from '../../../shared/types';
 import { SPACING, TEXT as TEXT_TOKENS, RADIUS, COLORS } from '../../../shared/theme/tokens';
+import { STAT_NUMBER_STYLE } from '../../../shared/theme/typography';
 import { t } from '../../../shared/i18n/i18n';
 import { fromKg, type MassUnit } from '../../../shared/utils/units';
 
@@ -83,11 +84,11 @@ export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, total
         <Text style={styles.label}>{totalLabel}</Text>
         <View style={styles.trendWrap}>
           <Text style={[styles.trendArrow, { color: changeColor }]}>{changeArrow}</Text>
-          <Text style={[styles.change, { color: changeColor }]}>{changeDisplay.text}</Text>
+          <Text style={[styles.change, STAT_NUMBER_STYLE, { color: changeColor }]}>{changeDisplay.text}</Text>
         </View>
       </View>
 
-      <Text style={styles.value}>{hasData ? volumeLabel : t(language, 'analysis.empty')}</Text>
+      <Text style={[styles.value, STAT_NUMBER_STYLE]}>{hasData ? volumeLabel : t(language, 'analysis.empty')}</Text>
 
       <TouchableOpacity onPress={toggle} activeOpacity={0.85} style={styles.toggleRow} hitSlop={8}>
         <Text style={styles.toggleText}>{t(language, 'analysis.volume.byMuscle.toggle')}</Text>
@@ -110,8 +111,8 @@ export const VolumeCard: React.FC<Props> = ({ language, massUnit, hasData, total
                       {item.label}
                     </Text>
                     <View style={styles.itemRight}>
-                      <Text style={[styles.itemChange, { color }]}>{changeText.text}</Text>
-                      <Text style={styles.itemVolume}>{volumeText}</Text>
+                      <Text style={[styles.itemChange, STAT_NUMBER_STYLE, { color }]}>{changeText.text}</Text>
+                      <Text style={[styles.itemVolume, STAT_NUMBER_STYLE]}>{volumeText}</Text>
                     </View>
                   </View>
                 );
@@ -134,7 +135,7 @@ const styles = StyleSheet.create({
     borderColor: '#1F2937',
   },
   title: {
-    color: '#E5E7EB',
+    color: COLORS.blue1,
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '800',
     marginBottom: SPACING.sm,

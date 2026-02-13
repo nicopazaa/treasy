@@ -1,4 +1,4 @@
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'darkBlue' | 'calmLight' | 'light' | 'dark';
 
 export type AuthProvider = 'guest' | 'email' | 'github';
 

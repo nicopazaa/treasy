@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AppState, TrainingBlockId } from '../features/workouts';
 import type { DerivedCache } from '../app/state/derivedCache';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
+import { STAT_NUMBER_STYLE } from '../shared/theme/typography';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import {
   calcPctChange,
@@ -217,19 +218,19 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
 
               <View style={styles.statRow}>
                 <Text style={styles.statLabel}>{language === 'nb' ? 'Økter' : language === 'es' ? 'Sesiones' : 'Sessions'}</Text>
-                <Text style={styles.statValue}>{String(data.sessions7d)}</Text>
+                <Text style={[styles.statValue, STAT_NUMBER_STYLE]}>{String(data.sessions7d)}</Text>
               </View>
               <View style={styles.statRow}>
                 <Text style={styles.statLabel}>{language === 'nb' ? 'Sett' : language === 'es' ? 'Series' : 'Sets'}</Text>
-                <Text style={styles.statValue}>{String(data.setCount7d)}</Text>
+                <Text style={[styles.statValue, STAT_NUMBER_STYLE]}>{String(data.setCount7d)}</Text>
               </View>
               <View style={styles.statRow}>
                 <Text style={styles.statLabel}>{language === 'nb' ? 'Volum' : language === 'es' ? 'Volumen' : 'Volume'}</Text>
-                <Text style={styles.statValue}>{formatVolume(language, massUnit, data.volume7d)}</Text>
+                <Text style={[styles.statValue, STAT_NUMBER_STYLE]}>{formatVolume(language, massUnit, data.volume7d)}</Text>
               </View>
               <View style={styles.statRow}>
                 <Text style={styles.statLabel}>{language === 'nb' ? 'Topp muskel' : language === 'es' ? 'Top grupo' : 'Top muscle'}</Text>
-                <Text style={styles.statValue}>{topMuscleLabel ?? '—'}</Text>
+                <Text style={[styles.statValue, STAT_NUMBER_STYLE]}>{topMuscleLabel ?? '—'}</Text>
               </View>
             </View>
 
@@ -237,7 +238,7 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
               <Text style={styles.cardTitle}>{language === 'nb' ? 'Konsistens' : language === 'es' ? 'Constancia' : 'Consistency'}</Text>
               <View style={styles.statRow}>
                 <Text style={styles.statLabel}>{language === 'nb' ? 'Aktive dager' : language === 'es' ? 'Días activos' : 'Active days'}</Text>
-                <Text style={styles.statValue}>{`${data.sessions7d}/7`}</Text>
+                <Text style={[styles.statValue, STAT_NUMBER_STYLE]}>{`${data.sessions7d}/7`}</Text>
               </View>
               <Text style={styles.muted}>
                 {language === 'nb'
@@ -273,10 +274,12 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
                 </Text>
                 <View style={styles.trendRight}>
                   <Text style={[styles.trendArrow, { color: volumeTrendColor }]}>{arrowForTrend(volumeTrend)}</Text>
-                  <Text style={[styles.trendText, { color: volumeTrendColor }]}>{formatPctText(language, data.volumePct)}</Text>
+                  <Text style={[styles.trendText, STAT_NUMBER_STYLE, { color: volumeTrendColor }]}>
+                    {formatPctText(language, data.volumePct)}
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.muted}>
+              <Text style={[styles.muted, STAT_NUMBER_STYLE]}>
                 {language === 'nb'
                   ? `Forrige: ${formatVolume(language, massUnit, data.volumePrev7d)}`
                   : language === 'es'
@@ -301,8 +304,8 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
                     </Text>
                     <View style={styles.tableRight}>
                       <Text style={[styles.tableArrow, { color }]}>{arrowForTrend(trend)}</Text>
-                      <Text style={[styles.tablePct, { color }]}>{formatPctText(language, stat.pctChange)}</Text>
-                      <Text style={styles.tableValue}>{formatVolume(language, massUnit, stat.volume7d)}</Text>
+                      <Text style={[styles.tablePct, STAT_NUMBER_STYLE, { color }]}>{formatPctText(language, stat.pctChange)}</Text>
+                      <Text style={[styles.tableValue, STAT_NUMBER_STYLE]}>{formatVolume(language, massUnit, stat.volume7d)}</Text>
                     </View>
                   </View>
                 );
@@ -333,9 +336,9 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
                         <Text style={styles.prName} numberOfLines={1}>
                           {name}
                         </Text>
-                        <Text style={styles.prDate}>{dateLabel}</Text>
+                        <Text style={[styles.prDate, STAT_NUMBER_STYLE]}>{dateLabel}</Text>
                       </View>
-                      <Text style={styles.prWeight}>{formatWeight(hit.weightKg, massUnit, language)}</Text>
+                      <Text style={[styles.prWeight, STAT_NUMBER_STYLE]}>{formatWeight(hit.weightKg, massUnit, language)}</Text>
                     </View>
                   );
                 })
@@ -357,12 +360,12 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
                 const startLabel = week.start.toISOString().slice(0, 10);
                 return (
                   <View key={week.index} style={[styles.tableRow, idx === 0 && styles.tableRowFirst]}>
-                    <Text style={styles.tableLeft}>{startLabel}</Text>
+                    <Text style={[styles.tableLeft, STAT_NUMBER_STYLE]}>{startLabel}</Text>
                     <View style={styles.tableRight}>
                       <Text style={[styles.tableArrow, { color }]}>{arrowForTrend(trend)}</Text>
-                      <Text style={[styles.tablePct, { color }]}>{prev ? formatPctText(language, pct) : '—'}</Text>
-                      <Text style={styles.tableValue}>{formatVolume(language, massUnit, week.volumeKg)}</Text>
-                      <Text style={styles.tableMeta}>
+                      <Text style={[styles.tablePct, STAT_NUMBER_STYLE, { color }]}>{prev ? formatPctText(language, pct) : '—'}</Text>
+                      <Text style={[styles.tableValue, STAT_NUMBER_STYLE]}>{formatVolume(language, massUnit, week.volumeKg)}</Text>
+                      <Text style={[styles.tableMeta, STAT_NUMBER_STYLE]}>
                         {`${week.sessions} ${language === 'nb' ? 'økter' : language === 'es' ? 'sesiones' : 'sessions'}`}
                       </Text>
                     </View>

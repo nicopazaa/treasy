@@ -8,12 +8,12 @@ export type ScreenName =
   | 'history'
   | 'progress'
   | 'repMax'
-  | 'profile'
   | 'settings'
   | 'manageExercises'
   | 'quickLog'
   | 'cardio'
-  | 'analysis';
+  | 'analysis'
+  | 'notert';
 
 export interface NavState {
   screen: ScreenName;

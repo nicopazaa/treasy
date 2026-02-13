@@ -1,11 +1,14 @@
 import React from 'react';
 import { Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { SPACING, TEXT as TEXT_TOKENS, RADIUS, COLORS } from '../../../shared/theme/tokens';
+import { SPACING, TEXT as TEXT_TOKENS, RADIUS } from '../../../shared/theme/tokens';
+import { STAT_NUMBER_STYLE } from '../../../shared/theme/typography';
+import type { TreasyThemeTokens } from '../../../shared/theme/themes';
 
 type Props = {
   summary: string;
   deltaText?: string | null;
   onPress?: () => void;
+  theme: Pick<TreasyThemeTokens, 'surfaceAlt' | 'stroke' | 'accent' | 'text' | 'success'>;
 };
 
 function splitAroundDelta(summary: string, deltaText: string): { before: string; after: string } | null {
@@ -17,25 +20,25 @@ function splitAroundDelta(summary: string, deltaText: string): { before: string;
   };
 }
 
-export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, onPress }) => {
+export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, onPress, theme }) => {
   const split = deltaText ? splitAroundDelta(summary, deltaText) : null;
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.stroke }]}
       onPress={onPress}
       disabled={!onPress}
       activeOpacity={0.9}
       hitSlop={8}
     >
-      <Text style={styles.title}>{'Progressive overload'}</Text>
+      <Text style={[styles.title, { color: theme.accent }]}>{'Progressive overload'}</Text>
       {split && deltaText ? (
-        <Text style={styles.summary} numberOfLines={3} ellipsizeMode="tail">
+        <Text style={[styles.summary, { color: theme.text }]} numberOfLines={3} ellipsizeMode="tail">
           {split.before}
-          <Text style={styles.delta}>{deltaText}</Text>
+          <Text style={[styles.delta, STAT_NUMBER_STYLE, { color: theme.success }]}>{deltaText}</Text>
           {split.after}
         </Text>
       ) : (
-        <Text style={styles.summary} numberOfLines={3} ellipsizeMode="tail">
+        <Text style={[styles.summary, { color: theme.text }]} numberOfLines={3} ellipsizeMode="tail">
           {summary}
         </Text>
       )}
@@ -45,28 +48,23 @@ export const ProgressiveOverloadCard: React.FC<Props> = ({ summary, deltaText, o
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
     minHeight: 84,
   },
   title: {
-    color: COLORS.blue2,
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '800',
     marginBottom: SPACING.xs,
   },
   summary: {
-    color: '#F9FAFB',
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '700',
     lineHeight: 20,
   },
   delta: {
-    color: COLORS.success,
     fontWeight: '900',
   },
 });

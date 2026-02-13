@@ -2,15 +2,18 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import type { AppLanguage } from '../../../shared/types';
 import { SPACING, TEXT as TEXT_TOKENS, RADIUS } from '../../../shared/theme/tokens';
+import { STAT_NUMBER_STYLE } from '../../../shared/theme/typography';
 import { t } from '../../../shared/i18n/i18n';
 import { formatRelativeDayLabel } from '../../../shared/utils/dateLabels';
 import type { WorkoutTimelineItem } from '../../../domain/analytics/insights';
+import type { TreasyThemeTokens } from '../../../shared/theme/themes';
 
 type Props = {
   language: AppLanguage;
   items: WorkoutTimelineItem[];
   resolveBlockLabel: (blockId: string | null) => string | null;
   onPressDay: (dateKey: string) => void;
+  theme: Pick<TreasyThemeTokens, 'surfaceAlt' | 'stroke' | 'accent' | 'textMuted'>;
 };
 
 function localeForLanguage(language: AppLanguage): string {
@@ -44,6 +47,7 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
   items,
   resolveBlockLabel,
   onPressDay,
+  theme,
 }) => {
   const formatDateLabel = (dateKey: string): string => {
     const dt = parseDateKey(dateKey);
@@ -73,11 +77,11 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
   };
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>{t(language, 'analysis.previousWorkouts.title')}</Text>
+    <View style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.stroke }]}>
+      <Text style={[styles.title, { color: theme.accent }]}>{t(language, 'analysis.previousWorkouts.title')}</Text>
 
       {items.length === 0 ? (
-        <Text style={styles.empty}>{t(language, 'analysis.empty')}</Text>
+        <Text style={[styles.empty, { color: theme.textMuted }]}>{t(language, 'analysis.empty')}</Text>
       ) : (
         <View style={styles.list}>
           {items.map((item, index) => {
@@ -91,13 +95,13 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
                 hitSlop={8}
               >
                 <View style={styles.timelineCol}>
-                  <View style={styles.dot} />
-                  {!isLast ? <View style={styles.line} /> : null}
+                  <View style={[styles.dot, { backgroundColor: theme.accent }]} />
+                  {!isLast ? <View style={[styles.line, { backgroundColor: theme.stroke }]} /> : null}
                 </View>
 
                 <View style={styles.textCol}>
-                  <Text style={styles.date}>{formatDateLabel(item.dateKey)}</Text>
-                  <Text style={styles.summary} numberOfLines={2}>
+                  <Text style={[styles.date, STAT_NUMBER_STYLE, { color: theme.accent }]}>{formatDateLabel(item.dateKey)}</Text>
+                  <Text style={[styles.summary, STAT_NUMBER_STYLE, { color: theme.textMuted }]} numberOfLines={2}>
                     {formatSummary(item)}
                   </Text>
                 </View>
@@ -112,21 +116,17 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
   },
   title: {
-    color: '#E5E7EB',
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '800',
     marginBottom: SPACING.sm,
   },
   empty: {
-    color: '#9CA3AF',
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '600',
   },
@@ -146,13 +146,11 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#3B82F6',
     marginTop: 6,
   },
   line: {
     flex: 1,
     width: 2,
-    backgroundColor: '#1F2937',
     marginTop: SPACING.xs,
   },
   textCol: {
@@ -160,13 +158,11 @@ const styles = StyleSheet.create({
     paddingLeft: SPACING.xs,
   },
   date: {
-    color: '#3B82F6',
     fontSize: TEXT_TOKENS.sm,
     fontWeight: '800',
     marginBottom: 2,
   },
   summary: {
-    color: '#9CA3AF',
     fontSize: TEXT_TOKENS.xs,
     fontWeight: '700',
   },

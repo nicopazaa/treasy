@@ -18,10 +18,13 @@ export interface LogEntry {
   pinned?: boolean;
 }
 
+export type NoteSource = 'home_notes' | 'quicklog' | 'other';
+
 export interface NoteEntry {
   id: string;
   text: string;
   createdAt: string; // ISO string
+  source: NoteSource;
 }
 
 export interface TrainingBlock {
@@ -72,6 +75,11 @@ export interface CardioEntry {
   createdAt: string; // ISO string
 }
 
+export interface ActiveWorkoutSession {
+  startedAtISO: string;
+  finishedAtISO?: string;
+}
+
 // IMPORTANT:
 // AppState is treated as immutable across the app.
 // Never mutate AppState directly; always return new objects/arrays.
@@ -88,7 +96,7 @@ export interface AppState {
   nickname?: string | null;
   heightCm?: number | null;
   weightKg?: number | null;
-  theme?: ThemeMode; // lagres, kan brukes til theming senere
+  theme?: ThemeMode; // persisted theme mode (Home uses darkBlue/calmLight; legacy dark/light allowed on load)
   language?: AppLanguage;
   massUnit?: 'kg' | 'lb';
 
@@ -97,6 +105,7 @@ export interface AppState {
   exercises: Exercise[];
   sets: SetEntry[];
   cardioEntries: CardioEntry[];
+  activeWorkout?: ActiveWorkoutSession | null;
   logs?: LogEntry[];
   notes?: NoteEntry[];
 }

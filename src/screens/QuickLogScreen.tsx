@@ -21,15 +21,17 @@ import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/t
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { useKeyboardInset } from '../shared/hooks/useKeyboardInset';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
-import { toKg } from '../shared/utils/units';
+import { formatWeight, toKg } from '../shared/utils/units';
+import { parseInputToAction } from '../domain/quicklog/parseInputToAction';
 
 type Props = {
   appState: AppState;
   onBack: () => void;
-  onSave: (text: string, options?: { blockId?: string | null }) => {
+  onSave: (text: string, options?: { blockId?: string | null }) => Promise<{
+    kind: 'note' | 'workout';
     newExerciseId?: string;
     newExerciseName?: string;
-  };
+  }>;
   onLogSet: (
     exerciseId: string,
     weight: number,
@@ -77,7 +79,6 @@ export const QuickLogScreen: React.FC<Props> = ({
   } | null>(null);
   const inputRef = useRef<TextInput | null>(null);
 
-  const [isMuscleOpen, setIsMuscleOpen] = useState(false);
   const [isExerciseOpen, setIsExerciseOpen] = useState(false);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
@@ -125,9 +126,10 @@ export const QuickLogScreen: React.FC<Props> = ({
     [appState.blocks]
   );
 
-  const selectedBlock = selectedBlockId
-    ? muscleGroupBlocks.find((b) => b.id === selectedBlockId) ?? null
-    : null;
+  const blockChips = useMemo(
+    () => [...muscleGroupBlocks, ...otherBlocks],
+    [muscleGroupBlocks, otherBlocks]
+  );
 
   const exercisesForBlock: Exercise[] = useMemo(() => {
     if (!selectedBlockId) return [];
@@ -173,8 +175,82 @@ export const QuickLogScreen: React.FC<Props> = ({
     return isKnown ? blockLabel(id, language) : block.name;
   };
 
-  const flashSaved = () => {
-    setSavedNotice(t(language, 'quickLogSaved'));
+  const enterHint =
+    Platform.OS === 'web'
+      ? language === 'nb'
+        ? 'Enter for å logge'
+        : language === 'es'
+          ? 'Enter para registrar'
+          : 'Enter to log'
+      : null;
+
+  const parsePreview = useMemo(() => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+
+    const prefix =
+      language === 'nb'
+        ? 'Tolket som: '
+        : language === 'es'
+          ? 'Interpretado como: '
+          : 'Parsed as: ';
+    const hint =
+      language === 'nb'
+        ? 'Skriv øvelse + vekt x reps for å logge.'
+        : language === 'es'
+          ? 'Escribe ejercicio + peso x reps para registrar.'
+          : 'Type exercise + weight x reps to log.';
+    const setsLabel = language === 'nb' ? 'sett' : language === 'es' ? 'series' : 'sets';
+
+    const parsed = parseInputToAction(trimmed, { appState, language, defaultUnit: massUnit });
+    if (parsed.kind !== 'workout') {
+      return { kind: 'hint', text: hint };
+    }
+
+    const entries = parsed.payload.entries;
+    if (!entries.length) {
+      return { kind: 'hint', text: hint };
+    }
+
+    const formatWeightRange = (values: number[]): string => {
+      const valid = values.filter((value) => Number.isFinite(value));
+      if (!valid.length) return '';
+      const min = Math.min(...valid);
+      const max = Math.max(...valid);
+      const minLabel = formatWeight(min, massUnit, language);
+      if (min === max) return minLabel;
+      const maxLabel = formatWeight(max, massUnit, language);
+      return `${minLabel}–${maxLabel}`;
+    };
+
+    const formatRepsRange = (values: number[]): string => {
+      const valid = values.filter((value) => Number.isFinite(value) && value > 0);
+      if (!valid.length) return '';
+      const min = Math.min(...valid);
+      const max = Math.max(...valid);
+      const range = min === max ? `${min}` : `${min}–${max}`;
+      return `${range} reps`;
+    };
+
+    if (entries.length > 1) {
+      const totalSets = entries.reduce((sum, entry) => sum + entry.sets.length, 0);
+      const multiLabel = language === 'nb' ? 'Flere øvelser' : language === 'es' ? 'Varios ejercicios' : 'Multiple exercises';
+      return { kind: 'workout', text: `${prefix}${multiLabel} · ${totalSets} ${setsLabel}` };
+    }
+
+    const entry = entries[0];
+    const weights = entry.sets.map((set) => set.weight);
+    const reps = entry.sets.map((set) => set.reps);
+    const allBodyweight = entry.sets.length > 0 && entry.sets.every((set) => set.isBodyweight);
+    const weightLabel = allBodyweight ? 'BW' : formatWeightRange(weights);
+    const repsLabel = formatRepsRange(reps);
+    const detail = `${entry.exerciseName} · ${weightLabel} · ${repsLabel} · ${entry.sets.length} ${setsLabel}`;
+    return { kind: 'workout', text: `${prefix}${detail}` };
+  }, [appState, input, language, massUnit]);
+
+  const flashSaved = (kind: 'note' | 'workout') => {
+    const key = kind === 'note' ? 'noteSaved' : 'workoutLogged';
+    setSavedNotice(t(language, key));
     setTimeout(() => setSavedNotice(null), 1600);
   };
 
@@ -226,13 +302,13 @@ export const QuickLogScreen: React.FC<Props> = ({
     setWeightModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    const res = onSave(trimmed, { blockId: selectedBlockId });
+    const res = await onSave(trimmed, { blockId: selectedBlockId });
     setInput('');
-    flashSaved();
+    flashSaved(res.kind);
 
     if (res.newExerciseId && res.newExerciseName) {
       setPendingExercise({ id: res.newExerciseId, name: res.newExerciseName });
@@ -242,6 +318,7 @@ export const QuickLogScreen: React.FC<Props> = ({
   };
 
   const showLocalNoticeLine = showLocalOnlyNotice && appState.authProvider === 'guest';
+  const isInputEmpty = input.trim().length === 0;
 
   const quickLogInputSection = (
     <View style={styles.inputCard}>
@@ -272,91 +349,72 @@ export const QuickLogScreen: React.FC<Props> = ({
         />
       </View>
 
+      <View style={styles.inputMeta}>
+        {parsePreview ? (
+          <Text
+            style={[
+              styles.parsePreviewText,
+              parsePreview.kind === 'hint' ? styles.parsePreviewHint : styles.parsePreviewOk,
+            ]}
+          >
+            {parsePreview.text}
+          </Text>
+        ) : null}
+        {enterHint ? <Text style={styles.inputHelper}>{enterHint}</Text> : null}
+      </View>
+
       <View style={styles.actionBar}>
         <Pressable
           onPress={handleSave}
+          disabled={isInputEmpty}
           style={({ pressed }) => [
             styles.primaryActionButton,
-            pressed && styles.primaryActionButtonPressed,
+            isInputEmpty && styles.primaryActionButtonDisabled,
+            pressed && !isInputEmpty && styles.primaryActionButtonPressed,
           ]}
         >
-          <Text style={styles.primaryActionText}>{t(language, 'quickLogButton')}</Text>
+          <Text style={[styles.primaryActionText, isInputEmpty && styles.primaryActionTextDisabled]}>
+            {t(language, 'quickLogButton')}
+          </Text>
         </Pressable>
       </View>
     </View>
   );
 
   const muscleGroupSection = (
-    <View style={styles.selectBox}>
-      <TouchableOpacity
-        style={styles.selectHeaderRow}
-        onPress={() => setIsMuscleOpen((v) => !v)}
-        activeOpacity={0.8}
+    <View style={styles.chipsCard}>
+      <Text style={styles.sectionLabel}>{t(language, 'muscleGroups')}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
       >
-        <Text style={styles.selectLabel}>{t(language, 'muscleGroups')}</Text>
-        <View style={styles.selectHeaderRight}>
-          <Text style={styles.selectHint}>{t(language, 'chooseMuscleGroup').replace(/:$/, '')}</Text>
-          <Text style={styles.selectStatus} numberOfLines={1} ellipsizeMode="tail">
-            {selectedBlock ? blockTitle(selectedBlock) : 'Velg'}
-          </Text>
-        </View>
-        <Text style={styles.chevron}>{isMuscleOpen ? 'v' : '>'}</Text>
-      </TouchableOpacity>
-
-      {isMuscleOpen && (
-        <>
-          <View style={[styles.selectList, styles.compactList]}>
-            <ScrollView nestedScrollEnabled>
-              {muscleGroupBlocks.map((block) => {
-                const tone = getBlockTone(block.id);
-                const selected = block.id === selectedBlockId;
-                return (
-                  <TouchableOpacity
-                    key={block.id}
-                    style={[styles.selectRow, selected && styles.selectRowSelected]}
-                    onPress={() => {
-                      setSelectedBlockId(block.id);
-                      setSelectedExerciseId(null);
-                      setIsExerciseOpen(true);
-                      setIsMuscleOpen(false);
-                    }}
-                    activeOpacity={0.9}
-                  >
-                    <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
-                    <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-
-              {otherBlocks.length > 0 ? (
-                <>
-                  <Text style={styles.otherLabel}>{t(language, 'otherSectionTitle')}</Text>
-                  {otherBlocks.map((block) => {
-                    const tone = getBlockTone(block.id);
-                    const selected = block.id === selectedBlockId;
-                    return (
-                      <TouchableOpacity
-                        key={block.id}
-                        style={[styles.selectRow, selected && styles.selectRowSelected]}
-                        onPress={() => {
-                          setSelectedBlockId(block.id);
-                          setSelectedExerciseId(null);
-                          setIsExerciseOpen(true);
-                          setIsMuscleOpen(false);
-                        }}
-                        activeOpacity={0.9}
-                      >
-                        <View style={[styles.dot, { backgroundColor: getDotColor(block.id) }]} />
-                        <Text style={styles.selectRowText}>{blockTitle(block)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
-              ) : null}
-            </ScrollView>
-          </View>
-        </>
-      )}
+        {blockChips.map((block) => {
+          const tone = getBlockTone(block.id);
+          const selected = block.id === selectedBlockId;
+          return (
+            <TouchableOpacity
+              key={block.id}
+              style={[
+                styles.chip,
+                {
+                  borderColor: selected ? tone.accent : '#1F2937',
+                  backgroundColor: selected ? tone.soft : '#0B1220',
+                },
+              ]}
+              onPress={() => {
+                setSelectedBlockId(block.id);
+                setSelectedExerciseId(null);
+                setIsExerciseOpen(true);
+              }}
+              activeOpacity={0.9}
+            >
+              <View style={[styles.chipDot, { backgroundColor: getDotColor(block.id) }]} />
+              <Text style={[styles.chipText, selected && { color: tone.accent }]}>{blockTitle(block)}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 
@@ -531,11 +589,19 @@ export const QuickLogScreen: React.FC<Props> = ({
           ) : (
             <>
               <View style={styles.liveLogList}>
-                {(showAllLogs ? todayLogs : todayLogs.slice(0, 5)).map((entry) => (
-                  <View key={entry.id} style={styles.liveLogRow}>
+                {(showAllLogs ? todayLogs : todayLogs.slice(0, 5)).map((entry, index, array) => (
+                  <View
+                    key={entry.id}
+                    style={[
+                      styles.liveLogRow,
+                      index < array.length - 1 ? styles.liveLogRowDivider : null,
+                    ]}
+                  >
                     <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
-                    <Text style={styles.liveLogText}>{entry.text}</Text>
-                    <Text style={styles.liveLogPin}>{entry.pinned ? '📌' : ' '}</Text>
+                    <View style={styles.liveLogContent}>
+                      <Text style={styles.liveLogText}>{entry.text}</Text>
+                      {entry.pinned ? <Text style={styles.liveLogPin}>{'📌'}</Text> : null}
+                    </View>
                   </View>
                 ))}
               </View>
@@ -647,7 +713,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                     }
                     if (selectedExercise) {
                       onLogSet(selectedExercise.id, wKg, r, { bodyweight: bodyweightMode });
-                      flashSaved();
+                      flashSaved('workout');
                     }
                     resetSetFlow();
                   }}
@@ -705,7 +771,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                       distanceKm: dist && dist > 0 ? dist : null,
                       durationMin: dur && dur > 0 ? dur : null,
                     });
-                    flashSaved();
+                    flashSaved('workout');
                   }
                   resetSetFlow();
                 }}
@@ -813,23 +879,32 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   inputCard: {
-    backgroundColor: '#0B1220',
+    backgroundColor: '#0A1224',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
-    marginTop: SPACING.lg,
+    borderColor: '#1E293B',
+    padding: SPACING.lg,
+    ...Platform.select({
+      web: { boxShadow: '0 12px 24px rgba(2, 6, 23, 0.3)' },
+      default: {
+        shadowColor: '#020617',
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 8 },
+      },
+    }),
   },
   input: {
-    minHeight: 140,
+    minHeight: 168,
     borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceCardLight,
+    borderWidth: 0,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    color: COLORS.blue5,
-    fontSize: TEXT.md,
-    backgroundColor: COLORS.surfaceWhite,
+    paddingVertical: SPACING.md,
+    color: '#E2E8F0',
+    fontSize: TEXT.lg,
+    fontWeight: '600',
+    lineHeight: TEXT.lg + 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
   placeholderWrapper: {
     position: 'absolute',
@@ -839,8 +914,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   placeholderOverlay: {
-    color: COLORS.textSecondaryGray,
-    fontSize: TEXT.md,
+    color: '#94A3B8',
+    fontSize: TEXT.sm,
     fontWeight: '600',
     opacity: 0.9,
   },
@@ -854,27 +929,33 @@ const styles = StyleSheet.create({
   },
   primaryActionButton: {
     backgroundColor: COLORS.blue2,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: RADIUS.sm,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: RADIUS.md,
     alignItems: 'center',
-    marginVertical: 6,
+    width: '100%',
   },
   primaryActionButtonPressed: {
     opacity: 0.85,
   },
+  primaryActionButtonDisabled: {
+    backgroundColor: '#1E293B',
+  },
   primaryActionText: {
     color: '#FFFFFF',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: TEXT.md,
+  },
+  primaryActionTextDisabled: {
+    color: '#94A3B8',
   },
   liveLogCard: {
     marginTop: SPACING.xl,
-    backgroundColor: '#020617',
+    backgroundColor: '#0B1220',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
+    borderColor: '#1E293B',
+    padding: SPACING.lg,
   },
   liveLogTitle: {
     color: '#F9FAFB',
@@ -887,8 +968,7 @@ const styles = StyleSheet.create({
     fontSize: TEXT.sm,
   },
   liveLogList: {
-    marginTop: SPACING.xs,
-    gap: SPACING.xs,
+    marginTop: SPACING.sm,
   },
   showAllRow: {
     marginTop: SPACING.xs,
@@ -902,34 +982,46 @@ const styles = StyleSheet.create({
   },
   liveLogRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: SPACING.sm,
-    paddingVertical: 2,
+    paddingVertical: SPACING.sm,
+  },
+  liveLogRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1E293B',
   },
   liveLogTime: {
-    width: 52,
-    color: '#9CA3AF',
+    width: 64,
+    color: '#94A3B8',
     fontSize: TEXT.xs,
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
+  },
+  liveLogContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
   },
   liveLogText: {
     flex: 1,
-    color: '#E5E7EB',
+    color: '#E2E8F0',
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
   liveLogPin: {
-    minWidth: 20,
+    minWidth: 18,
     textAlign: 'right',
     fontSize: TEXT.sm,
   },
 
   guidedCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.md,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
+    marginTop: SPACING.lg,
+    gap: SPACING.md,
   },
   guidedTitle: {
     color: '#F9FAFB',
@@ -940,13 +1032,69 @@ const styles = StyleSheet.create({
   inputWrapper: {
     position: 'relative',
   },
+  inputMeta: {
+    marginTop: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  parsePreviewText: {
+    fontSize: TEXT.sm,
+    fontWeight: '600',
+  },
+  parsePreviewOk: {
+    color: '#86EFAC',
+  },
+  parsePreviewHint: {
+    color: '#94A3B8',
+  },
+  inputHelper: {
+    color: '#64748B',
+    fontSize: TEXT.xs,
+    fontWeight: '600',
+  },
   selectBox: {
     marginTop: SPACING.md,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
-    backgroundColor: '#020617',
+    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
     overflow: 'hidden',
+  },
+  chipsCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+  sectionLabel: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  chipRow: {
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+  },
+  chipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  chipText: {
+    color: '#E5E7EB',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
   },
   selectHeaderRow: {
     flexDirection: 'row',

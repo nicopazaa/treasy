@@ -92,7 +92,7 @@ export function addLogEntry(state: AppState, text: string, options?: { pinned?: 
   };
 }
 
-export function addNoteEntry(state: AppState, text: string): AppState {
+export function addNoteEntry(state: AppState, text: string, source: NoteEntry['source'] = 'other'): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
 
@@ -100,6 +100,7 @@ export function addNoteEntry(state: AppState, text: string): AppState {
     id: generateId('note'),
     text: trimmed,
     createdAt: new Date().toISOString(),
+    source,
   };
 
   return {

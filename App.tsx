@@ -4,6 +4,8 @@ import { useFonts } from 'expo-font';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { installGlobalTypography } from './src/shared/theme/typography';
+
 import { LandingScreen } from './src/screens/LandingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
@@ -15,10 +17,10 @@ import { HistoryScreen } from './src/screens/HistoryScreen';
 import { ProgressScreen } from './src/screens/ProgressScreen';
 import { RepMaxScreen } from './src/screens/RepMaxScreen';
 import { AnalysisScreen } from './src/screens/AnalysisScreen';
-import { ProfileScreen } from './src/screens/ProfileScreen';
 import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ManageExercisesScreen } from './src/screens/ManageExercisesScreen';
+import { NotertScreen } from './src/screens/NotertScreen';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import { useAppActions } from './src/app/actions/useAppActions';
@@ -28,10 +30,15 @@ import { useNavStack } from './src/app/navigation/useNavStack';
 import { useAppStore } from './src/app/state/useAppStore';
 import { useDerivedCache } from './src/app/state/useDerivedCache';
 import { assertNever } from './src/shared/assert';
+import { normalizeThemeMode } from './src/shared/theme/themes';
+
+installGlobalTypography();
 
 export default function App() {
   const [fontsLoaded, fontsError] = useFonts({
-    'RobotoSlab-SemiBold': require('./assets/fonts/RobotoSlab-SemiBold.ttf'),
+    'Inter-Regular': require('./assets/fonts/Inter-Regular.ttf'),
+    'Inter-SemiBold': require('./assets/fonts/Inter-SemiBold.ttf'),
+    'Inter-Bold': require('./assets/fonts/Inter-Bold.ttf'),
   });
   const fontsReady = fontsLoaded || Boolean(fontsError);
 
@@ -70,8 +77,9 @@ export default function App() {
     handleAddNote,
     handleQuickLogSave,
     handleQuickLogSet,
-    updateProfile,
+    finishWorkoutSession,
     updateSettings,
+    setThemeMode,
     reorderExercises,
     moveExercise,
     addExerciseToBlock,
@@ -98,7 +106,7 @@ export default function App() {
   const handleLandingLogin = goToLogin;
 
   const handleLoginBack = useCallback(() => {
-    navigate(appState.onboarded ? 'profile' : 'landing');
+    navigate(appState.onboarded ? 'settings' : 'landing');
   }, [appState.onboarded, navigate]);
 
   const handleLoginContinueWithEmail = useCallback(() => {
@@ -116,11 +124,11 @@ export default function App() {
   );
   const handleHomeOpenAI = useCallback(() => navigate('ai'), [navigate]);
   const handleHomeOpenQuickLog = useCallback(() => navigate('quickLog'), [navigate]);
-  const handleHomeOpenProfile = useCallback(() => navigate('profile'), [navigate]);
   const handleHomeOpenSettings = useCallback(() => navigate('settings'), [navigate]);
   const handleHomeOpenProgress = useCallback(() => navigate('progress'), [navigate]);
   const handleHomeOpenRepMax = useCallback(() => navigate('repMax'), [navigate]);
   const handleHomeOpenAnalysis = useCallback(() => navigate('analysis'), [navigate]);
+  const handleHomeOpenNotert = useCallback(() => navigate('notert'), [navigate]);
 
   const handleBlockReorderExercises = useCallback(
     (orderedExerciseIds: string[]) => {
@@ -195,7 +203,6 @@ export default function App() {
             onSelectBlock={handleHomeSelectBlock}
             onOpenAI={handleHomeOpenAI}
             onOpenQuickLog={handleHomeOpenQuickLog}
-            onOpenProfile={handleHomeOpenProfile}
             onOpenSettings={handleHomeOpenSettings}
             onOpenHistory={openHistory}
             onOpenHistoryForDate={openHistoryForDate}
@@ -203,7 +210,10 @@ export default function App() {
             onOpenRepMax={handleHomeOpenRepMax}
             onOpenAnalysis={handleHomeOpenAnalysis}
             onStartCardio={handleStartCardio}
+            onOpenNotert={handleHomeOpenNotert}
             onAddNote={handleAddNote}
+            onFinishWorkout={finishWorkoutSession}
+            onSetTheme={setThemeMode}
           />
         );
       case 'block':
@@ -267,37 +277,34 @@ export default function App() {
             showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
           />
         );
-      case 'profile':
-        return (
-          <ProfileScreen
-            appState={appState}
-            onBack={goHome}
-            onUpdate={updateProfile}
-            onOpenLogin={goToLogin}
-          />
-        );
       case 'settings':
         return (
           <SettingsScreen
             appState={appState}
             onBack={goHome}
             onUpdate={updateSettings}
+            onOpenLogin={goToLogin}
             onOpenManageExercises={goToManageExercises}
           />
         );
       case 'manageExercises':
         return <ManageExercisesScreen appState={appState} onBack={goToSettings} onMerge={mergeExercisesById} />;
+      case 'notert':
+        return <NotertScreen language={language} onBack={goHome} />;
       default:
         return assertNever(nav.screen);
     }
   })();
+  const homeIsCalmTheme = nav.screen === 'home' && normalizeThemeMode(appState.theme) === 'calmLight';
+  const statusBarStyle = homeIsCalmTheme ? 'dark-content' : 'light-content';
+  const expoStatusBarStyle = homeIsCalmTheme ? 'dark' : 'light';
 
   return (
     <SafeAreaProvider>
       <BackSwipeContext.Provider value={backSwipeContextValue}>
         <View style={styles.appContainer} {...panHandlers}>
-          <StatusBar barStyle="light-content" />
-          <ExpoStatusBar style="light" />
+          <StatusBar barStyle={statusBarStyle} />
+          <ExpoStatusBar style={expoStatusBarStyle} />
           <ErrorBoundary>{screen}</ErrorBoundary>
         </View>
       </BackSwipeContext.Provider>

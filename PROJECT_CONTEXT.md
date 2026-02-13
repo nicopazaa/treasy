@@ -1,85 +1,106 @@
-# Treasy — PROJECT_CONTEXT
+# Treasy - PROJECT_CONTEXT
 
-Last updated: 2026-01-11 04:52:07 +01:00 (branch `main`, commit `ed549457`)
+Last updated: 2026-02-10 05:30:14 +01:00 (branch `main`, commit `2a5ebee0`)
 
-Scope: this document describes the current codebase. For a per-run snapshot (git status + verification), see `docs/AI_HANDOFF.md`.
+Scope: this document describes the codebase as it exists now. For run-specific snapshot details (working tree + verification), see `docs/AI_HANDOFF.md`.
 
 ## What Treasy is
-Treasy is a local-first workout log built with Expo / React Native (mobile + web). Users can log workouts as free text; the app stores the raw text and (when possible) parses structured sets deterministically.
+Treasy is a local-first workout logging app built with Expo + React Native for mobile and web. Users can log workouts as free text, log sets directly, track cardio, view history/progress/analysis, and keep notes.
 
-## Core behavior (verified in code)
-- Local-first persistence: the full `AppState` is stored in AsyncStorage under `treasy_app_state_v2` (`src/features/workouts/data/storage.ts`).
-- Quick Log parsing: free text is parsed by `parseTrainingText` and applied by `applyParsedChunks` (`src/domain/parsing/*`), creating/updating exercises + sets in `AppState`.
-- Notes + logs: `AppState` includes `logs` and `notes` arrays (`src/domain/workouts/types.ts`).
-- Backup export: Profile exports a JSON snapshot (download/copy/save locally) (`src/screens/ProfileScreen.tsx`).
-- Progressive overload: `src/screens/ProgressScreen.tsx` renders per-exercise progress (charts + “Based on your workouts” insight) using i18n keys under `progress.*` (`src/shared/i18n/i18n.ts`).
+## Runtime modes
+- Mobile app via Expo (iOS/Android).
+- Web in browser (`npm run web`).
+- PWA-style exported web build (`npm run build:web` + `scripts/postexport-web.js`).
 
-## Network behavior (verified)
-- In app code, the only `fetch()` call is the optional GitHub OAuth exchange on web (`src/app/actions/useAppActions.ts`).
-- Workouts are persisted via AsyncStorage (no remote workout storage implementation in this repo).
+## Screen map (wired in `App.tsx`)
+- Auth/onboarding: `landing`, `login`, `welcome`.
+- Main: `home`, `block`, `quickLog`, `history`, `progress`, `analysis`, `repMax`.
+- Support: `ai`, `cardio`, `notert`, `profile`, `settings`, `manageExercises`.
 
-## Tech stack (from repo files)
-- Node.js: `20` (`.nvmrc`, `netlify.toml`)
-- Package manager: npm (`package-lock.json`)
-- Expo: `~54.0.31` (`package.json`)
-- React Native: `0.81.5` (`package.json`)
-- React: `19.1.0` (`package.json`)
-- TypeScript: `~5.9.2` (`package.json`)
+## Core architecture
+- Composition root: `App.tsx`.
+- App wiring: `src/app/*`.
+- Domain logic (pure/deterministic): `src/domain/*`.
+- Feature modules: `src/features/*`.
+- Shared UI/theme/i18n/utils: `src/shared/*`.
 
-## Repo scripts (from `package.json`)
-- Dev server: `npm start`
-- Platforms: `npm run ios`, `npm run android`, `npm run web`
-- Web export: `npm run build:web`
-- Typecheck: `npm run typecheck`
+## App state and persistence
+Source of truth type: `src/domain/workouts/types.ts` (`AppState`).
 
-No `lint` or `test` scripts exist in `package.json`.
+Primary AsyncStorage key:
+- `treasy_app_state_v2` via `src/features/workouts/data/storage.ts`.
 
-## Architecture overview (high-level)
-- Composition root: `App.tsx` wires fonts, store, derived cache, navigation, and renders the current screen via `switch (nav.screen)`.
-- State management: `src/app/state/useAppStore.ts` keeps `AppState` in React state, hydrates via `loadAppState()`, and flushes pending saves on background/unload.
-- Persistence: debounced + critical saves via `src/app/state/persist.ts`, triggered from `src/app/actions/useAppActions.ts`.
-- Domain logic: deterministic/pure modules under `src/domain/*` (parsing, workout mutations/queries, analytics).
+Additional AsyncStorage keys:
+- Notes repository: `treasy_notes_v1` (`src/features/notes/data/notesRepository.ts`).
+- AI chat history: `treasy_ai_chat_v1` (`src/screens/AIScreen.tsx`).
+- Profile local backup snapshot: `treasy_backup_export` (`src/screens/ProfileScreen.tsx`).
 
-## Data model & persistence
-Source of truth: `src/domain/workouts/types.ts`
-- `AppState` includes: `blocks`, `exercises`, `sets`, `cardioEntries`, plus profile/settings and `logs`/`notes`.
-- Main persistence key: `treasy_app_state_v2` (`src/features/workouts/data/storage.ts`)
-- Backup export key: `treasy_backup_export` (`src/screens/ProfileScreen.tsx`)
-- Migrations: there is no standalone migrations framework; `loadAppState()` performs normalization/defaulting (`src/features/workouts/data/storage.ts`, `src/features/workouts/model/initialState.ts`).
+`AppState` currently includes:
+- Identity/settings: `userId`, `onboarded`, `authProvider`, `userEmail`, `nickname`, `heightCm`, `weightKg`, `theme`, `language`, `massUnit`.
+- Training data: `blocks`, `exercises`, `sets`, `cardioEntries`, `activeWorkout`, `logs`, `notes`.
 
-## Navigation
-- Custom in-memory stack with back/forward + swipe gestures: `src/app/navigation/useNavStack.ts`.
-- Screen params/types: `src/app/navigation/types.ts`.
-- `@react-navigation/native` is present but not used for routing; it is used for `NavigationContext` / `useFocusEffect` in a few screens (e.g. `src/screens/HomeScreen.tsx`, `src/screens/HistoryScreen.tsx`, `src/screens/RepMaxScreen.tsx`).
+Note: notes are now persisted in a dedicated notes repository key. `AppState.notes` remains for legacy migration/compatibility handling.
+Theme note: Home persists `darkBlue` / `calmLight`; legacy `dark` / `light` values are normalized on load.
 
-## Parsing
-- Parse: `src/domain/parsing/parsePipeline.ts` (`parseTrainingText`)
-- Apply: `src/domain/parsing/applyParsedChunks.ts` (`applyParsedChunks`)
-- Matching uses exact match first, then fuzzy match with `FUZZY_MATCH_THRESHOLD` (`src/domain/quicklog/exerciseLookup.ts`, `src/shared/constants.ts`).
+## Data flow
+Hydration + store:
+- `useAppStore` loads state, normalizes it, and wires persistence (`src/app/state/useAppStore.ts`).
+- `createAppStatePersister` supports debounced + immediate saves (`src/app/state/persist.ts`).
 
-## AI
-- UI: `src/screens/AIScreen.tsx`
-- Implementation: `src/features/analytics/model/aiService.ts`
-- Behavior: local Q&A over `AppState` and workout history (no network calls in this module).
+Action orchestration:
+- `useAppActions` handles domain mutations, persistence mode (`critical` vs `debounced`), auth callbacks, and notes migration (`src/app/actions/useAppActions.ts`).
 
-## i18n
-- Strings live in `src/shared/i18n/i18n.ts`.
-- Translator: `t(language, key, params?)` where `language` is `AppLanguage` (`en`, `nb`, `es`).
+Derived cache:
+- `useDerivedCache` builds lookup maps for exercises and sets (`src/app/state/useDerivedCache.ts`).
 
-## Theme & fonts
-- Theme tokens: `src/shared/theme/tokens.ts` and per-block accents `src/shared/theme/blockTone.ts`.
-- Custom font: `RobotoSlab-SemiBold` is loaded in `App.tsx` via `expo-font` and used in `src/screens/HomeScreen.tsx`.
-- Block icons mapping: `src/shared/ui/blockIcons.ts` (`BLOCK_ICON_SOURCES`).
+## Parsing and logging behavior
+Text parsing:
+- Parse pipeline: `src/domain/parsing/parsePipeline.ts`.
+- Quick log parser/action mapping: `src/domain/quicklog/parseInputToAction.ts`.
 
-## Deployment / web OAuth
-- Web hosting: Netlify (`netlify.toml`)
-- Netlify Function: `netlify/functions/github-oauth.js`
-- OAuth env vars:
-  - Client: `EXPO_PUBLIC_GITHUB_CLIENT_ID` (used in `src/app/actions/useAppActions.ts`)
-  - Server: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` (used in `netlify/functions/github-oauth.js`)
+Current behavior:
+- If input resolves to known exercise entries + valid sets, it is logged as workout data.
+- Otherwise, text is persisted as a note via `notesRepository` (source-tagged as `home_notes` or `quicklog`).
 
-## Known issues (verified)
-- Some i18n strings contain encoding artifacts (see `src/shared/i18n/i18n.ts`).
-- No automated tests or lint scripts are configured (`package.json`).
-- `src/domain/analytics/insights.ts` operates on `appState.sets` only (does not use `cardioEntries`).
-- `src/features/auth/index.ts` is empty (`export {}`) and has no references (as of this snapshot).
+## Navigation and gestures
+- Navigation uses custom in-memory stack (`src/app/navigation/useNavStack.ts`), not react-navigation routers.
+- Swipe back/forward gesture behavior is implemented in `useNavStack`.
+- Gesture blockers are provided via `BackSwipeContext` (`src/app/navigation/BackSwipeContext.tsx`).
+
+## Home screen layout behavior
+Current wide-layout behavior in `src/screens/HomeScreen.tsx`:
+- Two-column mode is width-based: measured container width `>= 640`.
+- Right column ordering is a fixed vertical stack: other blocks (`cardio`, `bodyweight`) -> last workout card -> notes card.
+- Last workout card height is fixed after initial measurement; only the muscle-chip area inside it can scroll.
+- Left column keeps muscle groups list, then `Notert` and `Analyse` nav cards.
+- Header has an in-place round theme toggle (tap switches `darkBlue`/`calmLight`; long-press opens shortcuts).
+- The `Dagens økt` card and panel use an explicit session lifecycle:
+  - Active session (`activeWorkout.startedAtISO` without `finishedAtISO`) shows `LIVE`.
+  - Finishing a session sets `activeWorkout.finishedAtISO` and Home shows duration instead of `LIVE`.
+
+## AI behavior
+- AI answers are generated locally from app state by rule-based logic (`src/features/analytics/model/aiService.ts`).
+- No remote LLM/network call is used for answer generation.
+
+## Auth/network behavior
+- Web-only GitHub OAuth starts in `useAppActions` and completes through Netlify function `netlify/functions/github-oauth.js`.
+- OAuth session state key: `treasy_github_oauth_state` in `sessionStorage`.
+- Outside OAuth, app data is local-first with AsyncStorage.
+
+## Build and scripts
+From `package.json`:
+- `npm start`, `npm run android`, `npm run ios`, `npm run web`.
+- `npm run build:web` (export + postexport patch).
+- `npm run typecheck`.
+
+No `lint` or `test` scripts currently exist.
+
+## Verified implementation gaps
+- No automated lint/test scripts (`package.json`).
+- `src/domain/parsing/applyParsedChunks.ts` exists but is currently unreferenced.
+- `src/screens/ExerciseScreen.tsx` exists but is currently not routed from `App.tsx`.
+- No formal migration framework; normalization/migration is handled ad hoc in storage/action layers.
+
+## UNKNOWNs
+- External roadmap/issue tracker source of truth is UNKNOWN.
+  Verification path: confirm with maintainers whether priorities are tracked outside this repository.

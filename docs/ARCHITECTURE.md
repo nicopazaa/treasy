@@ -1,39 +1,110 @@
-# Treasy architecture (high-level)
+# Treasy Architecture
 
 ## Layering
-- `App.tsx`: composition root (fonts, store, navigation, screen selection).
-- `src/app/`: app wiring (state hydration/persistence, navigation, orchestration/actions).
-- `src/screens/`: screen components rendered by `App.tsx`.
-- `src/domain/`: pure/deterministic logic (workouts, parsing, analytics).
-- `src/features/`: feature modules built on domain logic.
-- `src/shared/`: cross-cutting primitives (theme tokens, i18n, utilities, UI components).
+- `App.tsx`: composition root, font bootstrap, store, nav, screen switch.
+- `src/app/`: app composition concerns.
+- `src/domain/`: pure domain logic (parsing, analytics, workout mutations/queries).
+- `src/features/`: feature-level modules built on domain.
+- `src/screens/`: screen containers and UI composition.
+- `src/shared/`: theme, i18n, reusable UI, hooks, constants, utilities.
 
-## AppState model
-- Defined in `src/domain/workouts/types.ts`.
-- Treated as immutable across the app (copy-on-write updates; no in-place mutation).
-- Core entities:
-  - `TrainingBlock`, `Exercise`, `SetEntry`, `CardioEntry`, plus `logs`/`notes`.
+## Runtime architecture
+### 1) Composition root
+`App.tsx` wires:
+- Global typography install (`installGlobalTypography`).
+- Font loading (`Inter-Regular`, `Inter-SemiBold`, `Inter-Bold`).
+- App store/hydration (`useAppStore`).
+- Derived cache (`useDerivedCache`).
+- Nav stack (`useNavStack`) and swipe handlers.
+- Action orchestration (`useAppActions`).
 
-## State + persistence wiring
-- Hydration: `src/app/state/useAppStore.ts` loads state via `loadAppState()` (`src/features/workouts/data/storage.ts`) and applies light normalization.
-- Persistence: `src/app/state/persist.ts` provides debounced saves (`scheduleSave`) and immediate saves (`saveNow`); `useAppStore` flushes pending saves on app background/unload.
-- Orchestration: `src/app/actions/useAppActions.ts` applies domain mutations and chooses persistence mode per update (critical vs debounced).
+### 2) Navigation
+- Custom stack reducer in `src/app/navigation/useNavStack.ts`.
+- Supports `navigate`, `back`, `forward`, `reset`.
+- Edge-swipe back/forward gesture handling with configurable constants from `src/shared/constants.ts`.
+- Gesture exclusion zones via `BackSwipeContext` blocker rectangles.
 
-## Storage format
-- `AppState` is stored as a single JSON blob in AsyncStorage under key `treasy_app_state_v2` (`src/features/workouts/data/storage.ts`).
-- There is no standalone migrations framework; `loadAppState()` performs normalization/defaulting on load.
+### 3) State and persistence
+Store lifecycle:
+- Boot load from AsyncStorage via `loadAppState`.
+- In-memory React state in `useAppStore`.
+- Persistence through `AppStatePersister`:
+  - `saveNow` for critical writes.
+  - `scheduleSave` for debounced writes.
+  - `flushPending` on app background/unload.
 
-## Parsing pipeline (deterministic)
-- Parse: `parseTrainingText` (`src/domain/parsing/parsePipeline.ts`).
-- Apply: `applyParsedChunks` (`src/domain/parsing/applyParsedChunks.ts`).
-- Matching: exact match, then deterministic fuzzy match (`src/domain/quicklog/exerciseLookup.ts`, threshold in `src/shared/constants.ts`).
-- IDs created by parsing use `makeId(prefix, now, seq)`; deterministic for a given `(now, seq)` input.
+Storage keys:
+- App state: `treasy_app_state_v2`.
+- Notes repo: `treasy_notes_v1`.
+- AI chat cache: `treasy_ai_chat_v1`.
+- Backup snapshot: `treasy_backup_export`.
 
-## Navigation
-- Custom in-memory history stack: `src/app/navigation/useNavStack.ts` (`navigate`, `back`, `forward`, `reset`) plus swipe back/forward gestures.
-- `App.tsx` renders exactly one screen based on `nav.screen` (`src/app/navigation/types.ts`).
-- `@react-navigation/native` is not used for routing; some screens use `NavigationContext`/`useFocusEffect` with fallbacks when the context is absent.
+Session lifecycle:
+- `AppState.activeWorkout` stores workout session start/finish timestamps for Home "Today workout" lifecycle (`startedAtISO`, optional `finishedAtISO`).
 
-## Local-first constraints
-- Core workout data is stored locally; no remote workout storage implementation exists in this repo.
-- Web-only GitHub OAuth uses a Netlify Function (`netlify/functions/github-oauth.js`) and a client-side `fetch()` in `src/app/actions/useAppActions.ts`.
+### 4) Action layer
+`useAppActions` is the orchestration boundary:
+- Applies domain state updates.
+- Chooses persistence mode per action.
+- Handles auth flows (guest/email/GitHub web callback).
+- Runs one-time notes migration from legacy storage paths.
+
+### 5) Domain logic
+Workouts:
+- Types: `src/domain/workouts/types.ts`.
+- Mutations/queries: `src/domain/workouts/workoutService.ts`.
+- Name normalization: `src/domain/workouts/nameNormalize.ts`.
+
+Parsing:
+- Parse text to chunks: `src/domain/parsing/parsePipeline.ts`.
+- Quick-log decision path: `src/domain/quicklog/parseInputToAction.ts`.
+- Fuzzy lookup: `src/domain/quicklog/exerciseLookup.ts`.
+
+Analytics:
+- Core metrics/time windows: `src/domain/analytics/insights.ts`.
+- AI local Q/A logic: `src/features/analytics/model/aiService.ts`.
+
+## Screen composition model
+- Screen routing is a switch in `App.tsx` keyed by `NavState.screen`.
+- Screen files are in `src/screens/*`.
+- Main data-heavy screens (`HomeScreen`, `ProgressScreen`, `AnalysisScreen`, `HistoryScreen`) compute local view models from `AppState` and derived maps.
+
+## Home layout architecture (current)
+`src/screens/HomeScreen.tsx`:
+- Two-column mode is layout-width driven (`layoutWidth >= 640`), not device-type driven.
+- Right column is fixed-order stack: `cardio/bodyweight` tiles, last workout card, notes card.
+- Last workout card uses fixed measured height after first layout capture.
+- Muscle-group chips inside last workout use an internal `ScrollView` with constrained max height.
+- Left column stacks muscle groups list + `Notert` + `Analyse` nav cards.
+- "Today workout" card and bottom sheet use explicit session lifecycle semantics:
+  - `LIVE` is shown only while a session is active (`startedAtISO` exists and `finishedAtISO` is absent).
+  - A top-level "Finish workout" action sets `finishedAtISO`.
+  - Finished sessions show duration (`finishedAtISO - startedAtISO`) instead of `LIVE`.
+
+## Notes architecture
+- Dedicated notes repository in `src/features/notes/data/notesRepository.ts`.
+- Sources tagged: `home_notes`, `quicklog`, `other`.
+- `NotertScreen` reads from repository; home card writes via `handleAddNote`.
+- Startup migration (`buildNotesMigration`) lifts legacy note-like logs/notes into repository.
+
+## Auth and network boundary
+- GitHub OAuth web flow in `useAppActions` (client side).
+- Token exchange and user lookup in Netlify function `netlify/functions/github-oauth.js`.
+- No remote workout sync path in current repository.
+
+## Cross-cutting concerns
+- i18n: `src/shared/i18n/i18n.ts` (`t`, `blockLabel`).
+- Theme tokens: `src/shared/theme/tokens.ts` (base) + `src/shared/theme/themes.ts` (persisted `darkBlue`/`calmLight` Home theme semantics).
+- Global typography patching of `Text` and `TextInput`: `src/shared/theme/typography.ts`.
+- Error boundary wrapper: `src/app/ErrorBoundary.tsx`.
+
+## Verified technical debt
+- No lint script and no test script in `package.json`.
+- `src/domain/parsing/applyParsedChunks.ts` is currently unreferenced.
+- `src/screens/ExerciseScreen.tsx` is currently unreferenced by navigation.
+
+## Data integrity rules
+- AppState is treated as immutable.
+- Domain/state update helpers return new objects/arrays.
+- Persistence normalization is defensive for missing/legacy fields.
+- Parsing path is deterministic and side-effect free in domain layer.
