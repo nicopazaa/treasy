@@ -2,6 +2,7 @@ import React from 'react';
 import type { GestureResponderEvent } from 'react-native';
 import type { Exercise } from '..';
 import { ExerciseRow } from '../../../shared/ui/ExerciseRow';
+import { getBlockTone } from '../../../shared/theme/blockTone';
 import { formatExerciseLabel } from '../../../shared/utils/exerciseLabel';
 
 type Props = {
@@ -21,6 +22,7 @@ export const BlockExerciseItem: React.FC<Props> = ({
   onLongPress,
   onPressMenu,
 }) => {
+  const tone = getBlockTone(exercise.blockId);
   return (
     <ExerciseRow
       name={formatExerciseLabel(exercise)}
@@ -29,7 +31,8 @@ export const BlockExerciseItem: React.FC<Props> = ({
       onLongPress={onLongPress}
       onPressMenu={onPressMenu}
       moving={isMoving}
-      variant="light"
+      accentColor={tone.accent}
+      variant="dark"
     />
   );
 };

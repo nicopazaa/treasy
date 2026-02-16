@@ -565,6 +565,7 @@ export const HomeScreen: React.FC<Props> = ({
   const isMountedRef = useRef(true);
   const navigationContext = useContext(NavigationContext);
   const isTwoColumn = layoutWidth != null && layoutWidth >= TWO_COLUMN_MIN_WIDTH;
+  const useFluidPreviousWorkoutChips = Platform.OS === 'ios' && !isTwoColumn;
 
   const handlePressWordmark = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -1693,7 +1694,7 @@ export const HomeScreen: React.FC<Props> = ({
 
     const exampleText = lastWorkoutExamples.length ? lastWorkoutExamples[lastExampleIndex % lastWorkoutExamples.length] : '';
     const muscleGroups = lastWorkout.muscleGroups ?? [];
-    const hasOverflow = muscleGroups.length > MAX_MUSCLE_CHIPS;
+    const hasOverflow = !useFluidPreviousWorkoutChips && muscleGroups.length > MAX_MUSCLE_CHIPS;
     const visibleGroups = hasOverflow ? muscleGroups.slice(0, MAX_MUSCLE_CHIPS - 1) : muscleGroups;
     const hiddenCount = hasOverflow ? muscleGroups.length - visibleGroups.length : 0;
     const totalVolumeTitleText = `${lastWorkoutTotalTitle(language)}:`;
@@ -1739,7 +1740,7 @@ export const HomeScreen: React.FC<Props> = ({
             }
           : null,
     };
-  }, [language, lastExampleIndex, lastWorkout, lastWorkoutExamples]);
+  }, [language, lastExampleIndex, lastWorkout, lastWorkoutExamples, useFluidPreviousWorkoutChips]);
   const lastWorkoutOpenLogLabel = openLogLabel(language);
 
   const lastWorkoutCard = (
@@ -1774,6 +1775,7 @@ export const HomeScreen: React.FC<Props> = ({
         openLogLabel={lastWorkoutOpenLogLabel}
         openLogAction="button"
         onOpenHistory={onOpenHistory}
+        useFluidChipLayout={useFluidPreviousWorkoutChips}
       />
     </PressScale>
   );
@@ -2030,6 +2032,7 @@ export const HomeScreen: React.FC<Props> = ({
                 exampleAnim={lastExampleAnim}
                 openLogLabel={lastWorkoutOpenLogLabel}
                 openLogAction="text"
+                useFluidChipLayout={useFluidPreviousWorkoutChips}
               />
             </Animated.View>
           </Pressable>

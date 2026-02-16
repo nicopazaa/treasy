@@ -48,6 +48,20 @@ interface Props {
 
 const STICKY_HEIGHT = 88;
 const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'];
+const FALLBACK_ACCENT = COLORS.blue2;
+
+function parseHexColor(color: string): [number, number, number] | null {
+  const clean = color.trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
+}
+
+function toRgba(color: string, alpha: number): string {
+  const safeAlpha = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
+  const rgb = parseHexColor(color) ?? parseHexColor(FALLBACK_ACCENT);
+  if (!rgb) return `rgba(59, 130, 246, ${safeAlpha})`;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
+}
 
 export const BlockScreen: React.FC<Props> = ({
   language,
@@ -103,6 +117,35 @@ export const BlockScreen: React.FC<Props> = ({
     const id = block.id as TrainingBlockId;
     return MUSCLE_GROUP_ORDER.includes(id) ? BLOCK_ICON_SOURCES[id] : null;
   }, [block.id]);
+
+  const headerPanelStyle = useMemo(
+    () => ({
+      borderColor: toRgba(tone.accent, 0.35),
+      backgroundColor: toRgba(tone.accent, 0.08),
+    }),
+    [tone.accent]
+  );
+  const backButtonStyle = useMemo(
+    () => ({
+      borderColor: toRgba(tone.accent, 0.28),
+      backgroundColor: toRgba(tone.accent, 0.1),
+    }),
+    [tone.accent]
+  );
+  const stickyBarStyle = useMemo(
+    () => ({
+      borderTopColor: toRgba(tone.accent, 0.22),
+      backgroundColor: '#020617',
+    }),
+    [tone.accent]
+  );
+  const stickyButtonStyle = useMemo(
+    () => ({
+      backgroundColor: tone.accent,
+      borderColor: toRgba(tone.accent, 0.32),
+    }),
+    [tone.accent]
+  );
 
   const parseTags = (raw: string): string[] =>
     raw
@@ -291,26 +334,29 @@ export const BlockScreen: React.FC<Props> = ({
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-          <Text style={styles.back}>{t(language, 'back')}</Text>
-        </TouchableOpacity>
+        <View style={[styles.headerPanel, headerPanelStyle]}>
+          <TouchableOpacity onPress={onBack} hitSlop={12} style={[styles.backButton, backButtonStyle]} activeOpacity={0.8}>
+            <Text style={[styles.back, { color: tone.accent }]}>{t(language, 'back')}</Text>
+          </TouchableOpacity>
 
-        <BlockScreenHeader
-          title={blockTitle}
-          subtitle={t(language, 'exercisesInBlock')}
-          iconSource={blockIconSource}
-        />
+          <BlockScreenHeader
+            title={blockTitle}
+            subtitle={t(language, 'exercisesInBlock')}
+            iconSource={blockIconSource}
+            accentColor={tone.accent}
+          />
 
-        {movingExercise ? (
-          <View style={[styles.moveBanner, { borderColor: tone.accent }]}>
-            <Text style={styles.moveBannerText}>
-              {t(language, 'moveExerciseHint', { name: formatExerciseLabel(movingExercise) })}
-            </Text>
-            <TouchableOpacity onPress={() => setMovingExerciseId(null)} hitSlop={8}>
-              <Text style={[styles.moveCancelText, { color: tone.accent }]}>{t(language, 'cancel')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+          {movingExercise ? (
+            <View style={[styles.moveBanner, { borderColor: toRgba(tone.accent, 0.38), backgroundColor: toRgba(tone.accent, 0.12) }]}>
+              <Text style={styles.moveBannerText}>
+                {t(language, 'moveExerciseHint', { name: formatExerciseLabel(movingExercise) })}
+              </Text>
+              <TouchableOpacity onPress={() => setMovingExerciseId(null)} hitSlop={8}>
+                <Text style={[styles.moveCancelText, { color: tone.accent }]}>{t(language, 'cancel')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <View style={[styles.listPadding, styles.listWrapper]}>
@@ -319,6 +365,8 @@ export const BlockScreen: React.FC<Props> = ({
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderExercise}
           emptyText={t(language, 'noExercisesYet')}
+          accentColor={tone.accent}
+          extraBottomPadding={SPACING.md}
         />
       </View>
 
@@ -462,7 +510,12 @@ export const BlockScreen: React.FC<Props> = ({
       ) : null}
 
       <View style={styles.stickyBar}>
-        <PrimaryButton title={t(language, 'addExercise')} onPress={openAddModal} style={styles.stickyButton} />
+        <View style={[styles.stickyBarBorder, stickyBarStyle]} pointerEvents="none" />
+        <PrimaryButton
+          title={t(language, 'addExercise')}
+          onPress={openAddModal}
+          style={StyleSheet.flatten([styles.stickyButton, stickyButtonStyle])}
+        />
       </View>
 
       <Modal
@@ -548,17 +601,29 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SCREEN_PADDING,
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
     marginBottom: SPACING.md,
   },
+  headerPanel: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
+    backgroundColor: '#081427',
+  },
+  backButton: {
+    minHeight: 36,
+    minWidth: 96,
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
   back: {
-    color: '#93C5FD',
     fontSize: TEXT.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   title: {
     fontSize: TEXT.xxl,
@@ -574,20 +639,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_PADDING,
   },
   listWrapper: {
-    marginTop: SPACING.lg,
+    marginTop: SPACING.sm,
     flex: 1,
     minHeight: 0,
   },
   moveBanner: {
     marginTop: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0B1220',
-    padding: SPACING.md,
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
   moveBannerText: {
-    color: '#E5E7EB',
+    color: '#DBEAFE',
     fontSize: TEXT.sm,
     fontWeight: '700',
     marginBottom: SPACING.xs,
@@ -611,52 +677,62 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.md,
     paddingBottom: SPACING.lg,
     backgroundColor: '#020617',
-    borderTopWidth: 1,
-    borderTopColor: '#111827',
+    overflow: 'hidden',
+  },
+  stickyBarBorder: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
   },
   stickyButton: {
     marginVertical: 0,
-    backgroundColor: COLORS.blue6,
+    backgroundColor: COLORS.blue2,
     borderRadius: RADIUS.lg,
+    borderWidth: 1,
   },
   sheetBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    backgroundColor: 'rgba(2, 6, 23, 0.78)',
     justifyContent: 'flex-end',
   },
   sheetCard: {
-    backgroundColor: '#020617',
+    backgroundColor: '#030C1A',
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
+    borderColor: 'rgba(59, 130, 246, 0.26)',
     padding: SPACING.lg,
-    gap: SPACING.xs,
+    gap: 0,
   },
   sheetTitle: {
     color: '#F9FAFB',
-    fontSize: TEXT.md,
-    fontWeight: '700',
+    fontSize: TEXT.lg,
+    fontWeight: '800',
     marginBottom: SPACING.sm,
   },
   sheetSubtitle: {
-    color: '#9CA3AF',
+    color: 'rgba(203, 213, 225, 0.7)',
     fontSize: TEXT.sm,
     marginBottom: SPACING.sm,
   },
   sheetAction: {
-    minHeight: 48,
+    minHeight: 50,
     justifyContent: 'center',
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(148, 163, 184, 0.24)',
   },
   sheetActionText: {
-    color: '#E5E7EB',
+    color: '#E2E8F0',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
   sheetActionDanger: {
-    borderTopWidth: 1,
-    borderTopColor: '#111827',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(248, 113, 113, 0.38)',
   },
   sheetActionDangerText: {
     color: COLORS.warning,
@@ -664,15 +740,16 @@ const styles = StyleSheet.create({
   groupGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: SPACING.sm,
     marginVertical: SPACING.sm,
   },
   groupButton: {
     padding: SPACING.md,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    minWidth: '45%',
-    marginRight: SPACING.sm,
-    marginBottom: SPACING.sm,
+    width: '48%',
+    minHeight: 52,
+    justifyContent: 'center',
   },
   groupText: {
     color: '#E5E7EB',
@@ -682,25 +759,25 @@ const styles = StyleSheet.create({
   // Modal
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(2, 6, 23, 0.82)',
     justifyContent: 'center',
     paddingHorizontal: SCREEN_PADDING,
   },
   modalCard: {
-    backgroundColor: '#020617',
+    backgroundColor: '#030C1A',
     borderRadius: RADIUS.lg,
     padding: SPACING.xl,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: 'rgba(59, 130, 246, 0.28)',
   },
   modalTitle: {
     color: '#F9FAFB',
     fontSize: TEXT.lg,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: SPACING.md,
   },
   inputLabel: {
-    color: '#E5E7EB',
+    color: 'rgba(226, 232, 240, 0.9)',
     fontSize: TEXT.sm,
     marginBottom: SPACING.xs,
   },
@@ -708,10 +785,10 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondaryGray,
   },
   input: {
-    backgroundColor: COLORS.surfaceWhite,
+    backgroundColor: '#F8FAFC',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: 'rgba(2, 6, 23, 0.12)',
+    borderColor: 'rgba(37, 99, 235, 0.26)',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     color: COLORS.textNavyPrimary,

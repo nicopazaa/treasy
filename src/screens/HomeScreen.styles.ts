@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   groupsList: {
-    gap: SPACING.sm,
+    gap: SPACING.md,
   },
   groupRow: {
     flexDirection: 'row',
@@ -372,15 +372,26 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: HOME_SCREEN_STYLE_COLORS.homeSurfaceDarkBorder,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.sm,
-    minHeight: 48,
+    paddingVertical: SPACING.sm + 1,
+    paddingHorizontal: SPACING.md,
+    minHeight: 54,
     width: '100%',
     alignSelf: 'stretch',
+    overflow: 'hidden',
+    ...Platform.select({
+      web: { boxShadow: '0 8px 18px rgba(2, 6, 23, 0.2)' },
+      default: {
+        shadowColor: HOME_SCREEN_STYLE_COLORS.black,
+        shadowOpacity: 0.16,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 2,
+      },
+    }),
   },
   groupIconWrap: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -401,10 +412,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   groupDotSmall: {
-    width: 10,
-    height: 10,
+    width: 8,
+    height: 8,
     borderRadius: 999,
-    opacity: 0.7,
+    opacity: 0.85,
   },
   groupDot: {
     width: 10,
@@ -416,7 +427,7 @@ const styles = StyleSheet.create({
     color: COLORS.blue1,
     fontSize: TREASY_TYPE_SCALE.t3.size,
     lineHeight: TREASY_TYPE_SCALE.t3.lineHeight,
-    fontWeight: '600',
+    fontWeight: '700',
     marginHorizontal: SPACING.xs,
     minWidth: 0,
   },
@@ -426,7 +437,9 @@ const styles = StyleSheet.create({
   groupAction: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: HOME_SCREEN_STYLE_RGBA.actionPressBlue,
     marginRight: SPACING.sm,
   },
   groupActionText: {
@@ -814,9 +827,7 @@ const styles = StyleSheet.create({
     fontSize: TREASY_TYPE_SCALE.t2.size,
     lineHeight: TREASY_TYPE_SCALE.t2.lineHeight,
     fontWeight: '600',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: HOME_SCREEN_STYLE_COLORS.bluePrimary,
-    paddingBottom: 4,
+    letterSpacing: 0.12,
     marginBottom: SPACING.xs,
     textAlign: 'center',
   },
@@ -844,6 +855,11 @@ const styles = StyleSheet.create({
   },
   previousWorkoutChipsReserved: {
     minHeight: LAST_WORKOUT_CHIP_MAX_HEIGHT,
+  },
+  previousWorkoutChipsFluid: {
+    maxHeight: 999,
+    minHeight: 0,
+    justifyContent: 'flex-start',
   },
   muscleChip: {
     flexDirection: 'row',
@@ -886,6 +902,7 @@ const styles = StyleSheet.create({
   previousWorkoutChipTextCompact: {
     fontSize: TREASY_TYPE_SCALE.t5.size,
     lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
+    flexShrink: 1,
   },
   previousWorkoutChipOverflowCompact: {
     minWidth: 30,
@@ -1024,6 +1041,7 @@ const styles = StyleSheet.create({
     lineHeight: TREASY_TYPE_SCALE.t6.lineHeight,
     fontWeight: '600',
     textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   lastWorkoutPreviewBackdrop: {
     flex: 1,

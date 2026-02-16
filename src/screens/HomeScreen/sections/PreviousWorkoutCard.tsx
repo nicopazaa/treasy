@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Animated,
+  Platform,
   Text,
   TouchableOpacity,
   View,
@@ -93,6 +94,7 @@ export type PreviousWorkoutCardProps = {
   openLogLabel: string;
   openLogAction: 'button' | 'text' | 'none';
   onOpenHistory?: () => void;
+  useFluidChipLayout?: boolean;
 };
 
 export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
@@ -117,16 +119,20 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
     openLogLabel,
     openLogAction,
     onOpenHistory,
+    useFluidChipLayout = false,
   } = props;
   const compactTotalVolumeValueStyle = wrapInCard ? homeScreenStyles.previousWorkoutTotalVolumeValueCompact : null;
   const compactTotalVolumeUnitStyle = wrapInCard ? homeScreenStyles.previousWorkoutTotalVolumeUnitCompact : null;
   const compactExerciseNameStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseNameCompact : null;
   const compactExerciseMetricsStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseMetricsCompact : null;
   const compactExerciseMetricUnitStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseMetricUnitCompact : null;
-  const twoColumnChipStyle = wrapInCard ? styles.previousWorkoutChipTwoColumn : null;
+  const fluidChipLayoutEnabled = wrapInCard && useFluidChipLayout;
+  const twoColumnChipStyle = wrapInCard && !fluidChipLayoutEnabled ? styles.previousWorkoutChipTwoColumn : null;
+  const fluidChipContainerStyle = fluidChipLayoutEnabled ? homeScreenStyles.previousWorkoutChipsFluid : null;
   const hasExercisePreview = display.status === 'ready' && display.hasExamples;
   const reserveExercisePreview = wrapInCard && display.status === 'ready';
   const hideReservedExercisePreview = reserveExercisePreview && !hasExercisePreview;
+  const chipMinimumFontScale = Platform.OS === 'ios' ? 0.78 : 0.84;
 
   const renderExamples = () => {
     if (!hasExercisePreview) {
@@ -250,7 +256,8 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
             <View
               style={[
                 styles.lastWorkoutChips,
-                wrapInCard ? styles.previousWorkoutChipsReserved : null,
+                wrapInCard && !fluidChipLayoutEnabled ? styles.previousWorkoutChipsReserved : null,
+                fluidChipContainerStyle,
                 expanded ? { justifyContent: 'center' } : null,
               ]}
             >
@@ -259,8 +266,10 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
                   <View style={[styles.muscleChipDot, styles.previousWorkoutChipDotCompact, { backgroundColor: group.dotColor }]} />
                   <Text
                     style={[styles.muscleChipText, styles.previousWorkoutChipTextCompact, themeTextStyle]}
-                    numberOfLines={1}
+                    numberOfLines={fluidChipLayoutEnabled ? undefined : 1}
                     ellipsizeMode="tail"
+                    adjustsFontSizeToFit={!fluidChipLayoutEnabled}
+                    minimumFontScale={chipMinimumFontScale}
                   >
                     {group.label}
                   </Text>

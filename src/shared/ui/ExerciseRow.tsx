@@ -8,12 +8,27 @@ import {
 } from 'react-native';
 import { SPACING, TEXT, COLORS } from '../theme/tokens';
 
+const DEFAULT_ACCENT = COLORS.blue2;
+
 function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
   const idx = label.indexOf('(');
   if (idx <= 0) return { main: label, parentheses: null };
   const main = label.slice(0, idx).trimEnd();
   const parentheses = label.slice(idx).trim();
   return parentheses.startsWith('(') && parentheses.length > 0 ? { main, parentheses } : { main: label, parentheses: null };
+}
+
+function parseHexColor(color: string): [number, number, number] | null {
+  const clean = color.trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
+}
+
+function toRgba(color: string, alpha: number): string {
+  const safeAlpha = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
+  const rgb = parseHexColor(color) ?? parseHexColor(DEFAULT_ACCENT);
+  if (!rgb) return `rgba(59, 130, 246, ${safeAlpha})`;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
 }
 
 type Props = {
@@ -25,6 +40,7 @@ type Props = {
   onPressMenu: (event: GestureResponderEvent) => void;
   moving?: boolean;
   variant?: 'dark' | 'light';
+  accentColor?: string;
 };
 
 export const ExerciseRow: React.FC<Props> = ({
@@ -36,65 +52,82 @@ export const ExerciseRow: React.FC<Props> = ({
   onPressMenu,
   moving = false,
   variant = 'dark',
+  accentColor = DEFAULT_ACCENT,
 }) => {
-  const splitLabel = variant === 'light' ? splitLabelParentheses(name) : null;
-  const showSplitLabel = Boolean(splitLabel?.parentheses);
+  const isLight = variant === 'light';
+  const splitLabel = splitLabelParentheses(name);
+  const showSplitLabel = Boolean(splitLabel.parentheses);
+  const bestChipBorder = toRgba(accentColor, isLight ? 0.22 : 0.34);
+  const bestChipBg = toRgba(accentColor, isLight ? 0.09 : 0.16);
+  const menuBorder = toRgba(accentColor, isLight ? 0.2 : 0.3);
+  const menuBg = toRgba(accentColor, isLight ? 0.06 : 0.1);
 
   return (
     <TouchableOpacity
       style={[
         styles.row,
-        variant === 'light' && styles.rowLight,
-        moving && (variant === 'light' ? styles.rowMovingLight : styles.rowMoving),
+        isLight ? styles.rowLight : styles.rowDark,
+        moving && (isLight ? styles.rowMovingLight : styles.rowMoving),
       ]}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={240}
       activeOpacity={0.85}
     >
-      {variant === 'light' && showSplitLabel ? (
-        <View style={styles.nameColumn}>
-          <Text style={[styles.nameLightMain, { color: COLORS.textNavyPrimary }]} numberOfLines={1} ellipsizeMode="tail">
-            {splitLabel?.main ?? name}
-          </Text>
-          <Text
-            style={[styles.nameLightParen, { color: COLORS.textSecondaryGray }]}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {splitLabel?.parentheses}
-          </Text>
-        </View>
-      ) : (
+      <View style={[styles.leadingDot, { backgroundColor: accentColor }]} />
+
+      <View style={styles.nameColumn}>
         <Text
           style={[
-            styles.name,
-            variant === 'light' && styles.nameLight,
-            variant === 'light' ? { color: COLORS.textNavyPrimary } : null,
+            styles.nameMain,
+            isLight ? styles.nameMainLight : styles.nameMainDark,
           ]}
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          {name}
+          {splitLabel.main}
         </Text>
-      )}
+        {showSplitLabel ? (
+          <Text
+            style={[
+              styles.nameParen,
+              isLight ? styles.nameParenLight : styles.nameParenDark,
+            ]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {splitLabel.parentheses}
+          </Text>
+        ) : null}
+      </View>
 
       <View style={styles.right} pointerEvents="box-none">
         {bestLabel ? (
-          <View style={styles.bestWrap} pointerEvents="none">
+          <View
+            style={[
+              styles.bestWrap,
+              isLight ? styles.bestWrapLight : styles.bestWrapDark,
+              { borderColor: bestChipBorder, backgroundColor: bestChipBg },
+            ]}
+            pointerEvents="none"
+          >
             <Text
-              style={[styles.bestText, variant === 'light' && styles.bestTextLight]}
+              style={[styles.bestText, isLight ? styles.bestTextLight : styles.bestTextDark]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
               {bestLabel}
             </Text>
-            {showStar ? <Text style={styles.star}>⭐</Text> : null}
+            {showStar ? <Text style={styles.star}>{'\u2B50'}</Text> : null}
           </View>
         ) : null}
 
         <TouchableOpacity
-          style={styles.kebabButton}
+          style={[
+            styles.kebabButton,
+            isLight ? styles.kebabButtonLight : styles.kebabButtonDark,
+            { borderColor: menuBorder, backgroundColor: menuBg },
+          ]}
           onPress={(event) => {
             event.stopPropagation?.();
             onPressMenu(event);
@@ -102,7 +135,7 @@ export const ExerciseRow: React.FC<Props> = ({
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.85}
         >
-          <Text style={[styles.kebabText, variant === 'light' && styles.kebabTextLight]}>{'...'}</Text>
+          <Text style={[styles.kebabText, isLight ? styles.kebabTextLight : styles.kebabTextDark]}>{'\u22EF'}</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -114,92 +147,122 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    minHeight: 56,
+    paddingVertical: SPACING.sm,
+    minHeight: 64,
+    gap: SPACING.sm,
+  },
+  rowDark: {
+    backgroundColor: '#071224',
   },
   rowLight: {
     backgroundColor: COLORS.surfaceWhite,
-    paddingVertical: SPACING.md,
   },
   rowMoving: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
   },
   rowMovingLight: {
-    backgroundColor: 'rgba(2, 6, 23, 0.04)',
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
   },
-  name: {
-    flex: 1,
-    color: '#F9FAFB',
-    fontSize: TEXT.md,
-    fontWeight: '700',
-    marginRight: SPACING.sm,
-  },
-  nameLight: {
-    color: COLORS.textNavyPrimary,
-    lineHeight: TEXT.md + 4,
+  leadingDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 999,
+    opacity: 0.95,
   },
   nameColumn: {
     flex: 1,
-    marginRight: SPACING.sm,
     minWidth: 0,
   },
-  nameLightMain: {
-    color: COLORS.textNavyPrimary,
+  nameMain: {
     fontSize: TEXT.md,
-    fontWeight: '700',
     lineHeight: TEXT.md + 4,
-  },
-  nameLightParen: {
-    color: COLORS.textSecondaryGray,
-    fontSize: TEXT.xs,
     fontWeight: '700',
+  },
+  nameMainLight: {
+    color: COLORS.textNavyPrimary,
+  },
+  nameMainDark: {
+    color: '#E5ECF8',
+  },
+  nameParen: {
+    fontSize: TEXT.xs,
     lineHeight: TEXT.xs + 2,
+    fontWeight: '700',
     marginTop: 2,
+  },
+  nameParenLight: {
+    color: COLORS.textSecondaryGray,
+  },
+  nameParenDark: {
+    color: 'rgba(203, 213, 225, 0.72)',
   },
   right: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     flexShrink: 0,
   },
   bestWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
-    maxWidth: 180,
+    maxWidth: 188,
     flexShrink: 1,
     minWidth: 0,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  bestWrapDark: {
+    backgroundColor: 'rgba(37, 99, 235, 0.14)',
+  },
+  bestWrapLight: {
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
   },
   bestText: {
-    color: '#9CA3AF',
     fontSize: TEXT.xs,
     fontWeight: '600',
+  },
+  bestTextDark: {
+    color: 'rgba(203, 213, 225, 0.84)',
   },
   bestTextLight: {
     color: COLORS.textSecondaryGray,
     lineHeight: TEXT.xs + 2,
   },
   star: {
-    fontSize: TEXT.md,
-    lineHeight: TEXT.md + 2,
+    fontSize: TEXT.sm,
+    lineHeight: TEXT.sm + 2,
     color: COLORS.warning,
   },
   kebabButton: {
-    width: 40,
-    height: 40,
-    minWidth: 40,
-    minHeight: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    minWidth: 34,
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: SPACING.xs,
+    marginLeft: 2,
+  },
+  kebabButtonDark: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  kebabButtonLight: {
+    backgroundColor: 'rgba(59, 130, 246, 0.06)',
+    borderColor: 'rgba(59, 130, 246, 0.2)',
   },
   kebabText: {
-    color: '#E5E7EB',
-    fontSize: 22,
+    fontSize: TEXT.lg + 2,
     fontWeight: '800',
-    lineHeight: 22,
-    marginTop: -2,
+    lineHeight: TEXT.lg + 2,
+    marginTop: -1,
+  },
+  kebabTextDark: {
+    color: 'rgba(224, 236, 255, 0.86)',
   },
   kebabTextLight: {
     color: COLORS.textSecondaryGray,

@@ -74,7 +74,7 @@ Analytics:
 - Two-column mode is layout-width driven (`layoutWidth >= 640`), not device-type driven.
 - Right column is fixed-order stack: `cardio/bodyweight` tiles, last workout card, notes card.
 - Last workout card uses fixed measured height after first layout capture.
-- Muscle-group chips inside last workout use an internal `ScrollView` with constrained max height.
+- Muscle-group chips in last workout keep compact two-row behavior in constrained/two-column layouts, while iOS one-column mode uses fluid wrapping to show full group labels without compact overflow truncation.
 - Left column stacks muscle groups list + `Notert` + `Analyse` nav cards.
 - "Today workout" card and bottom sheet use explicit session lifecycle semantics:
   - `LIVE` is shown only while a session is active (`startedAtISO` exists and `finishedAtISO` is absent).

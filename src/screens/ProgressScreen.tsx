@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -69,9 +69,13 @@ const CHART_Y_PADDING_TOP = 12;
 const CHART_Y_PADDING_BOTTOM = 12;
 const CHART_POINT_SIZE = 8;
 const CHART_LINE_THICKNESS = 1;
+const CHART_TREND_LINE_THICKNESS = 2;
+const CHART_TREND_ALPHA = 0.34;
 
 const INSIGHTS_TREND_WINDOW_DAYS = 14;
 const INSIGHTS_FALLBACK_SESSIONS = 5;
+const FEEDBACK_WINDOW_SETS = 4;
+const PLATEAU_WINDOW_SETS = 6;
 
 const MAIN_BLOCK_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
 const MODE_BLOCK_IDS: TrainingBlockId[] = ['cardio', 'bodyweight'];
@@ -94,6 +98,37 @@ type NextTarget =
   | { kind: 'reps'; next: number; progress: number; diff: number }
   | { kind: 'weight'; nextKg: number; progress: number; diffKg: number };
 
+type RecentPerformanceSnapshot = {
+  baselineMetric: number;
+  latestMetric: number;
+  deltaMetric: number;
+  deltaPct: number;
+  baselineReps: number;
+  latestReps: number;
+};
+
+type InstantFeedback = {
+  tone: 'up' | 'stable' | 'down';
+  title: string;
+  detail: string;
+  accent: string;
+};
+
+type NextSetSuggestion = {
+  title: string;
+  detail: string;
+  accent: string;
+};
+
+type PlateauInsight = {
+  level: 'plateau' | 'regression';
+  title: string;
+  detail: string;
+  actionPrimary: string;
+  actionSecondary: string;
+  accent: string;
+};
+
 interface ChartRow {
   id: string;
   createdAtMs: number;
@@ -113,6 +148,12 @@ type ChartPoint = {
   value: number;
 };
 
+type TrendPoint = {
+  id: string;
+  x: number;
+  y: number;
+};
+
 function metricValueSet(row: SetRow, metric: Metric): number {
   if (metric === 'oneRm') return row.oneRm;
   if (metric === 'reps') return row.reps;
@@ -129,6 +170,30 @@ function metricValueChart(row: ChartRow, metric: Metric): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function formatSignedInteger(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded > 0) return `+${rounded}`;
+  return String(rounded);
+}
+
+function computeEwma(values: number[], alpha: number): number[] {
+  if (values.length === 0) return [];
+  const safeAlpha = Number.isFinite(alpha) ? clamp(alpha, 0.05, 0.95) : 0.3;
+  const smoothed: number[] = [];
+  let prev = values[0] ?? 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const current = values[index] ?? prev;
+    prev = index === 0 ? current : prev + safeAlpha * (current - prev);
+    smoothed.push(prev);
+  }
+  return smoothed;
 }
 
 function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
@@ -504,19 +569,17 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
   const splitLabel = isExerciseCard ? splitLabelParentheses(label) : null;
   const showSplitLabel = Boolean(splitLabel?.parentheses);
   const selectedBg = isExerciseCard
-    ? COLORS.surfaceCardLight
+    ? selected
+      ? hexToRgba(accent, 0.24)
+      : '#0D1A31'
     : selected
-      ? hexToRgba(accent, 0.18)
-      : '#0B1220';
-  const borderColor = selected
-    ? isExerciseCard
-      ? 'transparent'
-      : hexToRgba(accent, 0.7)
-    : isExerciseCard
-      ? 'transparent'
-      : 'rgba(148, 163, 184, 0.16)';
-  const glowColor = isExerciseCard ? '#000' : selected ? accent : '#0B1220';
-  const dotOpacity = variant === 'primary' ? 1 : 0.6;
+      ? hexToRgba(accent, 0.2)
+      : '#0A152A';
+  const borderColor = selected ? hexToRgba(accent, 0.72) : 'rgba(148, 163, 184, 0.2)';
+  const glowColor = selected ? accent : '#081226';
+  const dotOpacity = variant === 'primary' ? 1 : selected ? 0.95 : 0.72;
+  const exerciseMainTextColor = selected ? '#F8FBFF' : '#D7E6FF';
+  const exerciseSubTextColor = selected ? '#BFD9FF' : '#8EA5C6';
 
   return (
     <Pressable
@@ -536,14 +599,14 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
         {variant === 'secondary' && showSplitLabel ? (
           <View style={styles.tileLabelColumn}>
             <Text
-              style={[styles.tileLabelSecondaryMain, { color: COLORS.textNavyPrimary }]}
+              style={[styles.tileLabelSecondaryMain, { color: exerciseMainTextColor }]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
               {splitLabel?.main ?? label}
             </Text>
             <Text
-              style={[styles.tileLabelSecondaryParen, { color: COLORS.textSecondaryGray }]}
+              style={[styles.tileLabelSecondaryParen, { color: exerciseSubTextColor }]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -556,7 +619,7 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
               styles.tileLabel,
               variant === 'secondary' ? styles.tileLabelSecondary : null,
               selected && variant !== 'secondary' ? styles.tileLabelSelected : null,
-              variant === 'secondary' ? { color: COLORS.textNavyPrimary } : null,
+              variant === 'secondary' ? { color: exerciseMainTextColor } : null,
             ]}
             numberOfLines={1}
           >
@@ -569,7 +632,7 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
               styles.tileSubtitle,
               variant === 'secondary' ? styles.tileSubtitleSecondary : null,
               selected && variant !== 'secondary' ? styles.tileSubtitleSelected : null,
-              variant === 'secondary' ? { color: COLORS.textSecondaryGray } : null,
+              variant === 'secondary' ? { color: exerciseSubTextColor } : null,
             ]}
             numberOfLines={1}
           >
@@ -581,7 +644,9 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
         style={[
           styles.tileChevron,
           variant === 'secondary' ? styles.tileChevronSecondary : null,
-          { opacity: selected ? 1 : 0 },
+          variant === 'secondary'
+            ? { color: selected ? accent : '#79A5D9', opacity: 1 }
+            : { opacity: selected ? 1 : 0.4 },
         ]}
       >
         {'>'}
@@ -616,10 +681,11 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
     }).start();
   }, [scaleAnim]);
 
-  const selectedBg = selected ? '#111827' : '#050A16';
-  const borderColor = selected ? 'rgba(148, 163, 184, 0.22)' : 'rgba(148, 163, 184, 0.14)';
-  const glowColor = COLORS.treasyNavy;
-  const iconBorderColor = selected ? 'rgba(148, 163, 184, 0.22)' : 'rgba(148, 163, 184, 0.16)';
+  const selectedBg = selected ? hexToRgba(accent, 0.2) : '#09162C';
+  const borderColor = selected ? hexToRgba(accent, 0.62) : 'rgba(148, 163, 184, 0.22)';
+  const glowColor = selected ? accent : '#09162C';
+  const iconBorderColor = selected ? hexToRgba(accent, 0.5) : 'rgba(148, 163, 184, 0.24)';
+  const iconBgColor = selected ? hexToRgba(accent, 0.16) : 'rgba(148, 163, 184, 0.08)';
 
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
@@ -634,9 +700,9 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
         <Text style={[styles.groupTileText, selected ? styles.groupTileTextSelected : null]} numberOfLines={1}>
           {label}
         </Text>
-        <View style={[styles.groupTileIconWrap, { borderColor: iconBorderColor }]}>
+        <View style={[styles.groupTileIconWrap, { borderColor: iconBorderColor, backgroundColor: iconBgColor }]}>
           {icon ? (
-            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor="#FFFFFF" />
+            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor={selected ? '#F8FBFF' : '#B8CCEA'} />
           ) : (
             <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
           )}
@@ -739,6 +805,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     const byId = new Map<string, TrainingBlock>(appState.blocks.map((block) => [block.id, block]));
     return MAIN_BLOCK_ORDER.map((id) => byId.get(id) ?? { id, name: blockLabel(id, language) });
   }, [appState.blocks, language]);
+  const selectedBlock = useMemo(
+    () => primaryBlocks.find((block) => block.id === selectedBlockId) ?? null,
+    [primaryBlocks, selectedBlockId]
+  );
   const selectedBlockTone = getBlockTone(selectedBlockId ?? '');
 
   const registerChartBlocker = useCallback(() => {
@@ -1043,6 +1113,33 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
       return { id: row.id, row, x, y, value };
     });
   }, [chartAxis.max, chartAxis.min, chartValues, chartWidth, viewRange, viewportRows]);
+
+  const chartTrendValues = useMemo(() => computeEwma(chartValues, CHART_TREND_ALPHA), [chartValues]);
+
+  const chartTrendPoints = useMemo<TrendPoint[]>(() => {
+    if (viewportRows.length === 0 || chartWidth <= 0 || !viewRange) return [];
+    const minMs = viewRange.startMs;
+    const maxMs = viewRange.endMs;
+    return viewportRows.map((row, idx) => {
+      const value = chartTrendValues[idx] ?? chartValues[idx] ?? 0;
+      const x = xForChartTime(row.createdAtMs, minMs, maxMs, chartWidth);
+      const y = yForChartValue(value, chartAxis.min, chartAxis.max);
+      return { id: `trend-${row.id}`, x, y };
+    });
+  }, [chartAxis.max, chartAxis.min, chartTrendValues, chartValues, chartWidth, viewRange, viewportRows]);
+
+  const prPointIds = useMemo(() => {
+    const ids = new Set<string>();
+    let runningMax = Number.NEGATIVE_INFINITY;
+    for (const point of chartPoints) {
+      if (!Number.isFinite(point.value)) continue;
+      if (point.value > runningMax + 1e-9) {
+        ids.add(point.id);
+        runningMax = point.value;
+      }
+    }
+    return ids;
+  }, [chartPoints]);
 
   const chartStartLabel = viewRange
     ? formatAggregationLabel(new Date(viewRange.startMs), resolvedAggregation, language)
@@ -1405,6 +1502,174 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
     };
   }, [bestAllOneRm, bestAllReps, insightsMetric, latestOverall, massUnit]);
 
+  const recentPerformance = useMemo<RecentPerformanceSnapshot | null>(() => {
+    if (!latestOverall || setRows.length < 2) return null;
+    const recentWindow = setRows.slice(-FEEDBACK_WINDOW_SETS);
+    const latest = recentWindow[recentWindow.length - 1];
+    const baselineRows = recentWindow.slice(0, -1);
+    if (!latest || baselineRows.length === 0) return null;
+
+    const metricOf = (row: SetRow) => (insightsMetric === 'oneRm' ? row.oneRm : row.reps);
+    const baselineMetric = average(baselineRows.map(metricOf));
+    const latestMetric = metricOf(latest);
+    const deltaMetric = latestMetric - baselineMetric;
+    const deltaPct = baselineMetric > 0 ? deltaMetric / baselineMetric : 0;
+    const baselineReps = average(baselineRows.map((row) => row.reps));
+
+    return {
+      baselineMetric,
+      latestMetric,
+      deltaMetric,
+      deltaPct,
+      baselineReps,
+      latestReps: latest.reps,
+    };
+  }, [insightsMetric, latestOverall, setRows]);
+
+  const instantFeedback = useMemo<InstantFeedback | null>(() => {
+    if (!recentPerformance) return null;
+
+    const rising =
+      recentPerformance.deltaPct >= 0.025 ||
+      (insightsMetric === 'oneRm' &&
+        recentPerformance.deltaMetric >= Math.max(0.5, toKg(weightStep(massUnit), massUnit) * 0.35));
+    const dropping = recentPerformance.deltaPct <= -0.02;
+
+    const tone: InstantFeedback['tone'] = rising ? 'up' : dropping ? 'down' : 'stable';
+    const accent = tone === 'up' ? COLORS.success : tone === 'down' ? COLORS.warning : COLORS.actionSecondary;
+    const title = t(language, `progress.feedback.status.${tone}` as StringKey);
+
+    const detail =
+      insightsMetric === 'oneRm'
+        ? t(language, 'progress.feedback.detail.oneRm', {
+            diff:
+              recentPerformance.deltaMetric >= 0
+                ? `+${formatWeight(recentPerformance.deltaMetric, massUnit, language)}`
+                : formatWeight(recentPerformance.deltaMetric, massUnit, language),
+            baseline: formatWeight(recentPerformance.baselineMetric, massUnit, language),
+          })
+        : t(language, 'progress.feedback.detail.reps', {
+            diff: formatSignedInteger(recentPerformance.deltaMetric),
+            baseline: Math.max(0, Math.round(recentPerformance.baselineMetric)),
+          });
+
+    return { tone, title, detail, accent };
+  }, [insightsMetric, language, massUnit, recentPerformance]);
+
+  const nextSetSuggestion = useMemo<NextSetSuggestion | null>(() => {
+    if (!latestOverall || !recentPerformance || !instantFeedback) return null;
+    const tone = instantFeedback.tone;
+
+    if (insightsMetric === 'oneRm' && latestOverall.weight > 0) {
+      const stepKg = toKg(weightStep(massUnit), massUnit);
+      if (tone === 'up' && latestOverall.reps >= Math.max(4, Math.round(recentPerformance.baselineReps))) {
+        const nextWeightKg = latestOverall.weight + stepKg;
+        return {
+          title: t(language, 'progress.feedback.next.weightUp.title', {
+            weight: formatWeight(nextWeightKg, massUnit, language),
+          }),
+          detail: t(language, 'progress.feedback.next.weightUp.detail', { reps: latestOverall.reps }),
+          accent: COLORS.success,
+        };
+      }
+      if (tone === 'down') {
+        const downStepKg = Math.max(stepKg / 2, 0);
+        const reducedWeightKg = Math.max(0, latestOverall.weight - downStepKg);
+        return {
+          title: t(language, 'progress.feedback.next.weightDown.title', {
+            weight: formatWeight(reducedWeightKg, massUnit, language),
+          }),
+          detail: t(language, 'progress.feedback.next.weightDown.detail'),
+          accent: COLORS.warning,
+        };
+      }
+
+      return {
+        title: t(language, 'progress.feedback.next.weightHold.title', {
+          weight: formatWeight(latestOverall.weight, massUnit, language),
+        }),
+        detail: t(language, 'progress.feedback.next.weightHold.detail'),
+        accent: COLORS.actionSecondary,
+      };
+    }
+
+    if (tone === 'up') {
+      return {
+        title: t(language, 'progress.feedback.next.repsUp.title', { reps: latestOverall.reps + 1 }),
+        detail: t(language, 'progress.feedback.next.repsUp.detail'),
+        accent: COLORS.success,
+      };
+    }
+    if (tone === 'down') {
+      return {
+        title: t(language, 'progress.feedback.next.repsHold.title', { reps: latestOverall.reps }),
+        detail: t(language, 'progress.feedback.next.repsHold.detail'),
+        accent: COLORS.warning,
+      };
+    }
+    return {
+      title: t(language, 'progress.feedback.next.repsNudge.title', { reps: latestOverall.reps + 1 }),
+      detail: t(language, 'progress.feedback.next.repsNudge.detail'),
+      accent: COLORS.actionSecondary,
+    };
+  }, [insightsMetric, instantFeedback, language, latestOverall, massUnit, recentPerformance]);
+
+  const plateauInsight = useMemo<PlateauInsight | null>(() => {
+    if (setRows.length < 4) return null;
+    const windowRows = setRows.slice(-PLATEAU_WINDOW_SETS);
+    if (windowRows.length < 4) return null;
+
+    const values = windowRows.map((row) => (insightsMetric === 'oneRm' ? row.oneRm : row.reps));
+    if (values.length < 4) return null;
+    const first = values[0] ?? 0;
+    const last = values[values.length - 1] ?? 0;
+    if (!Number.isFinite(first) || !Number.isFinite(last)) return null;
+
+    const deltaPct = first > 0 ? (last - first) / first : 0;
+    let improvingSteps = 0;
+    let decliningSteps = 0;
+    for (let i = 1; i < values.length; i += 1) {
+      const prev = values[i - 1] ?? 0;
+      const current = values[i] ?? 0;
+      if (current - prev > 0.001) improvingSteps += 1;
+      if (current - prev < -0.001) decliningSteps += 1;
+    }
+
+    let runningMax = Number.NEGATIVE_INFINITY;
+    let lastPrIndex = -1;
+    for (let i = 0; i < values.length; i += 1) {
+      const value = values[i] ?? Number.NEGATIVE_INFINITY;
+      if (value > runningMax + 1e-9) {
+        runningMax = value;
+        lastPrIndex = i;
+      }
+    }
+    const sessionsSincePr = lastPrIndex >= 0 ? values.length - 1 - lastPrIndex : 0;
+    const plateau = Math.abs(deltaPct) < 0.012 && improvingSteps <= 1 && sessionsSincePr >= 3;
+    const regression = deltaPct <= -0.035 && decliningSteps >= 3;
+    if (!plateau && !regression) return null;
+
+    if (regression) {
+      return {
+        level: 'regression',
+        title: t(language, 'progress.feedback.plateau.regression.title'),
+        detail: t(language, 'progress.feedback.plateau.regression.detail'),
+        actionPrimary: t(language, 'progress.feedback.plateau.action.deload'),
+        actionSecondary: t(language, 'progress.feedback.plateau.action.resetFatigue'),
+        accent: COLORS.warning,
+      };
+    }
+
+    return {
+      level: 'plateau',
+      title: t(language, 'progress.feedback.plateau.flat.title'),
+      detail: t(language, 'progress.feedback.plateau.flat.detail', { count: sessionsSincePr }),
+      actionPrimary: t(language, 'progress.feedback.plateau.action.repRange'),
+      actionSecondary: t(language, 'progress.feedback.plateau.action.microload'),
+      accent: COLORS.actionSecondary,
+    };
+  }, [insightsMetric, language, setRows]);
+
   useEffect(() => {
     setShowTable(false);
     setIsTrayOpen(false);
@@ -1430,25 +1695,58 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const controlsSummaryText = `${t(language, 'progress.controls.showing')} ${t(
     language,
     RANGE_LONG_LABEL_KEY[timeRange]
-  )} · ${formatMetricLabel(language, metric)}`;
+  )} | ${formatMetricLabel(language, metric)}`;
 
   const trayRangeOptions: TimeRange[] = ['7d', '14d', '30d', '90d', 'all'];
   const trayResolutionOptions: Aggregation[] = ['auto', 'day', 'week', 'month', 'year'];
 
   return (
     <SafeAreaView style={styles.container}>
+      <View pointerEvents="none" style={styles.backdropWrap}>
+        <View style={styles.backdropOrbTop} />
+        <View style={styles.backdropOrbMid} />
+        <View style={styles.backdropOrbBottom} />
+      </View>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         onScroll={scheduleChartBlockerMeasure}
         scrollEventThrottle={16}
       >
-        <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
-          <Text style={styles.back}>{t(language, 'back')}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerWrap}>
+          <TouchableOpacity onPress={onBack} hitSlop={12} style={styles.backButton} activeOpacity={0.8}>
+            <Text style={styles.back}>{t(language, 'back')}</Text>
+          </TouchableOpacity>
 
-        <Text style={styles.title}>{t(language, 'progressScreenTitle')}</Text>
-        <Text style={styles.subtitle}>{t(language, 'progressScreenSubtitle')}</Text>
+          <View style={styles.heroCard}>
+            <Text style={styles.heroEyebrow}>{t(language, 'development')}</Text>
+            <Text style={styles.title}>{t(language, 'progressScreenTitle')}</Text>
+            <Text style={styles.subtitle}>{t(language, 'progressScreenSubtitle')}</Text>
+            <View style={styles.heroMetaRow}>
+              {selectedBlock ? (
+                <View
+                  style={[
+                    styles.heroMetaChip,
+                    {
+                      borderColor: hexToRgba(selectedBlockTone.accent, 0.5),
+                      backgroundColor: hexToRgba(selectedBlockTone.accent, 0.16),
+                    },
+                  ]}
+                >
+                  <View style={[styles.heroMetaDot, { backgroundColor: getDotColor(selectedBlock.id as TrainingBlockId) }]} />
+                  <Text style={[styles.heroMetaText, { color: '#EAF1FF' }]} numberOfLines={1}>
+                    {labelForBlock(selectedBlock, language)}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.heroMetaChip}>
+                <Text style={styles.heroMetaText} numberOfLines={1}>
+                  {`${exercises.length} ${t(language, 'exercises').toLowerCase()}`}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>{t(language, 'muscleGroups')}</Text>
@@ -1489,7 +1787,12 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
           }}
         />
 
-        <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>{t(language, 'exercises')}</Text>
+        <View style={[styles.sectionHeaderRow, styles.sectionHeaderExercises]}>
+          <Text style={styles.sectionTitle}>{t(language, 'exercises')}</Text>
+          <View style={styles.sectionCountChip}>
+            <Text style={styles.sectionCountText}>{exercises.length}</Text>
+          </View>
+        </View>
         {exercises.length === 0 ? (
           <Text style={styles.emptyText}>{t(language, 'noExercisesInBlock')}</Text>
         ) : (
@@ -1529,9 +1832,30 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                           },
                         ]}
                       >
-                        <View style={styles.progressCard}>
+                        <View
+                          style={[
+                            styles.progressCard,
+                            {
+                              borderColor: hexToRgba(selectedBlockTone.accent, 0.34),
+                              shadowColor: selectedBlockTone.accent,
+                            },
+                          ]}
+                        >
                           <View style={styles.progressHeader}>
                             <Text style={styles.progressTitle}>{t(language, 'progress.insight.title')}</Text>
+                            <View
+                              style={[
+                                styles.progressMetricChip,
+                                {
+                                  borderColor: hexToRgba(selectedBlockTone.accent, 0.48),
+                                  backgroundColor: hexToRgba(selectedBlockTone.accent, 0.15),
+                                },
+                              ]}
+                            >
+                              <Text style={[styles.progressMetricChipText, { color: selectedBlockTone.accent }]}>
+                                {chartMetricLabel}
+                              </Text>
+                            </View>
                           </View>
                           <Text style={styles.insightsSubtitle}>{t(language, 'progress.insight.subtitle')}</Text>
 
@@ -1573,10 +1897,37 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                 <Text style={styles.insightsEmpty}>{t(language, 'progress.insight.empty')}</Text>
                               )}
 
+                              {instantFeedback ? (
+                                <View
+                                  style={[
+                                    styles.feedbackCard,
+                                    {
+                                      borderColor: hexToRgba(instantFeedback.accent, 0.48),
+                                      backgroundColor: hexToRgba(instantFeedback.accent, 0.14),
+                                    },
+                                  ]}
+                                >
+                                  <Text style={[styles.feedbackCardTitle, { color: instantFeedback.accent }]}>
+                                    {instantFeedback.title}
+                                  </Text>
+                                  <Text style={styles.feedbackCardDetail}>{instantFeedback.detail}</Text>
+                                </View>
+                              ) : null}
+
+                              {nextSetSuggestion ? (
+                                <View style={styles.nextSetCard}>
+                                  <Text style={[styles.nextSetTitle, { color: nextSetSuggestion.accent }]}>
+                                    {t(language, 'progress.feedback.next.title')}
+                                  </Text>
+                                  <Text style={styles.nextSetMain}>{nextSetSuggestion.title}</Text>
+                                  <Text style={styles.nextSetDetail}>{nextSetSuggestion.detail}</Text>
+                                </View>
+                              ) : null}
+
                               <View style={styles.insightsRow}>
                                 <Text style={styles.insightsLabel}>{t(language, 'progress.insight.lastSession')}</Text>
                                 <Text style={styles.insightsValue} numberOfLines={2}>
-                                  {latestOverall.setLabel} — {latestOverall.dateTimeLabel}
+                                  {latestOverall.setLabel} - {latestOverall.dateTimeLabel}
                                 </Text>
                               </View>
 
@@ -1586,6 +1937,25 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                   <Text style={styles.insightsValue} numberOfLines={2}>
                                     {insightsNewPr}
                                   </Text>
+                                </View>
+                              ) : null}
+
+                              {plateauInsight ? (
+                                <View
+                                  style={[
+                                    styles.plateauCard,
+                                    {
+                                      borderColor: hexToRgba(plateauInsight.accent, 0.52),
+                                      backgroundColor: hexToRgba(plateauInsight.accent, 0.14),
+                                    },
+                                  ]}
+                                >
+                                  <Text style={[styles.plateauTitle, { color: plateauInsight.accent }]}>
+                                    {plateauInsight.title}
+                                  </Text>
+                                  <Text style={styles.plateauDetail}>{plateauInsight.detail}</Text>
+                                  <Text style={styles.plateauAction}>{`1) ${plateauInsight.actionPrimary}`}</Text>
+                                  <Text style={styles.plateauAction}>{`2) ${plateauInsight.actionSecondary}`}</Text>
                                 </View>
                               ) : null}
 
@@ -1643,7 +2013,7 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                 <Text style={styles.controlsSummaryText} numberOfLines={1}>
                                   {controlsSummaryText}
                                 </Text>
-                                <Text style={styles.controlsSummaryChevron}>{isTrayOpen ? '▴' : '▾'}</Text>
+                                <Text style={styles.controlsSummaryChevron}>{isTrayOpen ? '^' : 'v'}</Text>
                               </TouchableOpacity>
 
                               <Animated.View
@@ -1753,6 +2123,20 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                 <Text style={styles.emptyText}>{t(language, 'progress.emptyRange')}</Text>
                               ) : (
                                 <>
+                                  <View style={styles.chartLegendRow}>
+                                    <View style={styles.chartLegendItem}>
+                                      <View style={[styles.chartLegendLine, { backgroundColor: hexToRgba(selectedBlockTone.accent, 0.62) }]} />
+                                      <Text style={styles.chartLegendText}>{t(language, 'progress.chart.legend.trend')}</Text>
+                                    </View>
+                                    <View style={styles.chartLegendItem}>
+                                      <View style={styles.chartLegendDotWrap}>
+                                        <View style={styles.chartLegendDotCore} />
+                                        <View style={styles.chartLegendDotRing} />
+                                      </View>
+                                      <Text style={styles.chartLegendText}>{t(language, 'progress.chart.legend.pr')}</Text>
+                                    </View>
+                                  </View>
+
                                   <View ref={chartContainerRef} style={styles.chart} onLayout={registerChartBlocker}>
                                     <View style={styles.chartRow}>
                                       <View style={styles.chartYAxis}>
@@ -1782,6 +2166,37 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                             <View
                                               key={`g-${tick}`}
                                               style={[styles.chartGridLine, { top: y, opacity: isBaseline ? 0.22 : 0.12 }]}
+                                            />
+                                          );
+                                        })}
+
+                                        {chartTrendPoints.map((p, idx) => {
+                                          if (idx === 0) return null;
+                                          const prev = chartTrendPoints[idx - 1];
+                                          if (!prev) return null;
+                                          const dx = p.x - prev.x;
+                                          const dy = p.y - prev.y;
+                                          const length = Math.sqrt(dx * dx + dy * dy);
+                                          const angle = Math.atan2(dy, dx);
+                                          const midX = (prev.x + p.x) / 2;
+                                          const midY = (prev.y + p.y) / 2;
+                                          const isInRange = p.x >= 0 && p.x <= chartWidth;
+                                          if (!isInRange) return null;
+
+                                          return (
+                                            <View
+                                              key={`trend-${p.id}`}
+                                              style={[
+                                                styles.chartTrendLine,
+                                                {
+                                                  left: midX - length / 2,
+                                                  top: midY - CHART_TREND_LINE_THICKNESS / 2,
+                                                  width: length,
+                                                  height: CHART_TREND_LINE_THICKNESS,
+                                                  backgroundColor: hexToRgba(selectedBlockTone.accent, 0.62),
+                                                  transform: [{ rotateZ: `${angle}rad` }],
+                                                },
+                                              ]}
                                             />
                                           );
                                         })}
@@ -1822,28 +2237,42 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                           const isLatest = p.id === latestChartPointId;
                                           const isSelected = p.id === selectedPointId;
                                           const isBest = p.id === bestChartPointId;
+                                          const isPrPoint = prPointIds.has(p.id);
                                           const borderColor = isSelected
                                             ? '#F9FAFB'
-                                            : isBest
+                                            : isPrPoint || isBest
                                               ? COLORS.success
                                               : selectedBlockTone.accent;
                                           const fillColor = isSelected ? '#F9FAFB' : isLatest ? selectedBlockTone.accent : '#0B1220';
                                           return (
-                                            <Pressable
-                                              key={`p-${p.id}`}
-                                              onPress={() => setSelectedPointId(p.id)}
-                                              hitSlop={8}
-                                              style={[
-                                                styles.chartPoint,
-                                                {
-                                                  left: p.x - CHART_POINT_SIZE / 2,
-                                                  top: p.y - CHART_POINT_SIZE / 2,
-                                                  borderColor,
-                                                  backgroundColor: fillColor,
-                                                  opacity: isLatest ? 1 : 0.9,
-                                                },
-                                              ]}
-                                            />
+                                            <View key={`p-${p.id}`} pointerEvents="box-none">
+                                              <Pressable
+                                                onPress={() => setSelectedPointId(p.id)}
+                                                hitSlop={8}
+                                                style={[
+                                                  styles.chartPoint,
+                                                  {
+                                                    left: p.x - CHART_POINT_SIZE / 2,
+                                                    top: p.y - CHART_POINT_SIZE / 2,
+                                                    borderColor,
+                                                    backgroundColor: fillColor,
+                                                    opacity: isLatest ? 1 : 0.9,
+                                                  },
+                                                ]}
+                                              />
+                                              {isPrPoint ? (
+                                                <View
+                                                  pointerEvents="none"
+                                                  style={[
+                                                    styles.chartPrRing,
+                                                    {
+                                                      left: p.x - CHART_POINT_SIZE / 2 - 3,
+                                                      top: p.y - CHART_POINT_SIZE / 2 - 3,
+                                                    },
+                                                  ]}
+                                                />
+                                              ) : null}
+                                            </View>
                                           );
                                         })}
 
@@ -1868,6 +2297,9 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                               <Text style={styles.chartTooltipDetail} numberOfLines={1}>
                                                 {selectedChartPoint.row.bestSet.setLabel}
                                               </Text>
+                                            ) : null}
+                                            {prPointIds.has(selectedChartPoint.id) ? (
+                                              <Text style={styles.chartTooltipPr}>{t(language, 'progress.newPr')}</Text>
                                             ) : null}
                                             <Text style={styles.chartTooltipLabel} numberOfLines={1}>
                                               {selectedChartPoint.row.bestSet?.dateTimeLabel ?? selectedChartPoint.row.dateLabel}
@@ -2314,7 +2746,38 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#020617',
+    backgroundColor: '#040B1A',
+  },
+  backdropWrap: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  backdropOrbTop: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    right: -120,
+    top: -84,
+    backgroundColor: 'rgba(51, 111, 198, 0.24)',
+  },
+  backdropOrbMid: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 999,
+    left: -132,
+    top: 240,
+    backgroundColor: 'rgba(13, 148, 136, 0.14)',
+  },
+  backdropOrbBottom: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    borderRadius: 999,
+    right: -150,
+    bottom: -170,
+    backgroundColor: 'rgba(79, 142, 232, 0.12)',
   },
   scroll: {
     flex: 1,
@@ -2322,52 +2785,138 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
-    paddingBottom: SPACING.xxl,
+    paddingBottom: SPACING.xxxl,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
     }),
   },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
+  headerWrap: {
     marginBottom: SPACING.md,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: 'rgba(10, 21, 43, 0.78)',
+    paddingHorizontal: SPACING.md,
+    justifyContent: 'center',
+    marginBottom: SPACING.sm,
+  },
   back: {
-    color: '#93C5FD',
+    color: '#B8D3FA',
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
-  title: {
-    fontSize: TEXT.xl,
+  heroCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: 'rgba(11, 22, 42, 0.88)',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    gap: SPACING.xs,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 12px 28px rgba(2, 6, 23, 0.45)',
+      },
+      default: {
+        shadowColor: '#020617',
+        shadowOpacity: 0.42,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 3,
+      },
+    }),
+  },
+  heroEyebrow: {
+    color: '#8FB5FF',
+    fontSize: TEXT.xs,
     fontWeight: '700',
-    color: '#F9FAFB',
+    letterSpacing: 0.36,
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontSize: 32,
+    lineHeight: 36,
+    fontWeight: '700',
+    color: '#F8FBFF',
   },
   subtitle: {
-    marginTop: SPACING.xs,
-    color: '#9CA3AF',
+    marginTop: SPACING.xs - 1,
+    color: '#9FB0C8',
     fontSize: TEXT.sm,
+    lineHeight: 20,
+  },
+  heroMetaRow: {
+    marginTop: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  heroMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    minHeight: 30,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.26)',
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    paddingHorizontal: SPACING.sm,
+  },
+  heroMetaDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  heroMetaText: {
+    color: '#C5D4EA',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
   },
   sectionLabel: {
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
-    color: '#F9FAFB',
+    color: '#EAF1FF',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
   sectionHeaderRow: {
-    marginTop: SPACING.lg,
+    marginTop: SPACING.xl,
     marginBottom: SPACING.sm,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: SPACING.md,
   },
+  sectionHeaderExercises: {
+    marginTop: SPACING.lg,
+  },
   sectionTitle: {
-    color: '#F9FAFB',
+    color: '#EAF1FF',
     fontSize: TEXT.sm,
     fontWeight: '700',
+    letterSpacing: 0.22,
     flex: 1,
+  },
+  sectionCountChip: {
+    minWidth: 28,
+    height: 22,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.34)',
+    backgroundColor: 'rgba(79, 142, 232, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.xs,
+  },
+  sectionCountText: {
+    color: '#B8D3FA',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
   },
   modeButtons: {
     flexDirection: 'row',
@@ -2406,7 +2955,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   groupGrid: {
-    paddingBottom: SPACING.sm,
+    paddingBottom: SPACING.xs,
     marginTop: 0,
   },
   groupGridRow: {
@@ -2414,61 +2963,61 @@ const styles = StyleSheet.create({
   },
   groupTileWrap: {
     flex: 1,
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   groupTileWrapRight: {
     marginLeft: SPACING.sm,
   },
   groupTile: {
-    minHeight: 66,
+    minHeight: 70,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    backgroundColor: '#0B1220',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: '#0A152A',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
-    shadowColor: '#0B1220',
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: '#020617',
+    shadowOpacity: 0.36,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
     elevation: 2,
   },
   groupTileSelected: {
-    shadowOpacity: 0.34,
+    shadowOpacity: 0.5,
     elevation: 4,
   },
   groupTileDot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: 999,
   },
   groupTileText: {
     flex: 1,
-    color: '#F8FAFC',
-    fontSize: TEXT.md,
+    color: '#E5EEFC',
+    fontSize: TEXT.sm,
     fontWeight: '700',
-    marginLeft: SPACING.xs,
+    marginLeft: 2,
   },
   groupTileTextSelected: {
     color: '#FFFFFF',
   },
   groupTileIconWrap: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 'auto',
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0F172A',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
   },
   groupTileIcon: {
-    width: 30,
-    height: 30,
+    width: 24,
+    height: 24,
   },
   groupTileFallbackDot: {
     width: 10,
@@ -2478,44 +3027,44 @@ const styles = StyleSheet.create({
   tileRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
+    gap: SPACING.sm,
   },
   tile: {
-    flexBasis: '48%',
+    flexBasis: '47.5%',
     flexGrow: 1,
-    margin: SPACING.xs,
-    minHeight: 68,
+    margin: 0,
+    minHeight: 74,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.16)',
-    backgroundColor: '#0B1220',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: '#0A152A',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    gap: SPACING.md,
-    shadowColor: '#0B1220',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
+    gap: SPACING.sm,
+    shadowColor: '#020617',
+    shadowOpacity: 0.36,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
     elevation: 2,
   },
   tileSelected: {
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.5,
     elevation: 4,
   },
   tileSecondary: {
-    minHeight: 72,
-    borderWidth: 0,
-    borderColor: 'transparent',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    minHeight: 76,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+    shadowColor: '#020617',
+    shadowOpacity: 0.34,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
     elevation: 2,
   },
   tilePressed: {
-    opacity: 0.9,
+    opacity: 0.92,
     transform: [{ scale: 0.985 }],
   },
   tileDotWrap: {
@@ -2530,7 +3079,8 @@ const styles = StyleSheet.create({
   },
   tileText: {
     flex: 1,
-    gap: 2,
+    gap: 3,
+    minWidth: 0,
   },
   tileLabelColumn: {
     flex: 1,
@@ -2538,16 +3088,16 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   tileLabel: {
-    color: '#E2E8F0',
-    fontSize: TEXT.sm,
+    color: '#D7E6FF',
+    fontSize: TEXT.md,
     fontWeight: '700',
   },
   tileLabelSecondary: {
-    color: COLORS.textNavyPrimary,
+    color: '#D7E6FF',
     fontWeight: '700',
   },
   tileLabelSecondaryMain: {
-    fontSize: TEXT.sm,
+    fontSize: TEXT.md,
     fontWeight: '700',
   },
   tileLabelSecondaryParen: {
@@ -2555,53 +3105,53 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tileLabelSelected: {
-    color: '#F8FAFC',
+    color: '#F8FBFF',
   },
   tileSubtitle: {
-    color: '#94A3B8',
+    color: '#8EA5C6',
     fontSize: TEXT.xs,
     fontWeight: '600',
   },
   tileSubtitleSecondary: {
-    color: COLORS.textSecondaryGray,
+    color: '#8EA5C6',
   },
   tileSubtitleSelected: {
-    color: '#CBD5F5',
+    color: '#C7DDFF',
   },
   tileChevron: {
-    color: '#93C5FD',
+    color: '#79A5D9',
     fontSize: TEXT.sm,
     fontWeight: '800',
     width: 14,
     textAlign: 'right',
   },
   tileChevronSecondary: {
-    color: COLORS.textSecondaryGray,
+    color: '#79A5D9',
   },
   emptyText: {
-    color: '#9CA3AF',
+    color: '#9FB0C8',
     fontSize: TEXT.sm,
   },
   chooseExerciseHint: {
-    marginTop: SPACING.md,
-    color: '#9CA3AF',
+    marginTop: SPACING.lg,
+    color: '#9FB0C8',
     fontSize: TEXT.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   insightsWrap: {
     flexBasis: '100%',
-    margin: SPACING.xs,
+    marginTop: SPACING.sm,
   },
   progressCard: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
+    backgroundColor: '#0C1A33',
+    borderRadius: RADIUS.lg + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    padding: SPACING.xl,
-    shadowColor: COLORS.blue2,
-    shadowOpacity: 0.08,
+    borderColor: 'rgba(148, 163, 184, 0.28)',
+    padding: SPACING.lg,
+    shadowColor: '#2F6FBC',
+    shadowOpacity: 0.22,
     shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 10 },
     elevation: 2,
   },
   progressHeader: {
@@ -2610,17 +3160,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: SPACING.md,
   },
-  progressTitle: {
-    color: '#F9FAFB',
-    fontSize: TEXT.lg,
-    fontWeight: '800',
+  progressMetricChip: {
+    minHeight: 26,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  insightsSubtitle: {
-    marginTop: 4,
-    marginBottom: SPACING.md,
-    color: '#9CA3AF',
+  progressMetricChipText: {
     fontSize: TEXT.xs,
     fontWeight: '700',
+    letterSpacing: 0.28,
+    textTransform: 'uppercase',
+  },
+  progressTitle: {
+    color: '#F8FBFF',
+    fontSize: TEXT.lg,
+    fontWeight: '700',
+  },
+  insightsSubtitle: {
+    marginTop: 6,
+    marginBottom: SPACING.md,
+    color: '#A9BCD8',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   progressSubtitle: {
     color: '#9CA3AF',
@@ -2634,12 +3199,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   insightsSelectedExerciseMain: {
-    color: '#F9FAFB',
+    color: '#F8FBFF',
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
   insightsSelectedExerciseParen: {
-    color: COLORS.textSecondaryGray,
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -2647,7 +3212,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   insightsProgressionHeadline: {
-    color: '#F9FAFB',
+    color: '#F8FBFF',
     fontSize: TEXT.md,
     fontWeight: '900',
     lineHeight: TEXT.md + 4,
@@ -2657,7 +3222,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   insightsProgressionDetail: {
-    color: '#E2E8F0',
+    color: '#DFEBFF',
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -2669,7 +3234,7 @@ const styles = StyleSheet.create({
   },
   insightsEmpty: {
     marginBottom: SPACING.md,
-    color: '#94A3B8',
+    color: '#9FB0C8',
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -2678,57 +3243,124 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   insightsLabel: {
-    color: '#9CA3AF',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
   insightsValue: {
-    color: '#F9FAFB',
+    color: '#F3F8FF',
     fontSize: TEXT.sm,
     fontWeight: '800',
+  },
+  feedbackCard: {
+    marginTop: SPACING.sm,
+    borderRadius: RADIUS.md + 2,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: 4,
+  },
+  feedbackCardTitle: {
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    letterSpacing: 0.24,
+    textTransform: 'uppercase',
+  },
+  feedbackCardDetail: {
+    color: '#EAF1FF',
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+  },
+  nextSetCard: {
+    marginTop: SPACING.sm,
+    borderRadius: RADIUS.md + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: 3,
+  },
+  nextSetTitle: {
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+    letterSpacing: 0.24,
+    textTransform: 'uppercase',
+  },
+  nextSetMain: {
+    color: '#F8FBFF',
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  nextSetDetail: {
+    color: '#C5D4EA',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  plateauCard: {
+    marginTop: SPACING.sm,
+    borderRadius: RADIUS.md + 2,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: 4,
+  },
+  plateauTitle: {
+    fontSize: TEXT.sm,
+    fontWeight: '800',
+  },
+  plateauDetail: {
+    color: '#EAF1FF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  plateauAction: {
+    color: '#D7E6FF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
   },
   insightsDivider: {
     marginTop: SPACING.lg,
     marginBottom: SPACING.lg,
     height: 1,
-    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    backgroundColor: 'rgba(148, 163, 184, 0.24)',
   },
   controlsSummary: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: SPACING.sm,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.sm + 1,
     paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.md + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.14)',
-    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
   },
   controlsSummaryText: {
     flex: 1,
     minWidth: 0,
-    color: '#9CA3AF',
+    color: '#C5D4EA',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   controlsSummaryChevron: {
-    color: '#9CA3AF',
+    color: '#C5D4EA',
     fontSize: TEXT.xs,
     fontWeight: '900',
   },
   controlTray: {
     overflow: 'hidden',
-    backgroundColor: '#111827',
+    backgroundColor: '#0A162C',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.12)',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
     padding: SPACING.md,
-    gap: SPACING.sm,
+    gap: SPACING.xs + 2,
   },
   controlTrayLabel: {
-    color: '#94A3B8',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.3,
@@ -2806,8 +3438,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
-    backgroundColor: '#020617',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: '#091429',
     padding: SPACING.md,
   },
   targetRow: {
@@ -2817,13 +3449,13 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   targetLabel: {
-    color: '#9CA3AF',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   targetValue: {
-    color: '#F9FAFB',
+    color: '#F8FBFF',
     fontSize: TEXT.sm,
     fontWeight: '900',
   },
@@ -2831,7 +3463,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     height: 10,
     borderRadius: RADIUS.pill,
-    backgroundColor: '#111827',
+    backgroundColor: '#10213E',
     overflow: 'hidden',
   },
   progressFill: {
@@ -2840,7 +3472,7 @@ const styles = StyleSheet.create({
   },
   targetHint: {
     marginTop: SPACING.xs,
-    color: '#9CA3AF',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -2856,8 +3488,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#020617',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: '#081227',
     overflow: 'hidden',
   },
   segmentButton: {
@@ -2867,15 +3499,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentButtonSelected: {
-    backgroundColor: '#0B1220',
+    backgroundColor: '#122447',
   },
   segmentText: {
-    color: '#9CA3AF',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   segmentTextSelected: {
-    color: '#F9FAFB',
+    color: '#F8FBFF',
   },
   chartHeader: {
     marginTop: SPACING.md,
@@ -2886,7 +3518,50 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   chartCaption: {
-    color: '#9CA3AF',
+    color: '#A9BCD8',
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
+  chartLegendRow: {
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  chartLegendLine: {
+    width: 16,
+    height: CHART_TREND_LINE_THICKNESS,
+    borderRadius: 999,
+  },
+  chartLegendDotWrap: {
+    width: CHART_POINT_SIZE + 6,
+    height: CHART_POINT_SIZE + 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chartLegendDotCore: {
+    width: CHART_POINT_SIZE,
+    height: CHART_POINT_SIZE,
+    borderRadius: CHART_POINT_SIZE / 2,
+    backgroundColor: COLORS.success,
+  },
+  chartLegendDotRing: {
+    position: 'absolute',
+    width: CHART_POINT_SIZE + 6,
+    height: CHART_POINT_SIZE + 6,
+    borderRadius: (CHART_POINT_SIZE + 6) / 2,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  chartLegendText: {
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -2900,13 +3575,13 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#020617',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: '#081227',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chartControlText: {
-    color: '#E5E7EB',
+    color: '#EAF1FF',
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -2914,8 +3589,8 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#020617',
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: '#081227',
     paddingHorizontal: SPACING.sm,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2924,26 +3599,26 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   chartResetText: {
-    color: '#93C5FD',
+    color: '#9FC6FB',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   chartResetTextDisabled: {
-    color: '#6B7280',
+    color: '#6E819D',
   },
   chart: {
     marginBottom: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.lg + 2,
     borderWidth: 1,
-    borderColor: '#111827',
-    backgroundColor: '#020617',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+    backgroundColor: '#081227',
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.sm,
-    shadowColor: COLORS.blue2,
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 1,
+    shadowColor: '#2F6FBC',
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   chartRow: {
     flexDirection: 'row',
@@ -2957,7 +3632,7 @@ const styles = StyleSheet.create({
   chartYAxisLabel: {
     position: 'absolute',
     right: SPACING.xs,
-    color: '#9CA3AF',
+    color: '#B4C7E4',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -2973,9 +3648,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(168, 189, 220, 0.24)',
   },
   chartLine: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  chartTrendLine: {
     position: 'absolute',
     borderRadius: 999,
   },
@@ -2986,11 +3665,20 @@ const styles = StyleSheet.create({
     borderRadius: CHART_POINT_SIZE / 2,
     borderWidth: 1,
   },
+  chartPrRing: {
+    position: 'absolute',
+    width: CHART_POINT_SIZE + 6,
+    height: CHART_POINT_SIZE + 6,
+    borderRadius: (CHART_POINT_SIZE + 6) / 2,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+    opacity: 0.9,
+  },
   chartUnit: {
     position: 'absolute',
     right: SPACING.xs,
     top: SPACING.xs,
-    color: '#6B7280',
+    color: '#9FB0C8',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -2998,30 +3686,35 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: 'rgba(2, 6, 23, 0.98)',
+    borderColor: 'rgba(148, 163, 184, 0.34)',
+    backgroundColor: 'rgba(6, 13, 27, 0.98)',
     paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.sm,
     gap: 2,
     zIndex: 5,
   },
   chartTooltipTitle: {
-    color: '#CBD5F5',
+    color: '#CFE0FA',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
   chartTooltipValue: {
-    color: '#F9FAFB',
+    color: '#F8FBFF',
     fontSize: TEXT.xs,
     fontWeight: '900',
   },
   chartTooltipDetail: {
-    color: '#94A3B8',
+    color: '#A9BCD8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
+  chartTooltipPr: {
+    color: COLORS.success,
+    fontSize: TEXT.xs,
+    fontWeight: '800',
+  },
   chartTooltipLabel: {
-    color: '#9CA3AF',
+    color: '#9FB0C8',
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3033,14 +3726,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   chartXAxisLabel: {
-    color: '#6B7280',
+    color: '#9FB0C8',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   table: {
     marginTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: '#1F2937',
+    borderTopColor: 'rgba(148, 163, 184, 0.26)',
   },
   tableToggle: {
     marginTop: SPACING.sm,
@@ -3048,10 +3741,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.sm,
     borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
   },
   tableToggleText: {
-    color: '#CBD5F5',
+    color: '#CFE0FA',
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -3059,14 +3754,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: SPACING.xs,
     borderBottomWidth: 1,
-    borderBottomColor: '#111827',
+    borderBottomColor: 'rgba(148, 163, 184, 0.16)',
   },
   headerRow: {
-    backgroundColor: '#020617',
+    backgroundColor: '#0A162C',
   },
   cell: {
     fontSize: TEXT.xs,
-    color: '#E5E7EB',
+    color: '#EAF1FF',
   },
   cellDate: {
     flex: 1.6,
@@ -3076,3 +3771,4 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 });
+

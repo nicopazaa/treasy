@@ -71,7 +71,7 @@ Current behavior:
 Current wide-layout behavior in `src/screens/HomeScreen.tsx`:
 - Two-column mode is width-based: measured container width `>= 640`.
 - Right column ordering is a fixed vertical stack: other blocks (`cardio`, `bodyweight`) -> last workout card -> notes card.
-- Last workout card height is fixed after initial measurement; only the muscle-chip area inside it can scroll.
+- Last workout card height is fixed after initial measurement in two-column mode; muscle-chip rendering stays compact there, while iOS one-column mode uses fluid wrapping to show full group labels without compact overflow truncation.
 - Left column keeps muscle groups list, then `Notert` and `Analyse` nav cards.
 - Header has an in-place round theme toggle (tap switches `darkBlue`/`calmLight`; long-press opens shortcuts).
 - The `Dagens økt` card and panel use an explicit session lifecycle:

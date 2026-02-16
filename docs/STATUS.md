@@ -1,6 +1,6 @@
 # Status Report
 
-Last updated: 2026-02-13 (branch `main`, commit `2a5ebee0`)
+Last updated: 2026-02-16 (branch `main`, commit `2a5ebee0`)
 
 ## Project snapshot (verified)
 - Stack: Expo 54, React Native 0.81, React 19, TypeScript 5.9 (`package.json`).
@@ -16,6 +16,7 @@ Last updated: 2026-02-13 (branch `main`, commit `2a5ebee0`)
 - Workout logging flows:
   - Free-text quick log with parse-to-workout or fallback-to-note behavior.
   - Direct set logging from block/exercise workflows and cardio logging.
+  - Block exercise views (`muskelgrupper`, `cardio`, `kroppsvekt`) now use accent-tinted dark surfaces, clearer row hierarchy, and updated action sheets while preserving existing logging/move/delete behavior.
   - Home "Dagens økt" lifecycle with explicit finish action and active/finished session state.
 - Notes flows:
   - Home notes card writes to notes repository.
@@ -23,6 +24,7 @@ Last updated: 2026-02-13 (branch `main`, commit `2a5ebee0`)
 - Insights flows:
   - Home-level momentum/volume snapshots.
   - `ProgressScreen`, `AnalysisScreen`, `RepMaxScreen`, and `HistoryScreen` for deeper drill-downs.
+  - `ProgressScreen` now adds instant set-level feedback, next-set suggestions, plateau/regression detection, and chart trendline + PR markers for faster technical interpretation.
   - `HistoryScreen` now reuses the same "Tidligere økter" timeline data model as Home (`buildWorkoutTimeline`), supports enlarged newest rows that compress while scrolling, and preserves per-date drilldown to block -> exercise -> set lines with default-collapsed date cards and nested drilldown that reset when leaving the screen, with reduced visual contrast in nested set details for readability.
 - Profile/settings flows:
   - Backup export/copy/local save.
@@ -33,9 +35,10 @@ Last updated: 2026-02-13 (branch `main`, commit `2a5ebee0`)
 - Right column is currently stacked as:
   - `Cardio`, `Kroppsvekt`, `Forrige okt`, `Notater`.
 - Last workout card uses fixed height after measurement.
-- Muscle chips inside last workout use internal scroll with constrained chip area.
+- Muscle chips inside last workout stay compact in constrained/two-column layouts, while iOS one-column mode uses fluid wrapping and shows full group labels without compact overflow truncation.
 - Home color system supports persisted `darkBlue` / `calmLight` theme modes via header toggle.
 - Home now applies a fixed typography system (`T0..T6` => `22/20/18/16/15/14/13`) plus dark-theme contrast tiers (`92/85/70/60` white) across key cards and panels.
+- Muscle/other block tiles on Home now use larger touch targets and stronger visual depth for better consistency with block-detail screens.
 - Home wordmark (`Treasy`) is sticky in top-left while scrolling, tap-scrolls back to top, and fades slightly as scroll depth increases.
 - "Dagens økt" and "Analyse" cards use iconless compact headers, emphasized metric line, and a consistent `›` chevron.
 - `LIVE` appears only when workout session is active; once finished, Home shows workout duration.
