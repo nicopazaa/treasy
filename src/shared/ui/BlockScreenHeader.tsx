@@ -24,27 +24,27 @@ type Props = {
   iconSource?: ImageSourcePropType | null;
   style?: ViewStyle;
   accentColor?: string;
+  variant?: 'dark' | 'light';
 };
 
-export function BlockScreenHeader({ title, subtitle, iconSource, style, accentColor = FALLBACK_ACCENT }: Props) {
-  const iconWrapBorder = toRgba(accentColor, 0.35);
-  const iconWrapBg = toRgba(accentColor, 0.12);
+export function BlockScreenHeader({ title, subtitle, iconSource, style, accentColor = FALLBACK_ACCENT, variant = 'dark' }: Props) {
+  const isLight = variant === 'light';
   const signatureLineColor = toRgba(accentColor, 0.36);
+  const titleColor = isLight ? COLORS.textNavyPrimary : '#F9FAFB';
+  const subtitleColor = isLight ? COLORS.textSecondaryGray : 'rgba(203, 213, 225, 0.72)';
 
   return (
     <View style={[styles.container, style]}>
       <View style={styles.titleRow}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
           {title}
         </Text>
         {iconSource ? (
-          <View style={[styles.iconWrap, { borderColor: iconWrapBorder, backgroundColor: iconWrapBg }]}>
-            <Image source={iconSource} style={[styles.icon, { tintColor: accentColor }]} resizeMode="contain" />
-          </View>
+          <Image source={iconSource} style={[styles.icon, { tintColor: accentColor }]} resizeMode="contain" />
         ) : null}
       </View>
       <View style={[styles.signatureLine, { backgroundColor: signatureLineColor }]} />
-      <Text style={styles.subtitle}>{subtitle}</Text>
+      <Text style={[styles.subtitle, { color: subtitleColor }]}>{subtitle}</Text>
     </View>
   );
 }
@@ -58,17 +58,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   icon: {
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     opacity: 0.95,
   },
   title: {

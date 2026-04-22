@@ -221,6 +221,7 @@ export default function App() {
         return (
           <BlockScreen
             language={language}
+            themeMode={appState.theme}
             massUnit={massUnit}
             block={currentBlock}
             exercises={derivedCache.exercisesByBlockId.get(currentBlock.id) ?? []}
@@ -290,19 +291,21 @@ export default function App() {
       case 'manageExercises':
         return <ManageExercisesScreen appState={appState} onBack={goToSettings} onMerge={mergeExercisesById} />;
       case 'notert':
-        return <NotertScreen language={language} onBack={goHome} />;
+        return <NotertScreen language={language} themeMode={appState.theme} onBack={goHome} />;
       default:
         return assertNever(nav.screen);
     }
   })();
-  const homeIsCalmTheme = nav.screen === 'home' && normalizeThemeMode(appState.theme) === 'calmLight';
-  const statusBarStyle = homeIsCalmTheme ? 'dark-content' : 'light-content';
-  const expoStatusBarStyle = homeIsCalmTheme ? 'dark' : 'light';
+  const useCalmThemeChrome =
+    (nav.screen === 'home' || nav.screen === 'block' || nav.screen === 'notert') &&
+    normalizeThemeMode(appState.theme) === 'calmLight';
+  const statusBarStyle = useCalmThemeChrome ? 'dark-content' : 'light-content';
+  const expoStatusBarStyle = useCalmThemeChrome ? 'dark' : 'light';
 
   return (
     <SafeAreaProvider>
       <BackSwipeContext.Provider value={backSwipeContextValue}>
-        <View style={styles.appContainer} {...panHandlers}>
+        <View style={[styles.appContainer, useCalmThemeChrome ? styles.appContainerLight : null]} {...panHandlers}>
           <StatusBar barStyle={statusBarStyle} />
           <ExpoStatusBar style={expoStatusBarStyle} />
           <ErrorBoundary>{screen}</ErrorBoundary>
@@ -316,6 +319,9 @@ const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
     backgroundColor: '#020617',
+  },
+  appContainerLight: {
+    backgroundColor: '#F5F2EC',
   },
   loadingContainer: {
     flex: 1,

@@ -14,10 +14,11 @@ import {
   View,
 } from 'react-native';
 import type { Exercise, SetEntry } from '../../domain/workouts/types';
-import type { AppLanguage } from '../types';
+import type { AppLanguage, ThemeMode } from '../types';
 import { t } from '../i18n/i18n';
 import { COLORS, RADIUS, SPACING, TEXT } from '../theme/tokens';
 import { getBlockTone } from '../theme/blockTone';
+import { resolveThemeTokens } from '../theme/themes';
 import { formatExerciseLabel } from '../utils/exerciseLabel';
 import { formatRelativeDateTime } from '../utils/dateLabels';
 import { formatInputWeight, formatSetListLabel } from '../utils/setFormatting';
@@ -35,6 +36,7 @@ export type SetLoggerMeta = {
 type Props = {
   visible: boolean;
   language: AppLanguage;
+  themeMode?: ThemeMode;
   massUnit: MassUnit;
   exercise: Exercise;
   sets: SetEntry[];
@@ -64,6 +66,7 @@ function toRgba(color: string, alpha: number): string {
 export const ExerciseLogBottomSheet: React.FC<Props> = ({
   visible,
   language,
+  themeMode,
   massUnit,
   exercise,
   sets,
@@ -78,6 +81,8 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
 
   const isCardio = exercise.blockId === 'cardio';
   const tone = getBlockTone(exercise.blockId);
+  const themeTokens = useMemo(() => resolveThemeTokens(themeMode), [themeMode]);
+  const isLightTheme = themeTokens.id === 'calmLight';
   const logger = useSetLoggerInput({ massUnit });
   const cardioLogger = useCardioLoggerInput();
 
@@ -100,6 +105,25 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
       )
     : Boolean(logger.parsed.weightKg != null && logger.parsed.reps != null);
   const canCopy = isCardio ? Boolean(lastSet) : Boolean(lastSet && lastSet.setType !== 'cardio');
+  const placeholderColor = isLightTheme ? 'rgba(100, 116, 139, 0.72)' : 'rgba(203, 213, 225, 0.52)';
+  const backdropColor = isLightTheme ? 'rgba(15, 23, 42, 0.32)' : 'rgba(2, 6, 23, 0.64)';
+  const cardBackgroundColor = isLightTheme ? themeTokens.surface : '#030D1A';
+  const titleColor = isLightTheme ? themeTokens.text : '#F9FAFB';
+  const closeColor = isLightTheme ? themeTokens.textMuted : 'rgba(255, 255, 255, 0.86)';
+  const historyBackgroundColor = toRgba(tone.accent, isLightTheme ? 0.06 : 0.09);
+  const historyBorderColor = toRgba(tone.accent, isLightTheme ? 0.2 : 0.24);
+  const historyTextColor = isLightTheme ? themeTokens.text : '#E2E8F0';
+  const historyMetaColor = isLightTheme ? themeTokens.textMuted : 'rgba(203, 213, 225, 0.72)';
+  const separatorColor = isLightTheme ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.24)';
+  const emptyTextColor = isLightTheme ? themeTokens.textMuted : 'rgba(203, 213, 225, 0.74)';
+  const inputBackgroundColor = isLightTheme ? '#FFFFFF' : '#0A1A30';
+  const inputBorderColor = isLightTheme ? '#CBD5E1' : 'rgba(148, 163, 184, 0.32)';
+  const inputLabelColor = isLightTheme ? themeTokens.textMuted : 'rgba(148, 163, 184, 0.95)';
+  const inputTextColor = isLightTheme ? themeTokens.text : '#F8FAFC';
+  const copyButtonBorder = toRgba(tone.accent, isLightTheme ? 0.24 : 0.3);
+  const copyButtonBackground = toRgba(tone.accent, isLightTheme ? 0.08 : 0.1);
+  const logButtonBorder = toRgba(tone.accent, isLightTheme ? 0.32 : 0.38);
+  const logButtonTextColor = isLightTheme ? themeTokens.textOnAccent : '#F9FAFB';
 
   const closeWithReset = () => {
     cardioLogger.clearAll();
@@ -229,14 +253,14 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
       animationType="fade"
       onRequestClose={closeWithReset}
     >
-      <Pressable style={styles.backdrop} onPress={closeWithReset}>
+      <Pressable style={[styles.backdrop, { backgroundColor: backdropColor }]} onPress={closeWithReset}>
         <Animated.View
           style={[styles.sheet, { height: sheetHeight, transform: [{ translateY }] }]}
         >
           <Pressable
             style={[
               styles.sheetCard,
-              { borderColor: toRgba(tone.accent, 0.34), backgroundColor: '#030D1A' },
+              { borderColor: toRgba(tone.accent, isLightTheme ? 0.22 : 0.34), backgroundColor: cardBackgroundColor },
             ]}
             onPress={() => {}}
           >
@@ -246,7 +270,7 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
 
             <View style={styles.headerRow}>
               <View style={styles.headerSide} />
-              <Text style={styles.title} numberOfLines={1}>
+              <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
                 {formatExerciseLabel(exercise)}
               </Text>
               <TouchableOpacity
@@ -255,26 +279,26 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                 hitSlop={12}
                 activeOpacity={0.8}
               >
-                <Text style={styles.closeText}>{'\u00D7'}</Text>
+                <Text style={[styles.closeText, { color: closeColor }]}>{'\u00D7'}</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.historyWrap, { borderColor: toRgba(tone.accent, 0.24), backgroundColor: toRgba(tone.accent, 0.09) }]}>
+            <View style={[styles.historyWrap, { borderColor: historyBorderColor, backgroundColor: historyBackgroundColor }]}>
               <FlatList
                 data={sortedSets}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <View style={styles.historyRow}>
-                    <Text style={styles.historyLabel}>
+                    <Text style={[styles.historyLabel, { color: historyTextColor }]}>
                       {formatSetListLabel(language, item, massUnit)}
                     </Text>
-                    <Text style={styles.historyTime}>
+                    <Text style={[styles.historyTime, { color: historyMetaColor }]}>
                       {formatRelativeDateTime(new Date(item.createdAt), new Date(), language)}
                     </Text>
                   </View>
                 )}
-                ItemSeparatorComponent={() => <View style={styles.historySeparator} />}
-                ListEmptyComponent={<Text style={styles.emptyText}>{t(language, 'noSetsYet')}</Text>}
+                ItemSeparatorComponent={() => <View style={[styles.historySeparator, { backgroundColor: separatorColor }]} />}
+                ListEmptyComponent={<Text style={[styles.emptyText, { color: emptyTextColor }]}>{t(language, 'noSetsYet')}</Text>}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={sortedSets.length ? undefined : styles.emptyContent}
               />
@@ -286,21 +310,22 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                   <Pressable
                     style={[
                       styles.inputBox,
+                      { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor },
                       cardioLogger.activeField === 'duration' && styles.inputBoxActive,
                       cardioLogger.activeField === 'duration' && {
                         borderColor: tone.accent,
-                        backgroundColor: toRgba(tone.accent, 0.18),
+                        backgroundColor: toRgba(tone.accent, isLightTheme ? 0.14 : 0.18),
                       },
                     ]}
                     onPress={() => cardioLogger.setActiveField('duration')}
                   >
-                    <Text style={styles.inputLabel}>{t(language, 'durationLabel')}</Text>
+                    <Text style={[styles.inputLabel, { color: inputLabelColor }]}>{t(language, 'durationLabel')}</Text>
                     <TextInput
                       value={cardioLogger.durationText}
                       onChangeText={cardioLogger.setDurationText}
                       placeholder="0"
-                      placeholderTextColor="rgba(203, 213, 225, 0.52)"
-                      style={styles.input}
+                      placeholderTextColor={placeholderColor}
+                      style={[styles.input, { color: inputTextColor }]}
                       showSoftInputOnFocus={false}
                       editable={Platform.OS !== 'web'}
                       onFocus={() => cardioLogger.setActiveField('duration')}
@@ -309,21 +334,22 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                   <Pressable
                     style={[
                       styles.inputBox,
+                      { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor },
                       cardioLogger.activeField === 'distance' && styles.inputBoxActive,
                       cardioLogger.activeField === 'distance' && {
                         borderColor: tone.accent,
-                        backgroundColor: toRgba(tone.accent, 0.18),
+                        backgroundColor: toRgba(tone.accent, isLightTheme ? 0.14 : 0.18),
                       },
                     ]}
                     onPress={() => cardioLogger.setActiveField('distance')}
                   >
-                    <Text style={styles.inputLabel}>{t(language, 'distanceLabel')}</Text>
+                    <Text style={[styles.inputLabel, { color: inputLabelColor }]}>{t(language, 'distanceLabel')}</Text>
                     <TextInput
                       value={cardioLogger.distanceText}
                       onChangeText={cardioLogger.setDistanceText}
                       placeholder="0"
-                      placeholderTextColor="rgba(203, 213, 225, 0.52)"
-                      style={styles.input}
+                      placeholderTextColor={placeholderColor}
+                      style={[styles.input, { color: inputTextColor }]}
                       showSoftInputOnFocus={false}
                       editable={Platform.OS !== 'web'}
                       onFocus={() => cardioLogger.setActiveField('distance')}
@@ -334,21 +360,22 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                   <Pressable
                     style={[
                       styles.inputBox,
+                      { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor },
                       cardioLogger.activeField === 'pause' && styles.inputBoxActive,
                       cardioLogger.activeField === 'pause' && {
                         borderColor: tone.accent,
-                        backgroundColor: toRgba(tone.accent, 0.18),
+                        backgroundColor: toRgba(tone.accent, isLightTheme ? 0.14 : 0.18),
                       },
                     ]}
                     onPress={() => cardioLogger.setActiveField('pause')}
                   >
-                    <Text style={styles.inputLabel}>{t(language, 'pauseLabel')}</Text>
+                    <Text style={[styles.inputLabel, { color: inputLabelColor }]}>{t(language, 'pauseLabel')}</Text>
                     <TextInput
                       value={cardioLogger.pauseText}
                       onChangeText={cardioLogger.setPauseText}
                       placeholder="0"
-                      placeholderTextColor="rgba(203, 213, 225, 0.52)"
-                      style={styles.input}
+                      placeholderTextColor={placeholderColor}
+                      style={[styles.input, { color: inputTextColor }]}
                       showSoftInputOnFocus={false}
                       editable={Platform.OS !== 'web'}
                       onFocus={() => cardioLogger.setActiveField('pause')}
@@ -361,21 +388,22 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                 <Pressable
                   style={[
                     styles.inputBox,
+                    { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor },
                     logger.activeField === 'weight' && styles.inputBoxActive,
                     logger.activeField === 'weight' && {
                       borderColor: tone.accent,
-                      backgroundColor: toRgba(tone.accent, 0.18),
+                      backgroundColor: toRgba(tone.accent, isLightTheme ? 0.14 : 0.18),
                     },
                   ]}
                   onPress={() => logger.setActiveField('weight')}
                 >
-                  <Text style={styles.inputLabel}>{weightLabel}</Text>
+                  <Text style={[styles.inputLabel, { color: inputLabelColor }]}>{weightLabel}</Text>
                   <TextInput
                     value={logger.weightText}
                     onChangeText={logger.setWeightText}
                     placeholder="0"
-                    placeholderTextColor="rgba(203, 213, 225, 0.52)"
-                    style={styles.input}
+                    placeholderTextColor={placeholderColor}
+                    style={[styles.input, { color: inputTextColor }]}
                     showSoftInputOnFocus={false}
                     editable={Platform.OS !== 'web'}
                     onFocus={() => logger.setActiveField('weight')}
@@ -384,21 +412,22 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                 <Pressable
                   style={[
                     styles.inputBox,
+                    { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor },
                     logger.activeField === 'reps' && styles.inputBoxActive,
                     logger.activeField === 'reps' && {
                       borderColor: tone.accent,
-                      backgroundColor: toRgba(tone.accent, 0.18),
+                      backgroundColor: toRgba(tone.accent, isLightTheme ? 0.14 : 0.18),
                     },
                   ]}
                   onPress={() => logger.setActiveField('reps')}
                 >
-                  <Text style={styles.inputLabel}>{t(language, 'reps')}</Text>
+                  <Text style={[styles.inputLabel, { color: inputLabelColor }]}>{t(language, 'reps')}</Text>
                   <TextInput
                     value={logger.repsText}
                     onChangeText={logger.setRepsText}
                     placeholder="0"
-                    placeholderTextColor="rgba(203, 213, 225, 0.52)"
-                    style={styles.input}
+                    placeholderTextColor={placeholderColor}
+                    style={[styles.input, { color: inputTextColor }]}
                     showSoftInputOnFocus={false}
                     editable={Platform.OS !== 'web'}
                     onFocus={() => logger.setActiveField('reps')}
@@ -414,7 +443,7 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                 hitSlop={8}
                 style={[
                   styles.copyButton,
-                  { borderColor: toRgba(tone.accent, 0.3), backgroundColor: toRgba(tone.accent, 0.1) },
+                  { borderColor: copyButtonBorder, backgroundColor: copyButtonBackground },
                   !canCopy && styles.copyButtonDisabled,
                 ]}
                 activeOpacity={0.85}
@@ -435,16 +464,16 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
                 disabled={!canLog}
                 style={[
                   styles.logButton,
-                  { backgroundColor: tone.accent, borderColor: toRgba(tone.accent, 0.38) },
+                  { backgroundColor: tone.accent, borderColor: logButtonBorder },
                   !canLog && styles.logButtonDisabled,
                 ]}
                 activeOpacity={0.85}
               >
-                <Text style={styles.logButtonText}>{t(language, 'logSet')}</Text>
+                <Text style={[styles.logButtonText, { color: logButtonTextColor }]}>{t(language, 'logSet')}</Text>
               </TouchableOpacity>
             </View>
 
-            <QuickKeypad rows={keypadRows} onKeyPress={handleKeyPress} />
+            <QuickKeypad rows={keypadRows} onKeyPress={handleKeyPress} variant={isLightTheme ? 'light' : 'dark'} />
           </Pressable>
         </Animated.View>
       </Pressable>

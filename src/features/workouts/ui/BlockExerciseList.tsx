@@ -1,30 +1,14 @@
 import React from 'react';
 import { FlatList, StyleSheet, View, Text, Platform } from 'react-native';
 import { SPACING, TEXT, RADIUS, COLORS } from '../../../shared/theme/tokens';
-import { Surface } from '../../../shared/ui/Surface';
-
-const FALLBACK_ACCENT = COLORS.blue2;
-
-function parseHexColor(color: string): [number, number, number] | null {
-  const clean = color.trim().replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
-  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
-}
-
-function toRgba(color: string, alpha: number): string {
-  const safeAlpha = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
-  const rgb = parseHexColor(color) ?? parseHexColor(FALLBACK_ACCENT);
-  if (!rgb) return `rgba(59, 130, 246, ${safeAlpha})`;
-  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
-}
 
 type Props<ItemT> = {
   data: ItemT[];
   renderItem: ({ item }: { item: ItemT }) => React.ReactElement;
   keyExtractor: (item: ItemT) => string;
   emptyText: string;
+  variant?: 'dark' | 'light';
   extraBottomPadding?: number;
-  accentColor?: string;
 };
 
 export function BlockExerciseList<ItemT>({
@@ -32,61 +16,57 @@ export function BlockExerciseList<ItemT>({
   renderItem,
   keyExtractor,
   emptyText,
+  variant = 'dark',
   extraBottomPadding = 0,
-  accentColor = FALLBACK_ACCENT,
 }: Props<ItemT>) {
-  const borderColor = toRgba(accentColor, 0.38);
+  const isLight = variant === 'light';
+  const containerBackground = isLight ? 'rgba(255, 255, 255, 0.42)' : 'transparent';
+  const separatorColor = isLight ? 'rgba(100, 116, 139, 0.18)' : 'rgba(148, 163, 184, 0.14)';
+  const emptyColor = isLight ? COLORS.textSecondaryGray : 'rgba(203, 213, 225, 0.78)';
+  const cardStyle = isLight
+    ? Platform.select({
+        web: { boxShadow: '0 4px 10px rgba(15, 23, 42, 0.04)' },
+        default: {
+          shadowColor: '#0F172A',
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 1,
+        },
+      })
+    : null;
 
   return (
-    <View style={styles.shadowWrap}>
-      <Surface style={[styles.container, { borderColor }]}>
-        <FlatList
-          data={data}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          style={styles.list}
-          contentContainerStyle={[
-            styles.listContent,
-            extraBottomPadding ? { paddingBottom: extraBottomPadding } : null,
-            data.length === 0 && styles.emptyContent,
-          ]}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListEmptyComponent={<Text style={styles.emptyText}>{emptyText}</Text>}
-        />
-      </Surface>
+    <View style={[styles.container, cardStyle, { backgroundColor: containerBackground }]}>
+      <FlatList
+        data={data}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        style={styles.list}
+        contentContainerStyle={[
+          styles.listContent,
+          extraBottomPadding ? { paddingBottom: extraBottomPadding } : null,
+          data.length === 0 && styles.emptyContent,
+        ]}
+        ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: separatorColor }]} />}
+        ListEmptyComponent={<Text style={[styles.emptyText, { color: emptyColor }]}>{emptyText}</Text>}
+      />
     </View>
   );
 }
 
-const LIST_RADIUS = RADIUS.lg + 4;
-
 const styles = StyleSheet.create({
-  shadowWrap: {
-    flex: 1,
-    borderRadius: LIST_RADIUS,
-    ...Platform.select({
-      web: { boxShadow: '0 10px 20px rgba(2, 6, 23, 0.22)' },
-      default: {
-        shadowColor: COLORS.treasyNavy,
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 12 },
-        elevation: 6,
-      },
-    }),
-  },
   container: {
     flex: 1,
-    overflow: 'hidden',
-    backgroundColor: '#071224',
-    borderColor: 'rgba(59, 130, 246, 0.28)',
-    borderRadius: LIST_RADIUS,
+    overflow: 'visible',
+    backgroundColor: 'transparent',
+    borderRadius: RADIUS.lg,
   },
   list: {
     flex: 1,
   },
   listContent: {
-    paddingVertical: SPACING.xs,
+    paddingVertical: 0,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

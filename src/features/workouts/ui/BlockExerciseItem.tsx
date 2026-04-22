@@ -9,6 +9,7 @@ type Props = {
   exercise: Exercise;
   bestLabel: string | null;
   isMoving: boolean;
+  variant?: 'dark' | 'light';
   onPress: () => void;
   onLongPress: () => void;
   onPressMenu: (event: GestureResponderEvent) => void;
@@ -18,6 +19,7 @@ export const BlockExerciseItem: React.FC<Props> = ({
   exercise,
   bestLabel,
   isMoving,
+  variant = 'dark',
   onPress,
   onLongPress,
   onPressMenu,
@@ -32,7 +34,7 @@ export const BlockExerciseItem: React.FC<Props> = ({
       onPressMenu={onPressMenu}
       moving={isMoving}
       accentColor={tone.accent}
-      variant="dark"
+      variant={variant}
     />
   );
 };

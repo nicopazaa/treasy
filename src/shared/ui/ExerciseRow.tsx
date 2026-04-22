@@ -57,10 +57,8 @@ export const ExerciseRow: React.FC<Props> = ({
   const isLight = variant === 'light';
   const splitLabel = splitLabelParentheses(name);
   const showSplitLabel = Boolean(splitLabel.parentheses);
-  const bestChipBorder = toRgba(accentColor, isLight ? 0.22 : 0.34);
-  const bestChipBg = toRgba(accentColor, isLight ? 0.09 : 0.16);
-  const menuBorder = toRgba(accentColor, isLight ? 0.2 : 0.3);
-  const menuBg = toRgba(accentColor, isLight ? 0.06 : 0.1);
+  const bestChipBg = toRgba(accentColor, isLight ? 0.1 : 0.18);
+  const menuBg = toRgba(accentColor, isLight ? 0.08 : 0.16);
 
   return (
     <TouchableOpacity
@@ -107,7 +105,7 @@ export const ExerciseRow: React.FC<Props> = ({
             style={[
               styles.bestWrap,
               isLight ? styles.bestWrapLight : styles.bestWrapDark,
-              { borderColor: bestChipBorder, backgroundColor: bestChipBg },
+              { backgroundColor: bestChipBg },
             ]}
             pointerEvents="none"
           >
@@ -126,7 +124,7 @@ export const ExerciseRow: React.FC<Props> = ({
           style={[
             styles.kebabButton,
             isLight ? styles.kebabButtonLight : styles.kebabButtonDark,
-            { borderColor: menuBorder, backgroundColor: menuBg },
+            { backgroundColor: menuBg },
           ]}
           onPress={(event) => {
             event.stopPropagation?.();
@@ -210,7 +208,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 0,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
   },
@@ -242,18 +240,16 @@ const styles = StyleSheet.create({
     minWidth: 34,
     minHeight: 34,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 2,
   },
   kebabButtonDark: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   kebabButtonLight: {
     backgroundColor: 'rgba(59, 130, 246, 0.06)',
-    borderColor: 'rgba(59, 130, 246, 0.2)',
   },
   kebabText: {
     fontSize: TEXT.lg + 2,

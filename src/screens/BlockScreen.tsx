@@ -12,13 +12,14 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppLanguage } from '../shared/types';
+import type { AppLanguage, ThemeMode } from '../shared/types';
 import type { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetadataInput } from '../features/workouts';
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { BlockScreenHeader } from '../shared/ui/BlockScreenHeader';
 import { UndoToast } from '../shared/ui/UndoToast';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
+import { resolveThemeTokens } from '../shared/theme/themes';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { UNDO_TIMEOUT_MS } from '../shared/constants';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
@@ -30,6 +31,7 @@ import { ExerciseLogBottomSheet, type SetLoggerMeta } from '../shared/ui/Exercis
 
 interface Props {
   language: AppLanguage;
+  themeMode?: ThemeMode;
   massUnit: MassUnit;
   block: TrainingBlock;
   exercises: Exercise[];
@@ -65,6 +67,7 @@ function toRgba(color: string, alpha: number): string {
 
 export const BlockScreen: React.FC<Props> = ({
   language,
+  themeMode,
   massUnit,
   block,
   exercises,
@@ -106,6 +109,20 @@ export const BlockScreen: React.FC<Props> = ({
   );
 
   const tone = getBlockTone(block.id);
+  const themeTokens = useMemo(() => resolveThemeTokens(themeMode), [themeMode]);
+  const isLightTheme = themeTokens.id === 'calmLight';
+  const listVariant: 'dark' | 'light' = isLightTheme ? 'light' : 'dark';
+  const bodyTextColor = isLightTheme ? themeTokens.text : '#F9FAFB';
+  const mutedTextColor = isLightTheme ? themeTokens.textMuted : 'rgba(203, 213, 225, 0.72)';
+  const inputPlaceholderColor = isLightTheme ? 'rgba(100, 116, 139, 0.72)' : COLORS.textSecondaryGray;
+  const modalInputBackgroundColor = isLightTheme ? '#FFFFFF' : '#F8FAFC';
+  const modalInputBorderColor = isLightTheme ? '#CBD5E1' : 'rgba(37, 99, 235, 0.26)';
+  const modalInputTextColor = isLightTheme ? themeTokens.text : COLORS.textNavyPrimary;
+  const modalSecondaryTextColor = isLightTheme ? themeTokens.textMuted : '#9CA3AF';
+  const modalOverlayColor = isLightTheme ? 'rgba(15, 23, 42, 0.34)' : 'rgba(2, 6, 23, 0.82)';
+  const bottomSheetOverlayColor = isLightTheme ? 'rgba(15, 23, 42, 0.34)' : 'rgba(2, 6, 23, 0.78)';
+  const sheetActionBorderColor = isLightTheme ? 'rgba(148, 163, 184, 0.3)' : 'rgba(148, 163, 184, 0.24)';
+  const pageBackgroundColor = themeTokens.bg;
   const blockTitle = useMemo(() => {
     const id = block.id as TrainingBlockId;
     return (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'cardio', 'bodyweight'] as string[]).includes(id)
@@ -118,33 +135,59 @@ export const BlockScreen: React.FC<Props> = ({
     return MUSCLE_GROUP_ORDER.includes(id) ? BLOCK_ICON_SOURCES[id] : null;
   }, [block.id]);
 
-  const headerPanelStyle = useMemo(
-    () => ({
-      borderColor: toRgba(tone.accent, 0.35),
-      backgroundColor: toRgba(tone.accent, 0.08),
-    }),
-    [tone.accent]
-  );
   const backButtonStyle = useMemo(
     () => ({
-      borderColor: toRgba(tone.accent, 0.28),
-      backgroundColor: toRgba(tone.accent, 0.1),
+      borderColor: toRgba(tone.accent, isLightTheme ? 0.22 : 0.28),
+      backgroundColor: toRgba(tone.accent, isLightTheme ? 0.08 : 0.1),
     }),
-    [tone.accent]
+    [isLightTheme, tone.accent]
+  );
+  const listWrapperStyle = useMemo(
+    () => ({
+      backgroundColor: pageBackgroundColor,
+    }),
+    [pageBackgroundColor]
   );
   const stickyBarStyle = useMemo(
     () => ({
-      borderTopColor: toRgba(tone.accent, 0.22),
-      backgroundColor: '#020617',
+      borderTopColor: toRgba(tone.accent, isLightTheme ? 0.18 : 0.22),
+      backgroundColor: pageBackgroundColor,
     }),
-    [tone.accent]
+    [isLightTheme, pageBackgroundColor, tone.accent]
   );
   const stickyButtonStyle = useMemo(
     () => ({
       backgroundColor: tone.accent,
-      borderColor: toRgba(tone.accent, 0.32),
+      borderColor: toRgba(tone.accent, isLightTheme ? 0.3 : 0.32),
     }),
-    [tone.accent]
+    [isLightTheme, tone.accent]
+  );
+  const moveBannerStyle = useMemo(
+    () => ({
+      borderColor: toRgba(tone.accent, isLightTheme ? 0.24 : 0.38),
+      backgroundColor: toRgba(tone.accent, isLightTheme ? 0.1 : 0.12),
+    }),
+    [isLightTheme, tone.accent]
+  );
+  const moveBannerTextStyle = useMemo(
+    () => ({
+      color: isLightTheme ? themeTokens.text : '#DBEAFE',
+    }),
+    [isLightTheme, themeTokens.text]
+  );
+  const modalCardStyle = useMemo(
+    () => ({
+      backgroundColor: isLightTheme ? themeTokens.surface : '#030C1A',
+      borderColor: toRgba(tone.accent, isLightTheme ? 0.2 : 0.28),
+    }),
+    [isLightTheme, themeTokens.surface, tone.accent]
+  );
+  const sheetCardStyle = useMemo(
+    () => ({
+      backgroundColor: isLightTheme ? themeTokens.surface : '#030C1A',
+      borderColor: toRgba(tone.accent, isLightTheme ? 0.2 : 0.26),
+    }),
+    [isLightTheme, themeTokens.surface, tone.accent]
   );
 
   const parseTags = (raw: string): string[] =>
@@ -323,6 +366,7 @@ export const BlockScreen: React.FC<Props> = ({
         exercise={item}
         bestLabel={bestLabel}
         isMoving={isMoving}
+        variant={listVariant}
         onPress={handlePress}
         onLongPress={() => setMovingExerciseId(item.id)}
         onPressMenu={() => openExerciseActions(item)}
@@ -332,9 +376,9 @@ export const BlockScreen: React.FC<Props> = ({
 
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: pageBackgroundColor }]}>
       <View style={styles.content}>
-        <View style={[styles.headerPanel, headerPanelStyle]}>
+        <View style={styles.headerPanel}>
           <TouchableOpacity onPress={onBack} hitSlop={12} style={[styles.backButton, backButtonStyle]} activeOpacity={0.8}>
             <Text style={[styles.back, { color: tone.accent }]}>{t(language, 'back')}</Text>
           </TouchableOpacity>
@@ -344,11 +388,12 @@ export const BlockScreen: React.FC<Props> = ({
             subtitle={t(language, 'exercisesInBlock')}
             iconSource={blockIconSource}
             accentColor={tone.accent}
+            variant={listVariant}
           />
 
           {movingExercise ? (
-            <View style={[styles.moveBanner, { borderColor: toRgba(tone.accent, 0.38), backgroundColor: toRgba(tone.accent, 0.12) }]}>
-              <Text style={styles.moveBannerText}>
+            <View style={[styles.moveBanner, moveBannerStyle]}>
+              <Text style={[styles.moveBannerText, moveBannerTextStyle]}>
                 {t(language, 'moveExerciseHint', { name: formatExerciseLabel(movingExercise) })}
               </Text>
               <TouchableOpacity onPress={() => setMovingExerciseId(null)} hitSlop={8}>
@@ -359,13 +404,13 @@ export const BlockScreen: React.FC<Props> = ({
         </View>
       </View>
 
-      <View style={[styles.listPadding, styles.listWrapper]}>
+      <View style={[styles.listPadding, styles.listWrapper, listWrapperStyle]}>
         <BlockExerciseList
           data={exercises}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderExercise}
           emptyText={t(language, 'noExercisesYet')}
-          accentColor={tone.accent}
+          variant={listVariant}
           extraBottomPadding={SPACING.md}
         />
       </View>
@@ -376,14 +421,14 @@ export const BlockScreen: React.FC<Props> = ({
         animationType="fade"
         onRequestClose={() => setExerciseAction(null)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setExerciseAction(null)}>
-          <Pressable style={styles.sheetCard} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>
+        <Pressable style={[styles.sheetBackdrop, { backgroundColor: bottomSheetOverlayColor }]} onPress={() => setExerciseAction(null)}>
+          <Pressable style={[styles.sheetCard, sheetCardStyle]} onPress={() => {}}>
+            <Text style={[styles.sheetTitle, { color: bodyTextColor }]}>
               {exerciseAction ? formatExerciseLabel(exerciseAction) : ''}
             </Text>
 
             <TouchableOpacity
-              style={styles.sheetAction}
+              style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }]}
               onPress={() => {
                 const target = exerciseAction;
                 setExerciseAction(null);
@@ -391,22 +436,22 @@ export const BlockScreen: React.FC<Props> = ({
               }}
               activeOpacity={0.85}
             >
-              <Text style={styles.sheetActionText}>{t(language, 'editExercise')}</Text>
+              <Text style={[styles.sheetActionText, { color: bodyTextColor }]}>{t(language, 'editExercise')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.sheetAction}
+              style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }]}
               onPress={() => {
                 const target = exerciseAction;
                 if (target) openMoveExercise(target);
               }}
               activeOpacity={0.85}
             >
-              <Text style={styles.sheetActionText}>{t(language, 'changeMuscleGroup')}</Text>
+              <Text style={[styles.sheetActionText, { color: bodyTextColor }]}>{t(language, 'changeMuscleGroup')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.sheetAction, styles.sheetActionDanger]}
+              style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }, styles.sheetActionDanger]}
               onPress={() => {
                 const target = exerciseAction;
                 setExerciseAction(null);
@@ -418,11 +463,11 @@ export const BlockScreen: React.FC<Props> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.sheetAction}
+              style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }]}
               onPress={() => setExerciseAction(null)}
               activeOpacity={0.85}
             >
-              <Text style={styles.sheetActionText}>{t(language, 'cancel')}</Text>
+              <Text style={[styles.sheetActionText, { color: bodyTextColor }]}>{t(language, 'cancel')}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -434,10 +479,10 @@ export const BlockScreen: React.FC<Props> = ({
         animationType="fade"
         onRequestClose={() => setMoveExerciseTarget(null)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setMoveExerciseTarget(null)}>
-          <Pressable style={styles.sheetCard} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>{t(language, 'changeMuscleGroup')}</Text>
-            <Text style={styles.sheetSubtitle}>{t(language, 'chooseMuscleGroup')}</Text>
+        <Pressable style={[styles.sheetBackdrop, { backgroundColor: bottomSheetOverlayColor }]} onPress={() => setMoveExerciseTarget(null)}>
+          <Pressable style={[styles.sheetCard, sheetCardStyle]} onPress={() => {}}>
+            <Text style={[styles.sheetTitle, { color: bodyTextColor }]}>{t(language, 'changeMuscleGroup')}</Text>
+            <Text style={[styles.sheetSubtitle, { color: mutedTextColor }]}>{t(language, 'chooseMuscleGroup')}</Text>
             <View style={styles.groupGrid}>
               {allBlocks
                 .slice()
@@ -461,7 +506,7 @@ export const BlockScreen: React.FC<Props> = ({
                       key={b.id}
                       style={[
                         styles.groupButton,
-                        { borderColor: tone.accent, backgroundColor: tone.soft },
+                        { borderColor: toRgba(tone.accent, isLightTheme ? 0.28 : 1), backgroundColor: toRgba(tone.accent, isLightTheme ? 0.1 : 0.16) },
                         selected && { opacity: 0.65 },
                       ]}
                       activeOpacity={0.9}
@@ -472,13 +517,17 @@ export const BlockScreen: React.FC<Props> = ({
                         setMoveExerciseTarget(null);
                       }}
                     >
-                      <Text style={[styles.groupText, { color: tone.accent }]}>{label}</Text>
+                      <Text style={[styles.groupText, { color: isLightTheme ? bodyTextColor : tone.accent }]}>{label}</Text>
                     </TouchableOpacity>
                   );
                 })}
             </View>
-            <TouchableOpacity style={styles.sheetAction} onPress={() => setMoveExerciseTarget(null)} activeOpacity={0.85}>
-              <Text style={styles.sheetActionText}>{t(language, 'cancel')}</Text>
+            <TouchableOpacity
+              style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }]}
+              onPress={() => setMoveExerciseTarget(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.sheetActionText, { color: bodyTextColor }]}>{t(language, 'cancel')}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -497,6 +546,7 @@ export const BlockScreen: React.FC<Props> = ({
         <ExerciseLogBottomSheet
           visible={isLogSheetOpen}
           language={language}
+          themeMode={themeMode}
           massUnit={massUnit}
           exercise={selectedExercise}
           sets={selectedExerciseSets}
@@ -509,7 +559,7 @@ export const BlockScreen: React.FC<Props> = ({
         />
       ) : null}
 
-      <View style={styles.stickyBar}>
+      <View style={[styles.stickyBar, { backgroundColor: pageBackgroundColor }]}>
         <View style={[styles.stickyBarBorder, stickyBarStyle]} pointerEvents="none" />
         <PrimaryButton
           title={t(language, 'addExercise')}
@@ -525,19 +575,19 @@ export const BlockScreen: React.FC<Props> = ({
         onRequestClose={closeModal}
       >
         <KeyboardAvoidingView
-          style={styles.modalContainer}
+          style={[styles.modalContainer, { backgroundColor: modalOverlayColor }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
+          <View style={[styles.modalCard, modalCardStyle]}>
+            <Text style={[styles.modalTitle, { color: bodyTextColor }]}>
               {modalMode === 'edit' ? t(language, 'editExercise') : t(language, 'newExercise')}
             </Text>
 
-            <Text style={styles.inputLabel}>{t(language, 'exerciseName')}</Text>
+            <Text style={[styles.inputLabel, { color: isLightTheme ? bodyTextColor : 'rgba(226, 232, 240, 0.9)' }]}>{t(language, 'exerciseName')}</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: modalInputBackgroundColor, borderColor: modalInputBorderColor, color: modalInputTextColor }]}
               placeholder={t(language, 'exerciseName')}
-              placeholderTextColor={COLORS.textSecondaryGray}
+              placeholderTextColor={inputPlaceholderColor}
               value={exerciseName}
               onChangeText={setExerciseName}
               autoFocus
@@ -546,37 +596,40 @@ export const BlockScreen: React.FC<Props> = ({
               onSubmitEditing={handleConfirm}
             />
 
-            <Text style={[styles.inputLabel, styles.inputLabelOptional]}>{t(language, 'exerciseShortCode')}</Text>
+            <Text style={[styles.inputLabel, styles.inputLabelOptional, { color: modalSecondaryTextColor }]}>{t(language, 'exerciseShortCode')}</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: modalInputBackgroundColor, borderColor: modalInputBorderColor, color: modalInputTextColor }]}
               placeholder={t(language, 'exerciseShortCodePlaceholder')}
-              placeholderTextColor={COLORS.textSecondaryGray}
+              placeholderTextColor={inputPlaceholderColor}
               value={exerciseShort}
               onChangeText={setExerciseShort}
               autoCapitalize="characters"
               returnKeyType="next"
             />
 
-            <Text style={[styles.inputLabel, styles.inputLabelOptional]}>{t(language, 'exerciseTags')}</Text>
+            <Text style={[styles.inputLabel, styles.inputLabelOptional, { color: modalSecondaryTextColor }]}>{t(language, 'exerciseTags')}</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: modalInputBackgroundColor, borderColor: modalInputBorderColor, color: modalInputTextColor }]}
               placeholder={t(language, 'exerciseTagsPlaceholder')}
-              placeholderTextColor={COLORS.textSecondaryGray}
+              placeholderTextColor={inputPlaceholderColor}
               value={exerciseTags}
               onChangeText={setExerciseTags}
               autoCapitalize="characters"
               returnKeyType="done"
               onSubmitEditing={handleConfirm}
             />
-            <Text style={styles.inputHint}>{t(language, 'exerciseTagsHint')}</Text>
+            <Text style={[styles.inputHint, { color: modalSecondaryTextColor }]}>{t(language, 'exerciseTagsHint')}</Text>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.secondaryButton} onPress={closeModal}>
-                <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
+                <Text style={[styles.secondaryButtonText, { color: modalSecondaryTextColor }]}>{t(language, 'cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primarySmallButton} onPress={handleConfirm}>
+              <TouchableOpacity
+                style={[styles.primarySmallButton, { backgroundColor: tone.accent, borderColor: toRgba(tone.accent, isLightTheme ? 0.28 : 0.32) }]}
+                onPress={handleConfirm}
+              >
                 <Text style={styles.primarySmallButtonText}>
                   {modalMode === 'edit' ? t(language, 'save') : t(language, 'add')}
                 </Text>
@@ -604,12 +657,8 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   headerPanel: {
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
-    backgroundColor: '#081427',
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.sm,
   },
   backButton: {
     minHeight: 36,
@@ -826,6 +875,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.pill,
     backgroundColor: '#3B82F6',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.32)',
   },
   primarySmallButtonText: {
     color: '#F9FAFB',

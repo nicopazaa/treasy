@@ -2,13 +2,14 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { RADIUS, SPACING, TEXT } from '../theme/tokens';
 
-const BACKSPACE_KEY = '⌫';
+const BACKSPACE_KEY = '\u232B';
 const CLEAR_KEY = 'C';
 
 type BaseProps = {
   rows: string[][];
   style?: ViewStyle;
   disabled?: boolean;
+  variant?: 'dark' | 'light';
 };
 
 type ChangeProps = BaseProps & {
@@ -30,7 +31,8 @@ function isChangeProps(props: Props): props is ChangeProps {
 }
 
 export const QuickKeypad: React.FC<Props> = (props) => {
-  const { rows, style, disabled = false } = props;
+  const { rows, style, disabled = false, variant = 'dark' } = props;
+  const isLight = variant === 'light';
 
   const press = (key: string) => {
     if (disabled) return;
@@ -63,11 +65,15 @@ export const QuickKeypad: React.FC<Props> = (props) => {
           {row.map((key) => (
             <TouchableOpacity
               key={key}
-              style={[styles.key, (key === BACKSPACE_KEY || key === CLEAR_KEY) && styles.keySecondary]}
+              style={[
+                styles.key,
+                isLight ? styles.keyLight : styles.keyDark,
+                (key === BACKSPACE_KEY || key === CLEAR_KEY) && (isLight ? styles.keySecondaryLight : styles.keySecondaryDark),
+              ]}
               onPress={() => press(key)}
               activeOpacity={0.8}
             >
-              <Text style={styles.keyText}>{key}</Text>
+              <Text style={[styles.keyText, isLight ? styles.keyTextLight : styles.keyTextDark]}>{key}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -90,18 +96,33 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#0B1220',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keySecondary: {
+  keyDark: {
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+  },
+  keyLight: {
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  keySecondaryDark: {
     backgroundColor: '#111827',
     borderColor: '#374151',
   },
+  keySecondaryLight: {
+    backgroundColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
+  },
   keyText: {
-    color: '#F9FAFB',
     fontSize: TEXT.lg,
     fontWeight: '700',
+  },
+  keyTextDark: {
+    color: '#F9FAFB',
+  },
+  keyTextLight: {
+    color: '#1E293B',
   },
 });
