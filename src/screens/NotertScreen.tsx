@@ -45,12 +45,13 @@ function localeFor(language: AppLanguage): string {
 }
 
 function formatDateHeader(dateKey: string, language: AppLanguage): string {
+  const unknownDateLabel = t(language, 'notert.unknownDate');
   if (dateKey === 'unknown') {
-    return language === 'nb' ? 'Ukjent dato' : language === 'es' ? 'Fecha desconocida' : 'Unknown date';
+    return unknownDateLabel;
   }
   const dt = new Date(`${dateKey}T12:00:00`);
   if (Number.isNaN(dt.getTime())) {
-    return language === 'nb' ? 'Ukjent dato' : language === 'es' ? 'Fecha desconocida' : 'Unknown date';
+    return unknownDateLabel;
   }
   const relative = formatRelativeDayLabel(dt, new Date(), language);
   if (relative) return relative;
@@ -81,21 +82,30 @@ function toRgba(color: string, alpha: number): string {
 
 function sourceLabel(source: NoteEntry['source'], language: AppLanguage): string {
   if (source === 'quicklog') {
-    return language === 'nb' ? 'Hurtiglogg' : language === 'es' ? 'Registro rapido' : 'Quick log';
+    return t(language, 'notert.source.quicklog');
   }
   if (source === 'home_notes') {
-    return language === 'nb' ? 'Hjem' : language === 'es' ? 'Inicio' : 'Home';
+    return t(language, 'notert.source.home');
   }
-  return language === 'nb' ? 'Notat' : language === 'es' ? 'Nota' : 'Note';
+  return t(language, 'notert.source.other');
+}
+
+function withLeadingDashOnFirstLine(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const [firstLine, ...restLines] = trimmed.split('\n');
+  const cleanFirst = firstLine.trim();
+  const prefixedFirst = cleanFirst.startsWith('-') ? cleanFirst : `- ${cleanFirst}`;
+  return [prefixedFirst, ...restLines].join('\n');
 }
 
 export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) => {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteState>(null);
   const [deletedNotes, setDeletedNotes] = useState<NoteEntry[] | null>(null);
+  const [menuNoteId, setMenuNoteId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -139,73 +149,35 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
     return groups;
   }, [language, notes]);
 
-  const emptyLabel = language === 'nb' ? 'Ingen notater enda' : language === 'es' ? 'No hay notas aun' : 'No notes yet';
-  const loadingLabel = language === 'nb' ? 'Laster notater...' : language === 'es' ? 'Cargando notas...' : 'Loading notes...';
-  const deletingLabel = language === 'nb' ? 'Sletter...' : language === 'es' ? 'Eliminando...' : 'Deleting...';
-  const emptyNotePreview = language === 'nb' ? '(tomt notat)' : language === 'es' ? '(nota vacia)' : '(empty note)';
-  const titleLabel = language === 'nb' ? 'Notert' : language === 'es' ? 'Notas' : 'Notes';
-  const screenSubtitle =
-    language === 'nb'
-      ? 'Alt du logger, samlet pa ett sted'
-      : language === 'es'
-        ? 'Todo lo que registras, en un solo lugar'
-        : 'Everything you log, in one place';
-  const doneLabel = language === 'nb' ? 'Ferdig' : language === 'es' ? 'Listo' : 'Done';
-  const selectDeleteLabel = language === 'nb' ? 'Slett' : language === 'es' ? 'Eliminar' : 'Delete';
-  const selectEditLabel = language === 'nb' ? 'Rediger' : language === 'es' ? 'Editar' : 'Edit';
+  const emptyLabel = t(language, 'notert.empty');
+  const emptySubtitleLabel = t(language, 'notert.empty.subtitle');
+  const loadingLabel = t(language, 'notert.loading');
+  const deletingLabel = t(language, 'notert.deleting');
+  const emptyNotePreview = t(language, 'notert.emptyNote');
+  const titleLabel = t(language, 'notert.title');
+  const screenSubtitle = t(language, 'notert.subtitle');
+  const doneLabel = t(language, 'notert.done');
+  const selectDeleteLabel = t(language, 'delete');
+  const selectEditLabel = t(language, 'notert.edit');
+  const saveLabel = t(language, 'notert.save');
   const selectedCount = selectedNoteIds.length;
   const selectedNote = selectedCount === 1 ? notes.find((note) => note.id === selectedNoteIds[0]) ?? null : null;
+  const menuNote = menuNoteId ? notes.find((note) => note.id === menuNoteId) ?? null : null;
   const editModeTitle =
-    editMode
-      ? language === 'nb'
-        ? `${selectedCount} valgt`
-        : language === 'es'
-          ? `${selectedCount} seleccionado`
-          : `${selectedCount} selected`
-      : titleLabel;
+    editMode ? t(language, 'notert.selectedCount', { count: selectedCount }) : titleLabel;
   const isBulkPendingDelete = pendingDelete?.mode === 'bulk';
   const pendingDeleteCount = pendingDelete?.notes.length ?? 0;
   const deleteConfirmTitle = isBulkPendingDelete
-    ? language === 'nb'
-      ? `Slette ${pendingDeleteCount} notater?`
-      : language === 'es'
-        ? `Eliminar ${pendingDeleteCount} notas?`
-        : `Delete ${pendingDeleteCount} notes?`
-    : language === 'nb'
-      ? 'Slette notat?'
-      : language === 'es'
-        ? 'Eliminar nota?'
-        : 'Delete note?';
-  const deleteConfirmBody =
-    language === 'nb' ? 'Dette kan ikke angres.' : language === 'es' ? 'Esto no se puede deshacer.' : 'This cannot be undone.';
+    ? t(language, 'notert.delete.bulkTitle', { count: pendingDeleteCount })
+    : t(language, 'notert.delete.singleTitle');
+  const deleteConfirmBody = t(language, 'notert.delete.body');
   const deletePreviewLabel = isBulkPendingDelete
-    ? language === 'nb'
-      ? 'Valgt:'
-      : language === 'es'
-        ? 'Seleccionado:'
-        : 'Selected:'
-    : language === 'nb'
-      ? 'Notat:'
-      : language === 'es'
-        ? 'Nota:'
-        : 'Note:';
+    ? t(language, 'notert.delete.preview.bulk')
+    : t(language, 'notert.delete.preview.single');
   const deletedLabel =
     deletedNotes && deletedNotes.length > 1
-      ? language === 'nb'
-        ? `${deletedNotes.length} notater slettet`
-        : language === 'es'
-          ? `${deletedNotes.length} notas eliminadas`
-          : `${deletedNotes.length} notes deleted`
-      : language === 'nb'
-        ? 'Notat slettet'
-        : language === 'es'
-          ? 'Nota eliminada'
-          : 'Note deleted';
-
-  const totalNotes = notes.length;
-  const uniqueDays = grouped.length;
-  const latestNote = grouped[0]?.notes[0] ?? null;
-  const latestTimeLabel = latestNote ? formatTime(latestNote.createdAt, language) : '--:--';
+      ? t(language, 'notert.delete.bulkDone', { count: deletedNotes.length })
+      : t(language, 'notert.delete.singleDone');
 
   const clearUndoTimer = useCallback(() => {
     if (undoTimerRef.current) {
@@ -225,6 +197,12 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
   }, [notes]);
 
   useEffect(() => {
+    if (!menuNoteId) return;
+    if (notes.some((note) => note.id === menuNoteId)) return;
+    setMenuNoteId(null);
+  }, [menuNoteId, notes]);
+
+  useEffect(() => {
     if (notes.length > 0) return;
     setEditMode(false);
     setSelectedNoteIds([]);
@@ -233,6 +211,7 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
   const exitEditMode = useCallback(() => {
     setEditMode(false);
     setSelectedNoteIds([]);
+    setMenuNoteId(null);
     setEditingNoteId(null);
     setEditingText('');
   }, []);
@@ -267,9 +246,6 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
       const nextNotes = notes.filter((entry) => !ids.has(entry.id));
       try {
         setDeleteBusy(true);
-        if (mode === 'single') {
-          setDeletingNoteId(entries[0]?.id ?? null);
-        }
 
         setNotes(nextNotes);
         await replaceNotes(nextNotes);
@@ -290,7 +266,6 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
         console.warn('Failed to delete note(s)', e);
       } finally {
         setDeleteBusy(false);
-        setDeletingNoteId(null);
       }
     },
     [clearUndoTimer, deleteBusy, notes]
@@ -327,6 +302,32 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
     setEditingNoteId(selectedNote.id);
     setEditingText(selectedNote.text);
   }, [deleteBusy, selectedNote]);
+
+  const openNoteMenu = useCallback(
+    (noteId: string) => {
+      if (deleteBusy || editSaving) return;
+      setMenuNoteId(noteId);
+    },
+    [deleteBusy, editSaving]
+  );
+
+  const closeNoteMenu = useCallback(() => {
+    if (deleteBusy || editSaving) return;
+    setMenuNoteId(null);
+  }, [deleteBusy, editSaving]);
+
+  const openDeleteModalForMenuNote = useCallback(() => {
+    if (!menuNote || deleteBusy) return;
+    setMenuNoteId(null);
+    setPendingDelete({ mode: 'single', notes: [menuNote] });
+  }, [deleteBusy, menuNote]);
+
+  const openEditModalForMenuNote = useCallback(() => {
+    if (!menuNote || deleteBusy) return;
+    setMenuNoteId(null);
+    setEditingNoteId(menuNote.id);
+    setEditingText(menuNote.text);
+  }, [deleteBusy, menuNote]);
 
   const closeEditModal = useCallback(() => {
     if (editSaving) return;
@@ -376,13 +377,7 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
       <View style={styles.emptyStateCard}>
         <Text style={styles.emptyStateIcon}>{'\u2726'}</Text>
         <Text style={styles.emptyStateTitle}>{emptyLabel}</Text>
-        <Text style={styles.emptyStateSubtitle}>
-          {language === 'nb'
-            ? 'Notater fra hjemskjerm og hurtiglogg dukker opp her.'
-            : language === 'es'
-              ? 'Las notas de Inicio y del registro rapido apareceran aqui.'
-              : 'Notes from Home and Quick Log will show up here.'}
-        </Text>
+        <Text style={styles.emptyStateSubtitle}>{emptySubtitleLabel}</Text>
       </View>
     </View>
   );
@@ -402,35 +397,14 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
           >
             <Text style={styles.backText}>{editMode ? doneLabel : t(language, 'back')}</Text>
           </TouchableOpacity>
-          {editMode ? <Text style={styles.modeFlag}>{language === 'nb' ? 'VALG' : language === 'es' ? 'SELECCION' : 'SELECT'}</Text> : null}
+          {editMode ? <Text style={styles.modeFlag}>{t(language, 'notert.mode.select')}</Text> : null}
         </View>
 
         <View style={styles.titleRow}>
           <Text style={styles.title}>{editModeTitle}</Text>
-          {!editMode ? (
-            <View style={styles.titleCountPill}>
-              <Text style={styles.titleCountText}>{totalNotes}</Text>
-            </View>
-          ) : null}
         </View>
         {!editMode ? <Text style={styles.subtitle}>{screenSubtitle}</Text> : null}
-
-        {!editMode ? (
-          <View style={styles.statsRow}>
-            <View style={styles.statChip}>
-              <Text style={styles.statChipLabel}>{language === 'nb' ? 'Notater' : language === 'es' ? 'Notas' : 'Notes'}</Text>
-              <Text style={styles.statChipValue}>{totalNotes}</Text>
-            </View>
-            <View style={styles.statChip}>
-              <Text style={styles.statChipLabel}>{language === 'nb' ? 'Dager' : language === 'es' ? 'Dias' : 'Days'}</Text>
-              <Text style={styles.statChipValue}>{uniqueDays}</Text>
-            </View>
-            <View style={styles.statChip}>
-              <Text style={styles.statChipLabel}>{language === 'nb' ? 'Sist' : language === 'es' ? 'Ultima' : 'Latest'}</Text>
-              <Text style={styles.statChipValue}>{latestTimeLabel || '--:--'}</Text>
-            </View>
-          </View>
-        ) : (
+        {editMode ? (
           <View style={styles.editActionRow}>
             {selectedCount === 1 ? (
               <TouchableOpacity
@@ -451,7 +425,7 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
               <Text style={styles.deleteActionText}>{selectDeleteLabel}</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
       </View>
 
       {loading ? (
@@ -468,9 +442,6 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
             <View key={group.dateKey} style={styles.daySection}>
               <View style={styles.dayHeaderRow}>
                 <Text style={styles.dayHeader}>{group.label}</Text>
-                <View style={styles.dayCountPill}>
-                  <Text style={styles.dayCountText}>{group.notes.length}</Text>
-                </View>
               </View>
 
               <View style={styles.dayTimelineWrap}>
@@ -478,7 +449,10 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
                 {group.notes.map((note) => {
                   const isSelected = selectedNoteIds.includes(note.id);
                   const timeText = formatTime(note.createdAt, language) || '--:--';
-                  const previewText = note.text.trim().length > 0 ? note.text : emptyNotePreview;
+                  const trimmedText = note.text.trim();
+                  const basePreviewText = trimmedText.length > 0 ? trimmedText : emptyNotePreview;
+                  const previewText =
+                    note.source === 'quicklog' && trimmedText.length > 0 ? withLeadingDashOnFirstLine(trimmedText) : basePreviewText;
                   return (
                     <Pressable
                       key={note.id}
@@ -513,17 +487,15 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
                           ) : (
                             <TouchableOpacity
                               hitSlop={8}
-                              style={[styles.noteDeleteButton, anyDeleteBusy ? styles.actionDisabled : null]}
+                              style={[styles.noteMenuButton, anyDeleteBusy ? styles.actionDisabled : null]}
                               onPress={() => {
-                                if (anyDeleteBusy) return;
-                                setPendingDelete({ mode: 'single', notes: [note] });
+                                openNoteMenu(note.id);
                               }}
                               activeOpacity={0.75}
                               disabled={anyDeleteBusy}
+                              accessibilityLabel={t(language, 'notert.menu.more')}
                             >
-                              <Text style={[styles.noteDeleteText, deletingNoteId === note.id ? styles.noteDeleteTextDisabled : null]}>
-                                {deletingNoteId === note.id ? deletingLabel : t(language, 'delete')}
-                              </Text>
+                              <Text style={styles.noteMenuText}>{'\u22EE'}</Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -538,6 +510,40 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
           ))}
         </ScrollView>
       )}
+
+      <Modal visible={Boolean(menuNote)} transparent animationType="fade" onRequestClose={closeNoteMenu}>
+        <Pressable style={styles.modalBackdrop} onPress={closeNoteMenu}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>{t(language, 'notert.menu.title')}</Text>
+            <View style={styles.menuActions}>
+              <TouchableOpacity
+                style={[styles.menuActionButton, (anyDeleteBusy || editSaving) ? styles.actionDisabled : null]}
+                onPress={openEditModalForMenuNote}
+                activeOpacity={0.9}
+                disabled={anyDeleteBusy || editSaving}
+              >
+                <Text style={styles.menuActionText}>{t(language, 'notert.menu.edit')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.menuDeleteButton, anyDeleteBusy ? styles.actionDisabled : null]}
+                onPress={openDeleteModalForMenuNote}
+                activeOpacity={0.9}
+                disabled={anyDeleteBusy}
+              >
+                <Text style={styles.menuDeleteText}>{t(language, 'notert.menu.delete')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalCancelButton, (anyDeleteBusy || editSaving) ? styles.actionDisabled : null]}
+                onPress={closeNoteMenu}
+                activeOpacity={0.9}
+                disabled={anyDeleteBusy || editSaving}
+              >
+                <Text style={styles.modalCancelText}>{t(language, 'cancel')}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={Boolean(pendingDelete)} transparent animationType="fade" onRequestClose={closeDeleteModal}>
         <Pressable style={styles.modalBackdrop} onPress={closeDeleteModal}>
@@ -577,9 +583,7 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
         <Pressable style={styles.modalBackdrop} onPress={closeEditModal}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <Text style={styles.modalTitle}>{selectEditLabel}</Text>
-            <Text style={styles.modalBody}>
-              {language === 'nb' ? 'Oppdater notatet ditt.' : language === 'es' ? 'Actualiza tu nota.' : 'Update your note.'}
-            </Text>
+            <Text style={styles.modalBody}>{t(language, 'notert.edit.help')}</Text>
             <TextInput
               style={styles.modalInput}
               value={editingText}
@@ -607,7 +611,7 @@ export const NotertScreen: React.FC<Props> = ({ language, themeMode, onBack }) =
                 activeOpacity={0.9}
                 disabled={editSaving || editingText.trim().length === 0}
               >
-                <Text style={styles.modalSaveText}>{language === 'nb' ? 'Lagre' : language === 'es' ? 'Guardar' : 'Save'}</Text>
+                <Text style={styles.modalSaveText}>{saveLabel}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -718,48 +722,11 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       fontWeight: '900',
       letterSpacing: -0.4,
     },
-    titleCountPill: {
-      minWidth: 36,
-      minHeight: 28,
-      borderRadius: RADIUS.pill,
-      backgroundColor: toRgba(themeTokens.accent, isLightTheme ? 0.16 : 0.24),
-      paddingHorizontal: SPACING.sm,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    titleCountText: {
-      color: isLightTheme ? themeTokens.text : themeTokens.textOnAccent,
-      fontSize: TEXT.sm,
-      fontWeight: '800',
-    },
     subtitle: {
       marginTop: 4,
       color: themeTokens.textMuted,
       fontSize: TEXT.sm,
       fontWeight: '500',
-    },
-    statsRow: {
-      marginTop: SPACING.md,
-      flexDirection: 'row',
-      gap: SPACING.xs,
-    },
-    statChip: {
-      flex: 1,
-      borderRadius: RADIUS.md,
-      backgroundColor: toRgba(themeTokens.surfaceAlt, isLightTheme ? 0.8 : 0.72),
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: SPACING.sm,
-    },
-    statChipLabel: {
-      color: themeTokens.textMuted,
-      fontSize: TEXT.xs,
-      fontWeight: '700',
-      marginBottom: 2,
-    },
-    statChipValue: {
-      color: themeTokens.text,
-      fontSize: TEXT.md,
-      fontWeight: '900',
     },
     editActionRow: {
       marginTop: SPACING.md,
@@ -862,20 +829,6 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       fontWeight: '900',
       textTransform: 'capitalize',
     },
-    dayCountPill: {
-      minWidth: 28,
-      minHeight: 24,
-      borderRadius: RADIUS.pill,
-      backgroundColor: toRgba(themeTokens.accent, isLightTheme ? 0.16 : 0.24),
-      paddingHorizontal: SPACING.xs,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    dayCountText: {
-      color: isLightTheme ? themeTokens.text : themeTokens.textOnAccent,
-      fontSize: TEXT.xs,
-      fontWeight: '800',
-    },
     dayTimelineWrap: {
       position: 'relative',
       paddingLeft: SPACING.md,
@@ -960,20 +913,19 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       fontWeight: '700',
       flexShrink: 1,
     },
-    noteDeleteButton: {
+    noteMenuButton: {
       minHeight: 30,
       borderRadius: RADIUS.pill,
-      backgroundColor: dangerBg,
-      paddingHorizontal: SPACING.sm,
+      backgroundColor: toRgba(themeTokens.surfaceAlt, isLightTheme ? 0.78 : 0.74),
+      paddingHorizontal: SPACING.sm + 1,
       justifyContent: 'center',
+      alignItems: 'center',
     },
-    noteDeleteText: {
-      color: dangerText,
-      fontSize: TEXT.xs,
-      fontWeight: '800',
-    },
-    noteDeleteTextDisabled: {
+    noteMenuText: {
       color: themeTokens.textMuted,
+      fontSize: TEXT.xs,
+      fontWeight: '900',
+      lineHeight: TEXT.xs + 2,
     },
     noteSelectCircle: {
       minWidth: 24,
@@ -1048,6 +1000,36 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       fontSize: TEXT.sm,
       textAlignVertical: 'top',
       lineHeight: 20,
+    },
+    menuActions: {
+      marginTop: SPACING.xs,
+      gap: SPACING.xs,
+    },
+    menuActionButton: {
+      minHeight: 42,
+      borderRadius: RADIUS.lg,
+      backgroundColor: toRgba(themeTokens.accent, isLightTheme ? 0.16 : 0.26),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: SPACING.md,
+    },
+    menuActionText: {
+      color: isLightTheme ? themeTokens.text : themeTokens.textOnAccent,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+    },
+    menuDeleteButton: {
+      minHeight: 42,
+      borderRadius: RADIUS.lg,
+      backgroundColor: toRgba(themeTokens.momentumDown, isLightTheme ? 0.2 : 0.3),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: SPACING.md,
+    },
+    menuDeleteText: {
+      color: dangerText,
+      fontSize: TEXT.sm,
+      fontWeight: '900',
     },
     modalActions: {
       marginTop: SPACING.sm,

@@ -1,10 +1,39 @@
 const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
 };
+
+const FETCH_TIMEOUT_MS = 10000;
+
+async function fetchJsonWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    return { res, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 exports.handler = async (event) => {
   try {
+    if (event.httpMethod !== 'GET') {
+      return {
+        statusCode: 405,
+        headers: DEFAULT_HEADERS,
+        body: JSON.stringify({ error: 'Method not allowed' }),
+      };
+    }
+
     const code = event.queryStringParameters && event.queryStringParameters.code;
     if (!code) {
       return { statusCode: 400, headers: DEFAULT_HEADERS, body: JSON.stringify({ error: 'Missing code' }) };
@@ -21,7 +50,7 @@ exports.handler = async (event) => {
       };
     }
 
-    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+    const tokenResponse = await fetchJsonWithTimeout('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -33,40 +62,56 @@ exports.handler = async (event) => {
         code,
       }),
     });
+    const tokenRes = tokenResponse.res;
+    const tokenData = tokenResponse.data;
 
-    const tokenData = await tokenRes.json();
     const accessToken = tokenData && tokenData.access_token;
 
-    if (!accessToken) {
+    if (!tokenRes.ok || !accessToken) {
       return {
         statusCode: 502,
         headers: DEFAULT_HEADERS,
-        body: JSON.stringify({ error: 'No access token returned from GitHub', details: tokenData }),
+        body: JSON.stringify({ error: 'Token exchange failed' }),
       };
     }
 
-    const userRes = await fetch('https://api.github.com/user', {
+    const userResponse = await fetchJsonWithTimeout('https://api.github.com/user', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'User-Agent': 'treasy',
         Accept: 'application/vnd.github+json',
       },
     });
-    const user = await userRes.json();
+    const userRes = userResponse.res;
+    const user = userResponse.data;
+    if (!userRes.ok || !user) {
+      return {
+        statusCode: 502,
+        headers: DEFAULT_HEADERS,
+        body: JSON.stringify({ error: 'Failed to fetch GitHub user' }),
+      };
+    }
 
     let email = user && user.email;
     if (!email) {
-      const emailsRes = await fetch('https://api.github.com/user/emails', {
+      const emailsResponse = await fetchJsonWithTimeout('https://api.github.com/user/emails', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'User-Agent': 'treasy',
           Accept: 'application/vnd.github+json',
         },
       });
-      const emails = await emailsRes.json();
+      const emailsRes = emailsResponse.res;
+      const emails = emailsResponse.data;
       if (Array.isArray(emails)) {
         const primary = emails.find((e) => e && e.primary) || emails[0];
         email = primary && primary.email;
+      } else if (!emailsRes.ok) {
+        return {
+          statusCode: 502,
+          headers: DEFAULT_HEADERS,
+          body: JSON.stringify({ error: 'Failed to fetch GitHub email' }),
+        };
       }
     }
 
@@ -80,11 +125,11 @@ exports.handler = async (event) => {
       }),
     };
   } catch (e) {
+    const message = e && e.name === 'AbortError' ? 'GitHub OAuth timed out' : 'GitHub OAuth failed';
     return {
       statusCode: 500,
       headers: DEFAULT_HEADERS,
-      body: JSON.stringify({ error: 'GitHub OAuth failed', details: String(e && e.message ? e.message : e) }),
+      body: JSON.stringify({ error: message }),
     };
   }
 };
-

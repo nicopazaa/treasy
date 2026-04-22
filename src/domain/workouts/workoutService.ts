@@ -2,13 +2,24 @@ import { AppState, Exercise, ExerciseMetadataInput, LogEntry, SetEntry, CardioEn
 import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
 import { MAX_EXERCISE_ALIASES, MAX_MERGED_EXERCISE_ALIASES } from '../../shared/constants';
 import { normalizeExerciseName } from './nameNormalize';
-import { now } from '../../shared/time';
+import { createStableId } from '../../shared/utils/id';
+import { createSyncFields, markSyncDeleted, touchSyncFields, withSyncDefaults } from '../../shared/utils/syncMeta';
+import {
+  queueAppSyncDelete,
+  queueAppSyncUpsert,
+  queueManyAppSyncDeletes,
+  queueManyAppSyncUpserts,
+} from './syncState';
 
 // IMPORTANT:
 // This module must remain pure and deterministic.
 // Never mutate AppState directly; always return new objects/arrays.
 function generateId(prefix: string = 'id'): string {
-  return `${prefix}_${Math.random().toString(36).substring(2, 10)}_${now().toString(36)}`;
+  return createStableId(prefix);
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 function sanitizeLabel(label?: string | null): string | null {
@@ -78,35 +89,41 @@ function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
 export function addLogEntry(state: AppState, text: string, options?: { pinned?: boolean }): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
+  const createdAt = nowIso();
 
   const entry: LogEntry = {
     id: generateId('log'),
+    ...createSyncFields('log', createdAt),
     text: trimmed,
-    createdAt: new Date().toISOString(),
+    createdAt,
     pinned: options?.pinned === true,
   };
 
-  return {
+  const next = {
     ...state,
     logs: [...(state.logs ?? []), entry],
   };
+  return queueAppSyncUpsert(next, 'log', entry);
 }
 
 export function addNoteEntry(state: AppState, text: string, source: NoteEntry['source'] = 'other'): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
+  const createdAt = nowIso();
 
   const entry: NoteEntry = {
     id: generateId('note'),
+    ...createSyncFields('note', createdAt),
     text: trimmed,
-    createdAt: new Date().toISOString(),
+    createdAt,
     source,
   };
 
-  return {
+  const next = {
     ...state,
     notes: [...(state.notes ?? []), entry],
   };
+  return queueAppSyncUpsert(next, 'note', entry);
 }
 
 export function addCardioEntry(
@@ -124,9 +141,11 @@ export function addCardioEntry(
   const dist = distanceKm != null && Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null;
   const dur = durationMin != null && Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null;
   if (dist == null && dur == null) return state;
+  const createdAt = nowIso();
 
   const entry: CardioEntry = {
     id: generateId('cardio'),
+    ...createSyncFields('cardio', createdAt),
     exerciseId,
     distanceKm: dist,
     durationMin: dur,
@@ -134,13 +153,14 @@ export function addCardioEntry(
     intensity: extras?.intensity ?? null,
     note: extras?.note ?? null,
     silentMode: extras?.silentMode ?? null,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
 
-  return {
+  const next = {
     ...state,
     cardioEntries: [...(state.cardioEntries ?? []), entry],
   };
+  return queueAppSyncUpsert(next, 'cardio', entry);
 }
 
 export function getCardioEntries(state: AppState, exerciseId?: string): CardioEntry[] {
@@ -158,9 +178,11 @@ export function addExercise(
   const trimmed = name.trim();
   if (!trimmed) return state;
   const meta = sanitizeMetadata(metadata);
+  const createdAt = nowIso();
 
   const newExercise: Exercise = {
     id: generateId('ex'),
+    ...createSyncFields('ex', createdAt),
     blockId,
     name: trimmed,
     shortCode: meta.shortCode ?? undefined,
@@ -170,10 +192,11 @@ export function addExercise(
     canonicalName: normalizeExerciseName(trimmed),
   };
 
-  return {
+  const next = {
     ...state,
     exercises: [...state.exercises, newExercise],
   };
+  return queueAppSyncUpsert(next, 'exercise', newExercise);
 }
 
 export function addExerciseWithSets(
@@ -197,6 +220,7 @@ export function addExerciseWithSetsResult(
   const trimmed = name.trim();
   if (!trimmed) return null;
   const meta = sanitizeMetadata(metadata);
+  const createdAt = nowIso();
   const validSets = sets.filter(
     (s) =>
       Number.isFinite(s.weight) &&
@@ -208,6 +232,7 @@ export function addExerciseWithSetsResult(
 
   const exercise: Exercise = {
     id: generateId('ex'),
+    ...createSyncFields('ex', createdAt),
     blockId,
     name: trimmed,
     shortCode: meta.shortCode ?? undefined,
@@ -216,21 +241,25 @@ export function addExerciseWithSetsResult(
     aliases: [],
     canonicalName: normalizeExerciseName(trimmed),
   };
-  const createdAt = new Date().toISOString();
   const newSets: SetEntry[] = validSets.map((s) => ({
     id: generateId('set'),
+    ...createSyncFields('set', createdAt),
     exerciseId: exercise.id,
     weight: s.weight,
     reps: s.reps,
     createdAt,
   }));
 
+  let nextState: AppState = {
+    ...state,
+    exercises: [...state.exercises, exercise],
+    sets: [...state.sets, ...newSets],
+  };
+  nextState = queueAppSyncUpsert(nextState, 'exercise', exercise);
+  nextState = queueManyAppSyncUpserts(nextState, 'set', newSets);
+
   return {
-    nextState: {
-      ...state,
-      exercises: [...state.exercises, exercise],
-      sets: [...state.sets, ...newSets],
-    },
+    nextState,
     exerciseId: exercise.id,
   };
 }
@@ -245,51 +274,56 @@ export function renameExercise(
   if (!trimmed) return state;
   const metaProvided = typeof metadata !== 'undefined';
   const meta = sanitizeMetadata(metadata);
+  let updated: Exercise | null = null;
+  const exercises = state.exercises.map((ex) => {
+    if (ex.id !== exerciseId) return ex;
+    const next: Exercise = {
+      ...ex,
+      ...touchSyncFields(ex),
+      name: trimmed,
+      canonicalName: normalizeExerciseName(trimmed),
+      aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
+    };
+    if (metaProvided) {
+      next.shortCode = meta.shortCode ?? undefined;
+      next.tags = meta.tags;
+    }
+    updated = next;
+    return next;
+  });
 
-  return {
-    ...state,
-    exercises: state.exercises.map((ex) => {
-      if (ex.id !== exerciseId) return ex;
-      const next: Exercise = {
-        ...ex,
-        name: trimmed,
-        canonicalName: normalizeExerciseName(trimmed),
-        aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
-      };
-      if (metaProvided) {
-        next.shortCode = meta.shortCode ?? undefined;
-        next.tags = meta.tags;
-      }
-      return next;
-    }),
-  };
+  if (!updated) return state;
+  return queueAppSyncUpsert({ ...state, exercises }, 'exercise', updated);
 }
 
 export function addExerciseAlias(state: AppState, exerciseId: string, aliasName: string): AppState {
   const raw = String(aliasName ?? '').trim();
   const normalized = normalizeExerciseName(raw);
   if (!normalized) return state;
+  let updated: Exercise | null = null;
+  const exercises = state.exercises.map((ex) => {
+    if (ex.id !== exerciseId) return ex;
 
-  return {
-    ...state,
-    exercises: state.exercises.map((ex) => {
-      if (ex.id !== exerciseId) return ex;
+    const existingAliases = Array.isArray(ex.aliases) ? ex.aliases : [];
+    if (existingAliases.length >= MAX_EXERCISE_ALIASES) return ex;
 
-      const existingAliases = Array.isArray(ex.aliases) ? ex.aliases : [];
-      if (existingAliases.length >= MAX_EXERCISE_ALIASES) return ex;
+    const canonical = normalizeExerciseName(ex.canonicalName ?? ex.name);
+    const nameNorm = normalizeExerciseName(ex.name);
+    const existingNorm = new Set<string>([canonical, nameNorm, ...existingAliases.map(normalizeExerciseName)]);
+    if (existingNorm.has(normalized)) return ex;
 
-      const canonical = normalizeExerciseName(ex.canonicalName ?? ex.name);
-      const nameNorm = normalizeExerciseName(ex.name);
-      const existingNorm = new Set<string>([canonical, nameNorm, ...existingAliases.map(normalizeExerciseName)]);
-      if (existingNorm.has(normalized)) return ex;
+    const next: Exercise = {
+      ...ex,
+      ...touchSyncFields(ex),
+      aliases: [...existingAliases, raw],
+      canonicalName: typeof ex.canonicalName === 'string' && ex.canonicalName ? ex.canonicalName : canonical,
+    };
+    updated = next;
+    return next;
+  });
 
-      return {
-        ...ex,
-        aliases: [...existingAliases, raw],
-        canonicalName: typeof ex.canonicalName === 'string' && ex.canonicalName ? ex.canonicalName : canonical,
-      };
-    }),
-  };
+  if (!updated) return state;
+  return queueAppSyncUpsert({ ...state, exercises }, 'exercise', updated);
 }
 
 export function findExerciseByNameOrAlias(state: AppState, name: string): Exercise | null {
@@ -367,30 +401,60 @@ export function mergeExercises(state: AppState, fromExerciseId: string, intoExer
 
   const updatedInto: Exercise = {
     ...into,
+    ...touchSyncFields(into),
     aliases: mergedAliases,
     canonicalName: typeof into.canonicalName === 'string' && into.canonicalName.trim()
       ? into.canonicalName
       : normalizeExerciseName(into.name),
   };
+  const movedSets: SetEntry[] = [];
+  const nextSets = state.sets.map((set) => {
+    if (set.exerciseId !== fromExerciseId) return set;
+    const moved = { ...touchSyncFields(set), exerciseId: intoExerciseId };
+    movedSets.push(moved);
+    return moved;
+  });
 
-  return {
+  const movedCardio: CardioEntry[] = [];
+  const nextCardioEntries = (state.cardioEntries ?? []).map((entry) => {
+    if (entry.exerciseId !== fromExerciseId) return entry;
+    const moved = { ...touchSyncFields(entry), exerciseId: intoExerciseId };
+    movedCardio.push(moved);
+    return moved;
+  });
+
+  const removedExercise = markSyncDeleted(from);
+  let nextState: AppState = {
     ...state,
     exercises: state.exercises
       .filter((ex) => ex.id !== fromExerciseId)
       .map((ex) => (ex.id === intoExerciseId ? updatedInto : ex)),
-    sets: state.sets.map((s) => (s.exerciseId === fromExerciseId ? { ...s, exerciseId: intoExerciseId } : s)),
-    cardioEntries: (state.cardioEntries ?? []).map((c) =>
-      c.exerciseId === fromExerciseId ? { ...c, exerciseId: intoExerciseId } : c
-    ),
+    sets: nextSets,
+    cardioEntries: nextCardioEntries,
   };
+  nextState = queueAppSyncUpsert(nextState, 'exercise', updatedInto);
+  nextState = queueAppSyncDelete(nextState, 'exercise', removedExercise);
+  nextState = queueManyAppSyncUpserts(nextState, 'set', movedSets);
+  nextState = queueManyAppSyncUpserts(nextState, 'cardio', movedCardio);
+  return nextState;
 }
 
 export function deleteExercise(state: AppState, exerciseId: string): AppState {
-  return {
+  const exercise = state.exercises.find((entry) => entry.id === exerciseId);
+  if (!exercise) return state;
+
+  const relatedSets = state.sets.filter((set) => set.exerciseId === exerciseId);
+  const deletedExercise = markSyncDeleted(exercise);
+  const deletedSets = relatedSets.map((set) => markSyncDeleted(set));
+
+  let nextState: AppState = {
     ...state,
     exercises: state.exercises.filter((ex) => ex.id !== exerciseId),
     sets: state.sets.filter((s) => s.exerciseId !== exerciseId),
   };
+  nextState = queueAppSyncDelete(nextState, 'exercise', deletedExercise);
+  nextState = queueManyAppSyncDeletes(nextState, 'set', deletedSets);
+  return nextState;
 }
 
 export function restoreExercise(
@@ -408,17 +472,24 @@ export function restoreExercise(
   const withinBlock =
     typeof index === 'number' && index >= 0 ? Math.min(index, blockPositions.length) : blockPositions.length;
   const insertIndex = baseIndex + withinBlock;
+  const normalizedExercise = withSyncDefaults(exercise, 'ex');
+  const restoredExercise = touchSyncFields({ ...normalizedExercise, deletedAt: null });
   const nextExercises = withoutExercise.slice();
-  nextExercises.splice(insertIndex, 0, exercise);
+  nextExercises.splice(insertIndex, 0, restoredExercise);
 
   const filteredSets = state.sets.filter((s) => s.exerciseId !== exercise.id);
-  const validSets = sets.filter((s) => s && s.exerciseId === exercise.id);
+  const validSets = sets
+    .filter((s) => s && s.exerciseId === exercise.id)
+    .map((s) => touchSyncFields({ ...withSyncDefaults(s, 'set', s.createdAt), deletedAt: null }));
 
-  return {
+  let nextState: AppState = {
     ...state,
     exercises: nextExercises,
     sets: [...filteredSets, ...validSets],
   };
+  nextState = queueAppSyncUpsert(nextState, 'exercise', restoredExercise);
+  nextState = queueManyAppSyncUpserts(nextState, 'set', validSets);
+  return nextState;
 }
 
 export function reorderExercisesInBlock(
@@ -470,12 +541,15 @@ export function reorderExercisesInBlock(
 }
 
 export function setExerciseBlockId(state: AppState, exerciseId: string, blockId: string): AppState {
-  return {
-    ...state,
-    exercises: state.exercises.map((ex) =>
-      ex.id === exerciseId ? { ...ex, blockId } : ex
-    ),
-  };
+  let updated: Exercise | null = null;
+  const exercises = state.exercises.map((ex) => {
+    if (ex.id !== exerciseId) return ex;
+    const next = { ...touchSyncFields(ex), blockId };
+    updated = next;
+    return next;
+  });
+  if (!updated) return state;
+  return queueAppSyncUpsert({ ...state, exercises }, 'exercise', updated);
 }
 
 export function addSet(
@@ -493,10 +567,11 @@ export function addSet(
 
   const newSet: SetEntry = {
     id: generateId('set'),
+    ...createSyncFields('set'),
     exerciseId,
     weight,
     reps,
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(),
     isBodyweight: resolvedMeta.isBodyweight,
     distanceKm: resolvedMeta.distanceKm ?? null,
     durationMin: resolvedMeta.durationMin ?? null,
@@ -504,10 +579,11 @@ export function addSet(
     setType: resolvedMeta.setType,
   };
 
-  return {
+  const next = {
     ...state,
     sets: [...state.sets, newSet],
   };
+  return queueAppSyncUpsert(next, 'set', newSet);
 }
 
 export function addSetsForExercise(
@@ -525,10 +601,11 @@ export function addSetsForExercise(
   );
   if (validSets.length === 0) return state;
 
-  const createdAt = new Date().toISOString();
+  const createdAt = nowIso();
   const resolvedMeta = resolveSetMeta(validSets[0].weight, meta);
   const newSets: SetEntry[] = validSets.map((s) => ({
     id: generateId('set'),
+    ...createSyncFields('set', createdAt),
     exerciseId,
     weight: s.weight,
     reps: s.reps,
@@ -540,10 +617,12 @@ export function addSetsForExercise(
       setType: resolvedMeta.setType,
     }));
 
-  return {
+  let nextState: AppState = {
     ...state,
     sets: [...state.sets, ...newSets],
   };
+  nextState = queueManyAppSyncUpserts(nextState, 'set', newSets);
+  return nextState;
 }
 
 export function updateSet(
@@ -556,42 +635,50 @@ export function updateSet(
   if (!Number.isFinite(weight) || !Number.isFinite(reps) || weight < 0 || reps <= 0) {
     return state;
   }
-
-  return {
-    ...state,
-    sets: state.sets.map((s) =>
-      s.id === setId
-        ? (() => {
-            if (!meta) return { ...s, weight, reps };
-            const resolvedMeta = resolveSetMeta(weight, meta);
-            return {
-              ...s,
-              weight,
-              reps,
-              isBodyweight: resolvedMeta.isBodyweight,
-              distanceKm: resolvedMeta.distanceKm ?? null,
-              durationMin: resolvedMeta.durationMin ?? null,
-              pauseSec: resolvedMeta.pauseSec ?? null,
-              setType: resolvedMeta.setType,
-            };
-          })()
-        : s
-    ),
-  };
+  let updated: SetEntry | null = null;
+  const sets = state.sets.map((set) => {
+    if (set.id !== setId) return set;
+    if (!meta) {
+      const next = { ...touchSyncFields(set), weight, reps };
+      updated = next;
+      return next;
+    }
+    const resolvedMeta = resolveSetMeta(weight, meta);
+    const next: SetEntry = {
+      ...touchSyncFields(set),
+      weight,
+      reps,
+      isBodyweight: resolvedMeta.isBodyweight,
+      distanceKm: resolvedMeta.distanceKm ?? null,
+      durationMin: resolvedMeta.durationMin ?? null,
+      pauseSec: resolvedMeta.pauseSec ?? null,
+      setType: resolvedMeta.setType,
+    };
+    updated = next;
+    return next;
+  });
+  if (!updated) return state;
+  return queueAppSyncUpsert({ ...state, sets }, 'set', updated);
 }
 
 export function deleteSet(state: AppState, setId: string): AppState {
-  return {
+  const target = state.sets.find((set) => set.id === setId);
+  if (!target) return state;
+  const deleted = markSyncDeleted(target);
+  let nextState: AppState = {
     ...state,
-    sets: state.sets.filter((s) => s.id !== setId),
+    sets: state.sets.filter((set) => set.id !== setId),
   };
+  nextState = queueAppSyncDelete(nextState, 'set', deleted);
+  return nextState;
 }
 
 export function restoreSet(state: AppState, set: SetEntry): AppState {
   if (!set?.id) return state;
   const nextSets = state.sets.filter((s) => s.id !== set.id);
-  nextSets.push(set);
-  return { ...state, sets: nextSets };
+  const restored = touchSyncFields({ ...withSyncDefaults(set, 'set', set.createdAt), deletedAt: null });
+  nextSets.push(restored);
+  return queueAppSyncUpsert({ ...state, sets: nextSets }, 'set', restored);
 }
 
 export function getSetsForExercise(state: AppState, exerciseId: string): SetEntry[] {
@@ -731,18 +818,28 @@ export function groupDailySets(sets: DailySetView[]): GroupedDailySetView[] {
 
 export function deleteAllLoggedSets(state: AppState): AppState {
   if (!state.sets.length) return state;
-  return { ...state, sets: [] };
+  const deletedSets = state.sets.map((set) => markSyncDeleted(set));
+  let nextState: AppState = { ...state, sets: [] };
+  nextState = queueManyAppSyncDeletes(nextState, 'set', deletedSets);
+  return nextState;
 }
 
 export function deleteAllCustomExercises(state: AppState): AppState {
-  const customExerciseIds = new Set(
-    state.exercises.filter((ex) => ex.isCustom !== false).map((ex) => ex.id)
-  );
+  const customExercises = state.exercises.filter((exercise) => exercise.isCustom !== false);
+  const customExerciseIds = new Set(customExercises.map((exercise) => exercise.id));
   if (customExerciseIds.size === 0) return state;
 
-  return {
+  const deletedExercises = customExercises.map((exercise) => markSyncDeleted(exercise));
+  const deletedSets = state.sets
+    .filter((set) => customExerciseIds.has(set.exerciseId))
+    .map((set) => markSyncDeleted(set));
+
+  let nextState: AppState = {
     ...state,
     exercises: state.exercises.filter((ex) => !customExerciseIds.has(ex.id)),
     sets: state.sets.filter((s) => !customExerciseIds.has(s.exerciseId)),
   };
+  nextState = queueManyAppSyncDeletes(nextState, 'exercise', deletedExercises);
+  nextState = queueManyAppSyncDeletes(nextState, 'set', deletedSets);
+  return nextState;
 }

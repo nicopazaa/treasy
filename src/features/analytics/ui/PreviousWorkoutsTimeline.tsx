@@ -25,6 +25,7 @@ type Props = {
   renderExpandedContent?: (dateKey: string) => React.ReactNode;
   titleColor?: string;
   lineOpacity?: number;
+  expandedRowBackgroundColor?: string;
 };
 
 function localeForLanguage(language: AppLanguage): string {
@@ -79,6 +80,7 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
   renderExpandedContent,
   titleColor,
   lineOpacity = 1,
+  expandedRowBackgroundColor,
 }) => {
   const heroRows = scrollY ? Math.max(0, Math.floor(heroTopCount)) : 0;
   const safeLineOpacity = Number.isFinite(lineOpacity) ? Math.max(0, Math.min(1, lineOpacity)) : 1;
@@ -164,7 +166,14 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
             return (
               <AnimatedTouchableOpacity
                 key={item.dateKey}
-                style={[styles.row, styles.rowDefaultSpacing, heroRowStyle, isExpanded ? styles.rowExpanded : null]}
+                style={[
+                  styles.row,
+                  styles.rowDefaultSpacing,
+                  heroRowStyle,
+                  isExpanded
+                    ? [styles.rowExpanded, expandedRowBackgroundColor ? { backgroundColor: expandedRowBackgroundColor } : null]
+                    : null,
+                ]}
                 onPress={() => onPressDay?.(item.dateKey)}
                 activeOpacity={onPressDay ? 0.85 : 1}
                 hitSlop={8}

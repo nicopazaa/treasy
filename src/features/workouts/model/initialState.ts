@@ -1,6 +1,8 @@
 import type { AppLanguage, AuthProvider } from '../../../shared/types';
 import type { AppState, TrainingBlock } from '../../../domain/workouts/types';
 import { now } from '../../../shared/time';
+import { createStableId } from '../../../shared/utils/id';
+import { createEmptySyncState } from '../../../shared/utils/syncQueue';
 
 // Standard muskelgrupper som alltid skal finnes
 export const DEFAULT_BLOCKS: TrainingBlock[] = [
@@ -15,7 +17,7 @@ export const DEFAULT_BLOCKS: TrainingBlock[] = [
 ];
 
 export function generateUserId(): string {
-  return `user_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
+  return createStableId('user', now());
 }
 
 export function guessDeviceLanguage(): AppLanguage {
@@ -67,5 +69,6 @@ export function createInitialState(options?: {
     activeWorkout: null,
     logs: [],
     notes: [],
+    sync: createEmptySyncState(),
   };
 }

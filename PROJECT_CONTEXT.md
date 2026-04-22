@@ -1,6 +1,6 @@
 # Treasy - PROJECT_CONTEXT
 
-Last updated: 2026-02-10 05:30:14 +01:00 (branch `main`, commit `2a5ebee0`)
+Last updated: 2026-04-23 15:05:00 +02:00 (branch `main`, commit `2a5ebee0`)
 
 Scope: this document describes the codebase as it exists now. For run-specific snapshot details (working tree + verification), see `docs/AI_HANDOFF.md`.
 
@@ -27,17 +27,33 @@ Treasy is a local-first workout logging app built with Expo + React Native for m
 ## App state and persistence
 Source of truth type: `src/domain/workouts/types.ts` (`AppState`).
 
-Primary AsyncStorage key:
-- `treasy_app_state_v2` via `src/features/workouts/data/storage.ts`.
+Primary AsyncStorage keys (entity-oriented):
+- `treasy_app_meta_v1`
+- `treasy_app_blocks_v1`
+- `treasy_app_exercises_v1`
+- `treasy_app_sets_v1`
+- `treasy_app_cardio_entries_v1`
+- `treasy_app_logs_v1`
+- `treasy_app_notes_v1`
+- `treasy_app_sync_v1`
+via `src/features/workouts/data/storage.ts`.
+
+Legacy migration fallback:
+- `treasy_app_state_v2` is read for backward compatibility when the entity-oriented keys are missing.
 
 Additional AsyncStorage keys:
 - Notes repository: `treasy_notes_v1` (`src/features/notes/data/notesRepository.ts`).
 - AI chat history: `treasy_ai_chat_v1` (`src/screens/AIScreen.tsx`).
 - Profile local backup snapshot: `treasy_backup_export` (`src/screens/ProfileScreen.tsx`).
 
+Entity readiness note:
+- Workout and note entities now include backend-ready sync metadata defaults (`clientId`, `updatedAt`, `version`, `syncStatus`, `deletedAt`) through creation + normalization paths.
+- Mutation paths now emit deterministic sync outbox events and tombstones in `AppState.sync`.
+
 `AppState` currently includes:
 - Identity/settings: `userId`, `onboarded`, `authProvider`, `userEmail`, `nickname`, `heightCm`, `weightKg`, `theme`, `language`, `massUnit`.
 - Training data: `blocks`, `exercises`, `sets`, `cardioEntries`, `activeWorkout`, `logs`, `notes`.
+- Sync state: `sync` (`outbox`, `tombstones`).
 
 Note: notes are now persisted in a dedicated notes repository key. `AppState.notes` remains for legacy migration/compatibility handling.
 Theme note: Home persists `darkBlue` / `calmLight`; legacy `dark` / `light` values are normalized on load.
@@ -92,6 +108,8 @@ From `package.json`:
 - `npm start`, `npm run android`, `npm run ios`, `npm run web`.
 - `npm run build:web` (export + postexport patch).
 - `npm run typecheck`.
+- `npm run verify:architecture`.
+- `npm run verify`.
 
 No `lint` or `test` scripts currently exist.
 
@@ -100,6 +118,7 @@ No `lint` or `test` scripts currently exist.
 - `src/domain/parsing/applyParsedChunks.ts` exists but is currently unreferenced.
 - `src/screens/ExerciseScreen.tsx` exists but is currently not routed from `App.tsx`.
 - No formal migration framework; normalization/migration is handled ad hoc in storage/action layers.
+- No remote sync transport/ACK worker is implemented yet; outbox/tombstones are local-only foundations.
 
 ## UNKNOWNs
 - External roadmap/issue tracker source of truth is UNKNOWN.

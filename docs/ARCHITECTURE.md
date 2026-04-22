@@ -34,7 +34,16 @@ Store lifecycle:
   - `flushPending` on app background/unload.
 
 Storage keys:
-- App state: `treasy_app_state_v2`.
+- App state (entity-oriented):
+  - `treasy_app_meta_v1`
+  - `treasy_app_blocks_v1`
+  - `treasy_app_exercises_v1`
+  - `treasy_app_sets_v1`
+  - `treasy_app_cardio_entries_v1`
+  - `treasy_app_logs_v1`
+  - `treasy_app_notes_v1` (legacy-compatible `AppState.notes`)
+  - `treasy_app_sync_v1` (`outbox` + `tombstones`)
+- Legacy fallback read key: `treasy_app_state_v2` (read-only migration fallback).
 - Notes repo: `treasy_notes_v1`.
 - AI chat cache: `treasy_ai_chat_v1`.
 - Backup snapshot: `treasy_backup_export`.
@@ -54,6 +63,7 @@ Workouts:
 - Types: `src/domain/workouts/types.ts`.
 - Mutations/queries: `src/domain/workouts/workoutService.ts`.
 - Name normalization: `src/domain/workouts/nameNormalize.ts`.
+- Sync queue helpers: `src/domain/workouts/syncState.ts` + `src/shared/utils/syncQueue.ts`.
 
 Parsing:
 - Parse text to chunks: `src/domain/parsing/parsePipeline.ts`.
@@ -84,12 +94,14 @@ Analytics:
 ## Notes architecture
 - Dedicated notes repository in `src/features/notes/data/notesRepository.ts`.
 - Sources tagged: `home_notes`, `quicklog`, `other`.
+- Notes entities are normalized with backend-ready sync metadata defaults (`clientId`, `updatedAt`, `version`, `syncStatus`, `deletedAt`).
+- Notes storage is an envelope (`notes` + `sync`) in the same key, with backward-compatible read from legacy array payloads.
 - `NotertScreen` reads from repository; home card writes via `handleAddNote`.
 - Startup migration (`buildNotesMigration`) lifts legacy note-like logs/notes into repository.
 
 ## Auth and network boundary
 - GitHub OAuth web flow in `useAppActions` (client side).
-- Token exchange and user lookup in Netlify function `netlify/functions/github-oauth.js`.
+- Token exchange and user lookup in Netlify function `netlify/functions/github-oauth.js` with timeout + status-checked fetches.
 - No remote workout sync path in current repository.
 
 ## Cross-cutting concerns
@@ -97,6 +109,8 @@ Analytics:
 - Theme tokens: `src/shared/theme/tokens.ts` (base) + `src/shared/theme/themes.ts` (persisted `darkBlue`/`calmLight` Home theme semantics).
 - Global typography patching of `Text` and `TextInput`: `src/shared/theme/typography.ts`.
 - Error boundary wrapper: `src/app/ErrorBoundary.tsx`.
+- Architecture guard script + CI gate: `scripts/verify-architecture.js` and `.github/workflows/ci.yml`.
+  - Guardrails include no direct legacy blob writes and required tombstone wiring in workout mutations.
 
 ## Verified technical debt
 - No lint script and no test script in `package.json`.
@@ -107,4 +121,5 @@ Analytics:
 - AppState is treated as immutable.
 - Domain/state update helpers return new objects/arrays.
 - Persistence normalization is defensive for missing/legacy fields.
+- Deletes are hard-removed from active collections but recorded as sync tombstones with deterministic outbox delete events.
 - Parsing path is deterministic and side-effect free in domain layer.

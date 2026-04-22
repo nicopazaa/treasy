@@ -18,6 +18,7 @@ import { SPACING, TEXT, RADIUS, SCREEN_PADDING } from '../shared/theme/tokens';
 import { t } from '../shared/i18n/i18n';
 import { now } from '../shared/time';
 import { getWorkoutDates } from '../features/workouts';
+import { createStableId } from '../shared/utils/id';
 
 interface Props {
   appState: AppState;
@@ -34,7 +35,7 @@ type ChatMessage = {
 };
 
 function makeId(prefix: string): string {
-  return `${prefix}-${now()}-${Math.random().toString(16).slice(2)}`;
+  return createStableId(prefix, now());
 }
 
 const STORAGE_KEY = 'treasy_ai_chat_v1';

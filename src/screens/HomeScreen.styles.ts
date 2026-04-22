@@ -568,6 +568,10 @@ const styles = StyleSheet.create({
     borderColor: HOME_SCREEN_STYLE_COLORS.success,
     backgroundColor: HOME_SCREEN_STYLE_RGBA.liveSuccessSoft,
   },
+  todayLiveBadgeFinished: {
+    borderColor: HOME_SCREEN_STYLE_COLORS.success,
+    backgroundColor: HOME_SCREEN_STYLE_RGBA.liveSuccessSoft,
+  },
   todayLiveBadgeIdle: {
     borderColor: HOME_SCREEN_STYLE_COLORS.neutralStrong,
     backgroundColor: HOME_SCREEN_STYLE_RGBA.progressFillMuted,
@@ -578,6 +582,12 @@ const styles = StyleSheet.create({
     lineHeight: TREASY_TYPE_SCALE.t6.lineHeight,
     fontWeight: '600',
     letterSpacing: 0.4,
+  },
+  todayLiveBadgeDoneIcon: {
+    color: HOME_SCREEN_STYLE_COLORS.success,
+    fontSize: TREASY_TYPE_SCALE.t5.size,
+    lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
+    fontWeight: '700',
   },
   analysisAlignWrap: {
     flexDirection: 'column',
@@ -799,9 +809,6 @@ const styles = StyleSheet.create({
     textShadowColor: HOME_SCREEN_STYLE_RGBA.titleShadowLight,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
-  },
-  todayWorkoutMetricCheckmark: {
-    color: HOME_SCREEN_STYLE_COLORS.success,
   },
   todayWorkoutSecondaryText: {
     marginTop: 3,
@@ -1059,6 +1066,11 @@ const styles = StyleSheet.create({
   previousWorkoutExerciseMetricsCompact: {
     fontSize: TREASY_TYPE_SCALE.t6.size - 2,
     lineHeight: TREASY_TYPE_SCALE.t6.lineHeight - 2,
+  },
+  previousWorkoutExerciseMetricNumberCompact: {
+    fontSize: TREASY_TYPE_SCALE.t5.size,
+    lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
+    fontWeight: '700',
   },
   previousWorkoutExerciseMetricUnitCompact: {
     fontSize: TREASY_TYPE_SCALE.t5.size - 1,
@@ -1444,7 +1456,7 @@ const styles = StyleSheet.create({
   notesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     gap: SPACING.xs,
     minHeight: 22,
   },
@@ -1461,8 +1473,7 @@ const styles = StyleSheet.create({
     fontSize: TREASY_TYPE_SCALE.t2.size,
     lineHeight: TREASY_TYPE_SCALE.t2.lineHeight,
     fontWeight: '600',
-    textAlign: 'left',
-    flex: 1,
+    textAlign: 'center',
   },
   notesInputSurface: {
     borderRadius: RADIUS.md,

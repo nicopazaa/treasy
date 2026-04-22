@@ -136,6 +136,7 @@ const PREVIOUS_WORKOUT_CARD_STYLES = {
   lastWorkoutExampleBlock: styles.lastWorkoutExampleBlock,
   lastWorkoutExampleName: styles.lastWorkoutExampleName,
   lastWorkoutExampleDetail: styles.lastWorkoutExampleDetail,
+  previousWorkoutExerciseMetricNumberCompact: styles.previousWorkoutExerciseMetricNumberCompact,
   lastWorkoutLink: styles.lastWorkoutLink,
 };
 
@@ -1773,6 +1774,7 @@ export const HomeScreen: React.FC<Props> = ({
         expanded={false}
         exampleAnim={lastExampleAnim}
         openLogLabel={lastWorkoutOpenLogLabel}
+        repsLabel={t(language, 'repmax.reps')}
         openLogAction="button"
         onOpenHistory={onOpenHistory}
         useFluidChipLayout={useFluidPreviousWorkoutChips}
@@ -1781,8 +1783,7 @@ export const HomeScreen: React.FC<Props> = ({
   );
 
   const hasNoteText = noteText.trim().length > 0;
-  const noteDraftCount = hasNoteText ? noteText.trim().length : 0;
-  const notertTitle = language === 'nb' ? 'Notert' : language === 'es' ? 'Notas' : 'Notes';
+  const notertTitle = t(language, 'home.notes.previewTitle');
   const notertEmpty = t(language, 'home.notes.empty');
   const recentNoteLines = useMemo(
     () => recentNotes.map((note) => note.text.trim()).filter((text) => text.length > 0),
@@ -1864,12 +1865,7 @@ export const HomeScreen: React.FC<Props> = ({
   const notesCard = (
     <View style={[styles.notesCard, themeSurfaceStyle, notesCardFillStyle]}>
       <View style={styles.notesHeaderRow}>
-        <Text style={[styles.notesTitle, themeTextStyle]}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
-        <View style={styles.notesHeaderAffordance}>
-          <View style={[styles.notertCountChip, { borderColor: themeTokens.stroke, backgroundColor: themeTokens.chip }]}>
-            <Text style={[styles.notertCountText, themeTextMutedStyle]}>{noteDraftCount}</Text>
-          </View>
-        </View>
+        <Text style={[styles.notesTitle, themeTextStyle]}>{t(language, 'home.notes.title')}</Text>
       </View>
       <View
         style={[
@@ -2061,6 +2057,7 @@ export const HomeScreen: React.FC<Props> = ({
                 expanded
                 exampleAnim={lastExampleAnim}
                 openLogLabel={lastWorkoutOpenLogLabel}
+                repsLabel={t(language, 'repmax.reps')}
                 openLogAction="text"
                 useFluidChipLayout={useFluidPreviousWorkoutChips}
               />
@@ -2362,13 +2359,17 @@ export const HomeScreen: React.FC<Props> = ({
                           <View
                             style={[
                               styles.todayLiveBadge,
-                              todayWorkout.sessionIsActive
+                              todayWorkoutLifecycleState === 'active'
                                 ? styles.todayLiveBadgeActive
-                                : [styles.todayLiveBadgeIdle, themeChipStyle],
+                                : todayWorkoutLifecycleState === 'finished'
+                                  ? styles.todayLiveBadgeFinished
+                                  : [styles.todayLiveBadgeIdle, themeChipStyle],
                             ]}
                           >
-                            {todayWorkout.sessionIsActive ? (
+                            {todayWorkoutLifecycleState === 'active' ? (
                               <Text style={styles.todayLiveBadgeText}>{t(language, 'home.todayWorkout.live')}</Text>
+                            ) : todayWorkoutLifecycleState === 'finished' ? (
+                              <Text style={styles.todayLiveBadgeDoneIcon}>{'\u2713'}</Text>
                             ) : null}
                           </View>
                         </View>
@@ -2383,9 +2384,6 @@ export const HomeScreen: React.FC<Props> = ({
                           ellipsizeMode="tail"
                         >
                           {todayPrimaryMetric}
-                          {todayWorkoutLifecycleState === 'finished' ? (
-                            <Text style={styles.todayWorkoutMetricCheckmark}>{' \u2713'}</Text>
-                          ) : null}
                         </Text>
                         <Text style={[styles.todayWorkoutSecondaryText, themeTextMutedStyle]} numberOfLines={1} ellipsizeMode="tail">
                           {todaySecondaryText}
@@ -2486,9 +2484,6 @@ export const HomeScreen: React.FC<Props> = ({
                         <View style={styles.notertHeaderRow}>
                           <Text style={[styles.notertHeaderText, themeAccentTextStyle]}>{notertTitle}</Text>
                           <View style={styles.notesHeaderAffordance}>
-                            <View style={[styles.notertCountChip, { borderColor: themeTokens.stroke, backgroundColor: themeTokens.chip }]}>
-                              <Text style={[styles.notertCountText, themeTextMutedStyle]}>{totalRecentNotesCount}</Text>
-                            </View>
                             <Text style={[styles.notesHeaderChevron, themeAccentTextStyle]}>{NAV_CHEVRON}</Text>
                           </View>
                         </View>

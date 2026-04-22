@@ -39,6 +39,7 @@ type PreviousWorkoutCardStyles = {
   lastWorkoutExampleName: StyleProp<TextStyle>;
   lastWorkoutExampleDetail: StyleProp<TextStyle>;
   lastWorkoutLink: StyleProp<TextStyle>;
+  previousWorkoutExerciseMetricNumberCompact: StyleProp<TextStyle>;
 };
 
 export type PreviousWorkoutMuscleChip = {
@@ -92,6 +93,7 @@ export type PreviousWorkoutCardProps = {
   expanded: boolean;
   exampleAnim: Animated.Value;
   openLogLabel: string;
+  repsLabel: string;
   openLogAction: 'button' | 'text' | 'none';
   onOpenHistory?: () => void;
   useFluidChipLayout?: boolean;
@@ -117,6 +119,7 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
     expanded,
     exampleAnim,
     openLogLabel,
+    repsLabel,
     openLogAction,
     onOpenHistory,
     useFluidChipLayout = false,
@@ -125,6 +128,7 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
   const compactTotalVolumeUnitStyle = wrapInCard ? homeScreenStyles.previousWorkoutTotalVolumeUnitCompact : null;
   const compactExerciseNameStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseNameCompact : null;
   const compactExerciseMetricsStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseMetricsCompact : null;
+  const compactExerciseMetricNumberStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseMetricNumberCompact : null;
   const compactExerciseMetricUnitStyle = wrapInCard ? homeScreenStyles.previousWorkoutExerciseMetricUnitCompact : null;
   const fluidChipLayoutEnabled = wrapInCard && useFluidChipLayout;
   const twoColumnChipStyle = wrapInCard && !fluidChipLayoutEnabled ? styles.previousWorkoutChipTwoColumn : null;
@@ -192,17 +196,33 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle, compactExerciseMetricsStyle]}>
+          <Text
+            style={[
+              styles.lastWorkoutMetricNumber,
+              themeTextStyle,
+              compactExerciseMetricsStyle,
+              compactExerciseMetricNumberStyle,
+            ]}
+          >
             {display.parsedSetLine.weight}
           </Text>
           <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle, compactExerciseMetricUnitStyle]}>
             {` ${display.parsedSetLine.unitLabel}`}
           </Text>
           <Text style={[styles.lastWorkoutMetricSeparator, themeTextStyle, compactExerciseMetricsStyle]}> x </Text>
-          <Text style={[styles.lastWorkoutMetricNumber, themeTextStyle, compactExerciseMetricsStyle]}>
+          <Text
+            style={[
+              styles.lastWorkoutMetricNumber,
+              themeTextStyle,
+              compactExerciseMetricsStyle,
+              compactExerciseMetricNumberStyle,
+            ]}
+          >
             {display.parsedSetLine.reps}
           </Text>
-          <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle, compactExerciseMetricUnitStyle]}> reps</Text>
+          <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle, compactExerciseMetricUnitStyle]}>
+            {` ${repsLabel}`}
+          </Text>
         </Text>
       );
     };

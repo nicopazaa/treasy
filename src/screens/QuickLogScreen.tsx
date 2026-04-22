@@ -515,11 +515,7 @@ export const QuickLogScreen: React.FC<Props> = ({
   const muscleGroupSection = (
     <View style={styles.chipsCard}>
       <Text style={styles.sectionLabel}>{t(language, 'muscleGroups')}</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-      >
+      <View style={styles.chipRow}>
         {blockChips.map((block) => {
           const tone = getBlockTone(block.id);
           const selected = block.id === selectedBlockId;
@@ -536,6 +532,12 @@ export const QuickLogScreen: React.FC<Props> = ({
                 },
               ]}
               onPress={() => {
+                if (selected) {
+                  setSelectedBlockId(null);
+                  setSelectedExerciseId(null);
+                  setIsExerciseOpen(false);
+                  return;
+                }
                 setSelectedBlockId(block.id);
                 setSelectedExerciseId(null);
                 setIsExerciseOpen(true);
@@ -547,7 +549,7 @@ export const QuickLogScreen: React.FC<Props> = ({
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 
@@ -559,12 +561,6 @@ export const QuickLogScreen: React.FC<Props> = ({
         activeOpacity={selectedBlockId ? 0.8 : 1}
       >
         <Text style={styles.selectLabel}>{t(language, 'exercises')}</Text>
-        <View style={styles.selectHeaderRight}>
-          <Text style={styles.selectHint}>{t(language, 'enterExerciseName')}</Text>
-          <Text style={styles.selectStatus} numberOfLines={1} ellipsizeMode="tail">
-            {selectedExercise ? formatExerciseLabel(selectedExercise) : 'Søk'}
-          </Text>
-        </View>
         <Text style={[styles.chevron, !selectedBlockId && styles.chevronDisabled]}>
           {isExerciseOpen ? 'v' : '>'}
         </Text>
@@ -632,7 +628,6 @@ export const QuickLogScreen: React.FC<Props> = ({
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.guidedCard}>
-            {quickLogInputSection}
             {muscleGroupSection}
             {selectedBlockId ? exerciseSection : null}
 
@@ -666,6 +661,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                 ) : null}
               </View>
             ) : null}
+            {quickLogInputSection}
           </View>
 
         {suggestionItems.length > 0 && (
@@ -1017,7 +1013,7 @@ const createStyles = (palette: QuickLogPalette) =>
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.cardBorder,
-    padding: SPACING.lg,
+    padding: SPACING.md,
     ...Platform.select({
       web: { boxShadow: palette.webShadow },
       default: {
@@ -1029,11 +1025,11 @@ const createStyles = (palette: QuickLogPalette) =>
     }),
   },
   input: {
-    minHeight: 168,
+    minHeight: 124,
     borderRadius: RADIUS.md,
     borderWidth: 0,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     color: palette.inputText,
     fontSize: TEXT.lg,
     fontWeight: '600',
@@ -1059,11 +1055,11 @@ const createStyles = (palette: QuickLogPalette) =>
     fontSize: TEXT.sm,
   },
   actionBar: {
-    marginTop: SPACING.md,
+    marginTop: SPACING.xs,
   },
   primaryActionButton: {
     backgroundColor: palette.primaryActionBg,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.md,
     alignItems: 'center',
@@ -1167,7 +1163,7 @@ const createStyles = (palette: QuickLogPalette) =>
     position: 'relative',
   },
   inputMeta: {
-    marginTop: SPACING.sm,
+    marginTop: SPACING.xs,
     gap: SPACING.xs,
   },
   parsePreviewText: {
@@ -1207,6 +1203,8 @@ const createStyles = (palette: QuickLogPalette) =>
     fontWeight: '700',
   },
   chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.xs,
     gap: SPACING.sm,
@@ -1214,11 +1212,14 @@ const createStyles = (palette: QuickLogPalette) =>
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
+    flexBasis: '48%',
+    maxWidth: '48%',
   },
   chipDot: {
     width: 8,
@@ -1237,10 +1238,6 @@ const createStyles = (palette: QuickLogPalette) =>
     paddingVertical: SPACING.md,
     gap: SPACING.sm,
   },
-  selectHeaderRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
   selectLabel: {
     color: palette.textBase,
     fontSize: TEXT.sm,
@@ -1252,20 +1249,11 @@ const createStyles = (palette: QuickLogPalette) =>
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
-  selectHint: {
-    color: palette.chevron,
-    fontSize: TEXT.xs,
-  },
-  selectStatus: {
-    color: palette.chevron,
-    fontSize: TEXT.sm,
-    maxWidth: 180,
-    textAlign: 'right',
-  },
   chevron: {
     fontSize: TEXT.md,
     color: palette.chevron,
     fontWeight: '700',
+    marginLeft: 'auto',
   },
   chevronDisabled: {
     color: palette.chevronDisabled,

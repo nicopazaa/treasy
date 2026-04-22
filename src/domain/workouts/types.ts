@@ -1,4 +1,4 @@
-import type { AppLanguage, AuthProvider, ThemeMode } from '../../shared/types';
+import type { AppLanguage, AuthProvider, ThemeMode, SyncState, SyncStatus } from '../../shared/types';
 export type { AppLanguage } from '../../shared/types';
 
 export type TrainingBlockId =
@@ -13,8 +13,13 @@ export type TrainingBlockId =
 
 export interface LogEntry {
   id: string;
+  clientId?: string;
   text: string;
   createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+  deletedAt?: string | null; // ISO string
+  syncStatus?: SyncStatus;
+  version?: number;
   pinned?: boolean;
 }
 
@@ -22,8 +27,13 @@ export type NoteSource = 'home_notes' | 'quicklog' | 'other';
 
 export interface NoteEntry {
   id: string;
+  clientId?: string;
   text: string;
   createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+  deletedAt?: string | null; // ISO string
+  syncStatus?: SyncStatus;
+  version?: number;
   source: NoteSource;
 }
 
@@ -34,8 +44,13 @@ export interface TrainingBlock {
 
 export interface Exercise {
   id: string;
+  clientId?: string;
   blockId: string;
   name: string;
+  updatedAt?: string; // ISO string
+  deletedAt?: string | null; // ISO string
+  syncStatus?: SyncStatus;
+  version?: number;
   shortCode?: string | null;
   tags?: string[];
   isCustom?: boolean;
@@ -52,10 +67,15 @@ export interface ExerciseMetadataInput {
 
 export interface SetEntry {
   id: string;
+  clientId?: string;
   exerciseId: string;
   weight: number;
   reps: number;
   createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+  deletedAt?: string | null; // ISO string
+  syncStatus?: SyncStatus;
+  version?: number;
   isBodyweight?: boolean;
   distanceKm?: number | null;
   durationMin?: number | null;
@@ -65,6 +85,7 @@ export interface SetEntry {
 
 export interface CardioEntry {
   id: string;
+  clientId?: string;
   exerciseId: string;
   distanceKm: number | null;
   durationMin: number | null;
@@ -73,6 +94,10 @@ export interface CardioEntry {
   note?: string | null;
   silentMode?: boolean | null;
   createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+  deletedAt?: string | null; // ISO string
+  syncStatus?: SyncStatus;
+  version?: number;
 }
 
 export interface ActiveWorkoutSession {
@@ -108,4 +133,5 @@ export interface AppState {
   activeWorkout?: ActiveWorkoutSession | null;
   logs?: LogEntry[];
   notes?: NoteEntry[];
+  sync?: SyncState;
 }

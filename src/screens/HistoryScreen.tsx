@@ -12,6 +12,7 @@ import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorko
 import { listNotes } from '../features/notes';
 import type { NoteEntry } from '../domain/workouts/types';
 import { formatWeight, type MassUnit } from '../shared/utils/units';
+import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
 
 type Props = {
   appState: AppState;
@@ -44,13 +45,17 @@ const KNOWN_BLOCK_IDS: TrainingBlockId[] = [
   'bodyweight',
 ];
 
-const TIMELINE_THEME = {
-  surface: '#020617',
-  stroke: '#1F2937',
-  accent: '#60A5FA',
-  textMuted: '#94A3B8',
-  text: '#E2E8F0',
-} as const;
+function toRgba(color: string, alpha: number): string {
+  const safeAlpha = Math.max(0, Math.min(1, alpha));
+  const hex = color.replace('#', '').trim();
+  const normalized = hex.length === 3 ? hex.split('').map((part) => `${part}${part}`).join('') : hex.padEnd(6, '0').slice(0, 6);
+  const int = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(int)) return `rgba(0,0,0,${safeAlpha})`;
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  return `rgba(${r},${g},${b},${safeAlpha})`;
+}
 
 function isKnownBlockId(value?: string): value is TrainingBlockId {
   return Boolean(value && KNOWN_BLOCK_IDS.includes(value as TrainingBlockId));
@@ -102,21 +107,23 @@ function formatSetLine(
   set: GroupSet,
   index: number
 ): string {
+  const locale = language ?? 'en';
   const setType = inferSetType(set);
 
   if (setType === 'cardio') {
     const cardioParts: string[] = [];
     if (set.distanceKm != null) cardioParts.push(`${set.distanceKm} km`);
     if (set.durationMin != null) cardioParts.push(`${set.durationMin} min`);
-    if (set.pauseSec != null) cardioParts.push(`${t(language ?? 'en', 'pauseShort')} ${set.pauseSec}s`);
+    if (set.pauseSec != null) cardioParts.push(`${t(locale, 'pauseShort')} ${set.pauseSec}s`);
     if (cardioParts.length === 0) cardioParts.push(`${set.weight ?? 0}`);
     return `${index}) ${cardioParts.join(' / ')}`;
   }
 
   const isBodyweight = setType === 'bodyweight' || set.isBodyweight === true || set.weight === 0;
   const reps = Number.isFinite(set.reps) && set.reps > 0 ? Math.round(set.reps) : 0;
-  const weightPart = isBodyweight ? 'BW' : formatWeight(set.weight ?? 0, massUnit, language ?? 'en');
-  return `${index}) ${weightPart} x ${reps} reps`;
+  const repsLabel = t(locale, 'repmax.reps');
+  const weightPart = isBodyweight ? 'BW' : formatWeight(set.weight ?? 0, massUnit, locale);
+  return `${index}) ${weightPart} x ${reps} ${repsLabel}`;
 }
 
 function toTimelineNotesByDate(notes: NoteEntry[]): Record<string, string> {
@@ -137,6 +144,24 @@ function toTimelineNotesByDate(notes: NoteEntry[]): Record<string, string> {
 const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpandedDateKey: _initialExpandedDateKey }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
+  const setsLabel = t(language, 'setsLabel');
+  const unknownLabel = t(language, 'common.unknown');
+  const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const styles = useMemo(() => createStyles(themeTokens), [themeTokens]);
+  const timelineTheme = useMemo(
+    () => ({
+      surface: themeTokens.bg,
+      stroke: themeTokens.stroke,
+      accent: themeTokens.accent,
+      textMuted: themeTokens.textMuted,
+      text: themeTokens.text,
+    }),
+    [themeTokens.accent, themeTokens.bg, themeTokens.stroke, themeTokens.text, themeTokens.textMuted]
+  );
+  const timelineExpandedRowBackgroundColor = useMemo(
+    () => toRgba(themeTokens.accent, themeTokens.id === 'calmLight' ? 0.08 : 0.14),
+    [themeTokens.accent, themeTokens.id]
+  );
   const isMountedRef = useRef(true);
   const scrollY = useRef(new Animated.Value(0)).current;
   const [allNotes, setAllNotes] = useState<NoteEntry[]>([]);
@@ -249,9 +274,9 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                 <TouchableOpacity style={styles.blockHeaderRow} onPress={() => toggleBlockExpanded(blockKey)} activeOpacity={0.85}>
                   <View style={styles.blockHeaderLeft}>
                     <View style={[styles.blockDot, { backgroundColor: blockColor }]} />
-                    <Text style={styles.blockLabel}>{blockTitle || 'Unknown'}</Text>
+                    <Text style={styles.blockLabel}>{blockTitle || unknownLabel}</Text>
                   </View>
-                  <Text style={styles.blockSummary}>{`Sett: ${blockSetCount} ${blockIsExpanded ? 'v' : '>'}`}</Text>
+                  <Text style={styles.blockSummary}>{`${setsLabel}: ${blockSetCount} ${blockIsExpanded ? 'v' : '>'}`}</Text>
                 </TouchableOpacity>
 
                 {blockIsExpanded ? (
@@ -272,7 +297,7 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                               <View style={[styles.exerciseDot, { backgroundColor: exerciseColor }]} />
                               <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
                             </View>
-                            <Text style={styles.exerciseSummary}>{`Sett: ${group.sets.length} ${exerciseIsExpanded ? 'v' : '>'}`}</Text>
+                            <Text style={styles.exerciseSummary}>{`${setsLabel}: ${group.sets.length} ${exerciseIsExpanded ? 'v' : '>'}`}</Text>
                           </TouchableOpacity>
 
                           {exerciseIsExpanded ? (
@@ -295,7 +320,7 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
         </View>
       );
     },
-    [expandedBlocks, expandedExercises, groupsByDate, language, massUnit, toggleBlockExpanded, toggleExerciseExpanded]
+    [expandedBlocks, expandedExercises, groupsByDate, language, massUnit, setsLabel, toggleBlockExpanded, toggleExerciseExpanded, unknownLabel]
   );
 
   return (
@@ -325,8 +350,9 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
           resolveBlockColor={getDotColor}
           notesByDate={timelineNotesByDate}
           onPressDay={toggleDayExpanded}
-          theme={TIMELINE_THEME}
-          titleColor="#F8FAFC"
+          theme={timelineTheme}
+          titleColor={themeTokens.text}
+          expandedRowBackgroundColor={timelineExpandedRowBackgroundColor}
           lineOpacity={0.72}
           borderless
           scrollY={scrollY}
@@ -351,130 +377,133 @@ export const HistoryScreen: React.FC<Props> = (props) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#020617',
-    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
-    ...Platform.select({
-      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-    }),
-  },
-  content: {
-    paddingHorizontal: SCREEN_PADDING,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    marginRight: SPACING.lg,
-  },
-  backText: {
-    color: '#60A5FA',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: SPACING.xxxl,
-  },
-  expandedSection: {
-    marginTop: SPACING.sm,
-    gap: SPACING.sm,
-  },
-  blockGroup: {
-    paddingBottom: SPACING.xs,
-  },
-  blockHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    minHeight: 32,
-    paddingVertical: 2,
-  },
-  blockHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    flex: 1,
-    minWidth: 0,
-  },
-  blockDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-  },
-  blockLabel: {
-    color: '#E2E8F0',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-  },
-  blockSummary: {
-    color: 'rgba(148, 163, 184, 0.85)',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  blockExercises: {
-    marginTop: SPACING.xs,
-    gap: SPACING.xs,
-    paddingLeft: SPACING.md,
-  },
-  exerciseRowWrap: {
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.18)',
-    backgroundColor: 'rgba(15, 23, 42, 0.28)',
-    borderRadius: 8,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-  },
-  exerciseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    minHeight: 30,
-  },
-  exerciseHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    flex: 1,
-    minWidth: 0,
-  },
-  exerciseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-  },
-  exerciseName: {
-    color: '#F8FAFC',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-    letterSpacing: 0.1,
-    flexShrink: 1,
-  },
-  exerciseSummary: {
-    color: '#A9B7CA',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  setList: {
-    marginTop: SPACING.xs,
-    gap: 1,
-    paddingLeft: SPACING.sm,
-  },
-  groupDetail: {
-    color: 'rgba(226, 232, 240, 0.76)',
-    fontSize: TEXT.xs + 1,
-    fontWeight: '600',
-    lineHeight: TEXT.xs + 7,
-  },
-});
+function createStyles(themeTokens: TreasyThemeTokens) {
+  const isLightTheme = themeTokens.id === 'calmLight';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: themeTokens.bg,
+      paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+      ...Platform.select({
+        web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+      }),
+    },
+    content: {
+      paddingHorizontal: SCREEN_PADDING,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: SPACING.xs,
+    },
+    backButton: {
+      minWidth: 44,
+      minHeight: 44,
+      justifyContent: 'center',
+      marginRight: SPACING.lg,
+    },
+    backText: {
+      color: themeTokens.link,
+      fontSize: TEXT.sm,
+      fontWeight: '600',
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingBottom: SPACING.xxxl,
+    },
+    expandedSection: {
+      marginTop: SPACING.sm,
+      gap: SPACING.sm,
+    },
+    blockGroup: {
+      paddingBottom: SPACING.xs,
+    },
+    blockHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: SPACING.sm,
+      minHeight: 32,
+      paddingVertical: 2,
+    },
+    blockHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      flex: 1,
+      minWidth: 0,
+    },
+    blockDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+    },
+    blockLabel: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+    },
+    blockSummary: {
+      color: toRgba(themeTokens.textMuted, 0.95),
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+    },
+    blockExercises: {
+      marginTop: SPACING.xs,
+      gap: SPACING.xs,
+      paddingLeft: SPACING.md,
+    },
+    exerciseRowWrap: {
+      borderWidth: 1,
+      borderColor: toRgba(themeTokens.stroke, isLightTheme ? 0.86 : 0.36),
+      backgroundColor: toRgba(themeTokens.surfaceAlt, isLightTheme ? 0.82 : 0.26),
+      borderRadius: 8,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: SPACING.xs,
+    },
+    exerciseRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: SPACING.sm,
+      minHeight: 30,
+    },
+    exerciseHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      flex: 1,
+      minWidth: 0,
+    },
+    exerciseDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 999,
+    },
+    exerciseName: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+      letterSpacing: 0.1,
+      flexShrink: 1,
+    },
+    exerciseSummary: {
+      color: themeTokens.textMuted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+    },
+    setList: {
+      marginTop: SPACING.xs,
+      gap: 1,
+      paddingLeft: SPACING.sm,
+    },
+    groupDetail: {
+      color: toRgba(themeTokens.text, isLightTheme ? 0.78 : 0.76),
+      fontSize: TEXT.xs + 1,
+      fontWeight: '600',
+      lineHeight: TEXT.xs + 7,
+    },
+  });
+}

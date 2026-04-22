@@ -25,6 +25,8 @@ import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
 import { normalizeExerciseName } from '../../domain/workouts/nameNormalize';
 import { now } from '../../shared/time';
 import { SYSTEM_EXERCISE_IDS } from '../../shared/systemEntities';
+import { createStableId } from '../../shared/utils/id';
+import { getExpoPublicGithubClientId } from '../../shared/config/env';
 import type { NavState, ScreenName } from '../navigation/types';
 import type { DerivedCache } from '../state/derivedCache';
 import type { AppStatePersister } from '../state/persist';
@@ -33,9 +35,15 @@ function ensureCardioExercise(state: AppState): { next: AppState; id: string } {
   const existing = state.exercises.find((ex) => ex.blockId === SYSTEM_EXERCISE_IDS.CARDIO);
   if (existing) return { next: state, id: existing.id };
 
-  const newId = `cardio_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
+  const createdAt = new Date(now()).toISOString();
+  const newId = createStableId('cardio', now());
   const exercise = {
     id: newId,
+    clientId: newId,
+    updatedAt: createdAt,
+    deletedAt: null,
+    syncStatus: 'local' as const,
+    version: 1,
     blockId: SYSTEM_EXERCISE_IDS.CARDIO,
     name: 'Cardio',
     shortCode: 'CARDIO',
@@ -313,13 +321,13 @@ export function useAppActions(opts: {
       return;
     }
 
-    const clientId = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
+    const clientId = getExpoPublicGithubClientId();
     if (!clientId) {
       setLoginError(t(language, 'githubNotConfigured'));
       return;
     }
 
-    const state = `st_${Math.random().toString(36).slice(2, 10)}_${now().toString(36)}`;
+    const state = createStableId('st', now());
     window.sessionStorage?.setItem('treasy_github_oauth_state', state);
 
     const redirectUri = `${window.location.origin}/auth/github`;

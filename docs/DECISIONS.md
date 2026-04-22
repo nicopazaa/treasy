@@ -173,3 +173,41 @@ Home typography uses a fixed Treasy T0-T6 scale (22/20/18/16/15/14/13) with dark
 - Benefits: Deterministic hierarchy for key Home surfaces (`Dagens økt`, `Forrige økt`, notes/analysis metadata), with reusable text tiers and less per-screen tweaking.
 - Tradeoffs/risks: The current font assets do not include Inter Medium, so T4 "500-like" intent is approximated with semi-bold (600).
 - Follow-ups: Roll the same scale into other screens/components to complete app-wide typography consistency.
+
+---
+
+### DEC-009 - 2026-04-23
+### Status
+Accepted
+
+### Decision (one line)
+The app now uses deterministic sync metadata defaults on local entities and enforces architecture guardrails through CI verification.
+
+### Context
+- Problem: Local-first entities lacked consistent sync metadata, and architecture constraints (env access, random id usage, screen/data coupling) were not enforced automatically.
+- Constraints: Keep current app behavior intact, avoid adding dependencies, and remain compatible with existing persisted payloads.
+- Affected paths: `src/domain/workouts/types.ts`, `src/domain/workouts/workoutService.ts`, `src/features/workouts/data/storage.ts`, `src/features/notes/data/notesRepository.ts`, `src/shared/utils/id.ts`, `src/shared/utils/syncMeta.ts`, `scripts/verify-architecture.js`, `.github/workflows/ci.yml`.
+
+### Consequences
+- Benefits: New/normalized entities now carry backend-ready metadata (`clientId`, `updatedAt`, `version`, `syncStatus`, `deletedAt`) and CI blocks obvious architectural regressions.
+- Tradeoffs/risks: Metadata is foundational only; hard deletes and full-state persistence are still present and need follow-up work for full offline sync semantics.
+- Follow-ups: Introduce explicit outbox + soft-delete sync flow and move persistence from single-blob storage to entity-oriented storage.
+
+---
+
+### DEC-010 - 2026-04-23
+### Status
+Accepted
+
+### Decision (one line)
+Workout and notes mutations now emit deterministic sync outbox events with tombstones, and app-state persistence is split into entity-oriented AsyncStorage keys with legacy blob fallback read.
+
+### Context
+- Problem: Local entity metadata existed, but mutation history and delete intent were still lossy (hard deletes), and state persistence still depended on one large blob key.
+- Constraints: No new dependencies, preserve current UI behavior, keep backward compatibility with already persisted payloads.
+- Affected paths: `src/domain/workouts/workoutService.ts`, `src/domain/workouts/syncState.ts`, `src/shared/utils/syncQueue.ts`, `src/shared/utils/syncMeta.ts`, `src/features/workouts/data/storage.ts`, `src/features/notes/data/notesRepository.ts`, `scripts/verify-architecture.js`.
+
+### Consequences
+- Benefits: Mutations now produce idempotency-safe outbox records; deletes are represented as tombstones; persistence writes are partitioned by entity group instead of a single app-state blob.
+- Tradeoffs/risks: Remote transport/ACK loop is still not implemented, so outbox growth/compaction policy is currently local-only.
+- Follow-ups: Implement sync processor (send/ack/retry), then retire legacy fallback reads when migration confidence is sufficient.
