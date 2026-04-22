@@ -21,6 +21,7 @@ import { QuickLogScreen } from './src/screens/QuickLogScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ManageExercisesScreen } from './src/screens/ManageExercisesScreen';
 import { NotertScreen } from './src/screens/NotertScreen';
+import { LegalScreen } from './src/screens/LegalScreen';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import { useAppActions } from './src/app/actions/useAppActions';
@@ -49,7 +50,7 @@ export default function App() {
   const derivedCache = useDerivedCache(appState);
 
   // Navigation stack + swipe back/forward gesture handling.
-  const { nav, navigate, reset, panHandlers, backSwipeContextValue } = useNavStack<NavState>({
+  const { nav, navigate, back, reset, panHandlers, backSwipeContextValue } = useNavStack<NavState>({
     screen: 'landing',
   });
 
@@ -102,6 +103,9 @@ export default function App() {
   const goToLogin = useCallback(() => navigate('login'), [navigate]);
   const goToSettings = useCallback(() => navigate('settings'), [navigate]);
   const goToManageExercises = useCallback(() => navigate('manageExercises'), [navigate]);
+  const goToPrivacy = useCallback(() => navigate('privacy'), [navigate]);
+  const goToTerms = useCallback(() => navigate('terms'), [navigate]);
+  const goBack = useCallback(() => back(), [back]);
 
   const handleLandingLogin = goToLogin;
 
@@ -182,6 +186,8 @@ export default function App() {
             language={language}
             onContinueWithoutLogin={handleContinueWithoutLogin}
             onLogin={handleLandingLogin}
+            onOpenPrivacy={goToPrivacy}
+            onOpenTerms={goToTerms}
           />
         );
       case 'login':
@@ -292,13 +298,20 @@ export default function App() {
         return <ManageExercisesScreen appState={appState} onBack={goToSettings} onMerge={mergeExercisesById} />;
       case 'notert':
         return <NotertScreen language={language} themeMode={appState.theme} onBack={goHome} />;
+      case 'privacy':
+        return <LegalScreen language={language} document="privacy" onBack={goBack} />;
+      case 'terms':
+        return <LegalScreen language={language} document="terms" onBack={goBack} />;
       default:
         return assertNever(nav.screen);
     }
   })();
   const useCalmThemeChrome =
-    (nav.screen === 'home' || nav.screen === 'block' || nav.screen === 'notert') &&
-    normalizeThemeMode(appState.theme) === 'calmLight';
+    nav.screen === 'landing' ||
+    nav.screen === 'privacy' ||
+    nav.screen === 'terms' ||
+    ((nav.screen === 'home' || nav.screen === 'block' || nav.screen === 'notert') &&
+      normalizeThemeMode(appState.theme) === 'calmLight');
   const statusBarStyle = useCalmThemeChrome ? 'dark-content' : 'light-content';
   const expoStatusBarStyle = useCalmThemeChrome ? 'dark' : 'light';
 

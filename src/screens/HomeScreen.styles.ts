@@ -19,6 +19,18 @@ const LAST_WORKOUT_CHIP_ROW_HEIGHT =
   TREASY_TYPE_SCALE.t3.lineHeight + SPACING.xs * 2 + LAST_WORKOUT_CHIP_BORDER_WIDTH * 2;
 const LAST_WORKOUT_CHIP_MAX_HEIGHT =
   LAST_WORKOUT_CHIP_ROW_HEIGHT * LAST_WORKOUT_CHIP_MAX_ROWS + SPACING.xs * (LAST_WORKOUT_CHIP_MAX_ROWS - 1);
+const PREVIOUS_WORKOUT_EXAMPLE_DETAIL_ROW_MIN_HEIGHT = TREASY_TYPE_SCALE.t5.lineHeight - 1;
+const PREVIOUS_WORKOUT_HOME_CARD_MIN_HEIGHT = Math.ceil(
+  SPACING.xl * 2 +
+    TREASY_TYPE_SCALE.t3.lineHeight +
+    (TREASY_TYPE_SCALE.t2.lineHeight + SPACING.xs) +
+    LAST_WORKOUT_CHIP_MAX_HEIGHT +
+    (TREASY_TYPE_SCALE.t5.lineHeight + 2 + (TREASY_TYPE_SCALE.t0.lineHeight - 2) + SPACING.xs) +
+    StyleSheet.hairlineWidth +
+    ((TREASY_TYPE_SCALE.t4.lineHeight - 2) + (TREASY_TYPE_SCALE.t6.lineHeight - 2) + 2 + SPACING.xs) +
+    TREASY_TYPE_SCALE.t6.lineHeight +
+    SPACING.md * 6
+);
 
 const styles = StyleSheet.create({
   root: {
@@ -621,6 +633,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: SPACING.sm,
   },
+  notesHeaderAffordance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: SPACING.xs,
+    marginLeft: SPACING.xs,
+    flexShrink: 0,
+  },
+  notesHeaderChevron: {
+    color: HOME_SCREEN_STYLE_COLORS.linkSoft,
+    fontSize: TREASY_TYPE_SCALE.t3.size,
+    lineHeight: TREASY_TYPE_SCALE.t3.lineHeight,
+    fontWeight: '600',
+  },
   notertHeaderText: {
     color: HOME_SCREEN_STYLE_COLORS.linkSoft,
     fontSize: TREASY_TYPE_SCALE.t6.size,
@@ -662,14 +688,29 @@ const styles = StyleSheet.create({
     lineHeight: TREASY_TYPE_SCALE.t6.lineHeight,
     fontWeight: '400',
   },
+  notertOverflowText: {
+    fontSize: TREASY_TYPE_SCALE.t6.size,
+    lineHeight: TREASY_TYPE_SCALE.t6.lineHeight,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
   notePreviewRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: SPACING.xs,
     width: '100%',
+    minHeight: TREASY_TYPE_SCALE.t6.lineHeight,
   },
-  notePreviewBullet: {
+  notePreviewDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: HOME_SCREEN_STYLE_COLORS.linkSoft,
+    opacity: 0.85,
     flexShrink: 0,
+  },
+  notePreviewDotPlaceholder: {
+    backgroundColor: HOME_SCREEN_STYLE_COLORS.transparent,
   },
   notePreviewText: {
     flex: 1,
@@ -810,6 +851,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: HOME_SCREEN_STYLE_COLORS.homeSurfaceDarkBorder,
+    minHeight: PREVIOUS_WORKOUT_HOME_CARD_MIN_HEIGHT,
     padding: SPACING.xl,
     gap: SPACING.md,
     width: '100%',
@@ -1021,6 +1063,13 @@ const styles = StyleSheet.create({
   previousWorkoutExerciseMetricUnitCompact: {
     fontSize: TREASY_TYPE_SCALE.t5.size - 1,
     lineHeight: TREASY_TYPE_SCALE.t5.lineHeight - 1,
+  },
+  previousWorkoutExerciseDetailRowReserved: {
+    minHeight: PREVIOUS_WORKOUT_EXAMPLE_DETAIL_ROW_MIN_HEIGHT,
+    justifyContent: 'center',
+  },
+  previousWorkoutExerciseDetailPlaceholder: {
+    opacity: 0,
   },
   previousWorkoutExercisePreviewReserved: {
     minHeight: (TREASY_TYPE_SCALE.t4.lineHeight - 2) + (TREASY_TYPE_SCALE.t6.lineHeight - 2) + 2 + SPACING.xs,
@@ -1395,14 +1444,15 @@ const styles = StyleSheet.create({
   notesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.xs,
     minHeight: 22,
   },
   notesCardFill: {
     flex: 1,
   },
   notesCardStretchWrap: {
-    flex: 0,
+    flex: 1,
     alignSelf: 'stretch',
     minHeight: 194,
   },
@@ -1411,8 +1461,16 @@ const styles = StyleSheet.create({
     fontSize: TREASY_TYPE_SCALE.t2.size,
     lineHeight: TREASY_TYPE_SCALE.t2.lineHeight,
     fontWeight: '600',
-    textAlign: 'center',
-    width: '100%',
+    textAlign: 'left',
+    flex: 1,
+  },
+  notesInputSurface: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    minHeight: 86,
+    justifyContent: 'flex-start',
   },
   notesInput: {
     backgroundColor: HOME_SCREEN_STYLE_COLORS.transparent,
@@ -1422,6 +1480,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     color: TREASY_DARK_TEXT.secondary,
     minHeight: 76,
+    flex: 1,
     textAlignVertical: 'top',
     fontSize: TREASY_TYPE_SCALE.t5.size,
     lineHeight: TREASY_TYPE_SCALE.t5.lineHeight,
@@ -1470,7 +1529,7 @@ const styles = StyleSheet.create({
   },
   notesButtonDisabled: {
     backgroundColor: HOME_SCREEN_STYLE_COLORS.tealDisabled,
-    opacity: 0.5,
+    opacity: 1,
     ...Platform.select({
       web: { boxShadow: HOME_SCREEN_STYLE_SHADOWS.none },
       default: { shadowOpacity: 0, elevation: 0 },

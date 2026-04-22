@@ -13,7 +13,9 @@ export type ScreenName =
   | 'quickLog'
   | 'cardio'
   | 'analysis'
-  | 'notert';
+  | 'notert'
+  | 'privacy'
+  | 'terms';
 
 export interface NavState {
   screen: ScreenName;

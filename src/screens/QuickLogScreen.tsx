@@ -18,6 +18,7 @@ import type { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } fro
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
+import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { useKeyboardInset } from '../shared/hooks/useKeyboardInset';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
@@ -43,22 +44,148 @@ type Props = {
 };
 
 const MUSCLE_GROUP_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
+const BACKSPACE_KEY = '\u232B';
+const CLEAR_KEY = 'C';
 
 const WEIGHT_KEYS = [
   ['1', '2', '3'],
   ['4', '5', '6'],
   ['7', '8', '9'],
-  [',', '0', '⌫'],
+  [',', '0', BACKSPACE_KEY],
 ];
 
 const REPS_KEYS = [
   ['1', '2', '3'],
   ['4', '5', '6'],
   ['7', '8', '9'],
-  ['0', '⌫'],
+  [CLEAR_KEY, '0', BACKSPACE_KEY],
 ];
 
 const HEADER_SIDE_WIDTH = 96;
+
+type QuickLogPalette = {
+  isLightTheme: boolean;
+  screenBg: string;
+  headerTitle: string;
+  backText: string;
+  noticeText: string;
+  cardBg: string;
+  cardBgAlt: string;
+  cardBorder: string;
+  shadowColor: string;
+  webShadow: string;
+  inputText: string;
+  inputBg: string;
+  placeholderText: string;
+  savedText: string;
+  primaryActionBg: string;
+  primaryActionDisabledBg: string;
+  primaryActionText: string;
+  primaryActionDisabledText: string;
+  linkText: string;
+  rowDivider: string;
+  liveRowTime: string;
+  textStrong: string;
+  textBase: string;
+  textMuted: string;
+  parseOk: string;
+  parseHint: string;
+  helperText: string;
+  chipBackground: string;
+  chipBorder: string;
+  chipText: string;
+  chevron: string;
+  chevronDisabled: string;
+  listBorderTop: string;
+  selectRowBg: string;
+  selectRowSelectedBg: string;
+  dialogBackdrop: string;
+  dialogCardBg: string;
+  dialogCardBorder: string;
+  dialogInputBg: string;
+  dialogInputBorder: string;
+  dialogInputText: string;
+  errorText: string;
+  secondaryBtnBg: string;
+  secondaryBtnBorder: string;
+  secondaryBtnText: string;
+  primarySmallBg: string;
+  primarySmallText: string;
+  sheetBackdrop: string;
+  sheetCardBg: string;
+  sheetCardBorder: string;
+  selectionColor: string;
+};
+
+function parseHexColor(color: string): [number, number, number] | null {
+  const clean = color.trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
+}
+
+function toRgba(color: string, alpha: number): string {
+  const safeAlpha = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
+  const rgb = parseHexColor(color) ?? [79, 142, 232];
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
+}
+
+function createQuickLogPalette(themeTokens: TreasyThemeTokens): QuickLogPalette {
+  const isLightTheme = themeTokens.id === 'calmLight';
+
+  return {
+    isLightTheme,
+    screenBg: isLightTheme ? '#F5F6FA' : '#020617',
+    headerTitle: isLightTheme ? '#1F2D3D' : '#F9FAFB',
+    backText: isLightTheme ? '#2F6FBC' : '#93C5FD',
+    noticeText: isLightTheme ? '#64748B' : '#9CA3AF',
+    cardBg: isLightTheme ? '#FFFFFF' : '#0B1220',
+    cardBgAlt: isLightTheme ? '#F8FBFF' : '#0A1224',
+    cardBorder: isLightTheme ? '#D6DFEA' : '#1E293B',
+    shadowColor: isLightTheme ? '#0F172A' : '#020617',
+    webShadow: isLightTheme ? '0 10px 22px rgba(15, 23, 42, 0.1)' : '0 12px 24px rgba(2, 6, 23, 0.3)',
+    inputText: isLightTheme ? '#1E293B' : '#E2E8F0',
+    inputBg: isLightTheme ? '#EFF4FB' : 'rgba(255, 255, 255, 0.03)',
+    placeholderText: isLightTheme ? '#64748B' : '#94A3B8',
+    savedText: isLightTheme ? '#15803D' : '#86EFAC',
+    primaryActionBg: isLightTheme ? '#1D4ED8' : COLORS.blue2,
+    primaryActionDisabledBg: isLightTheme ? '#CBD5E1' : '#1E293B',
+    primaryActionText: '#FFFFFF',
+    primaryActionDisabledText: isLightTheme ? '#64748B' : '#94A3B8',
+    linkText: isLightTheme ? '#2563EB' : '#60A5FA',
+    rowDivider: isLightTheme ? '#D6DFEA' : '#1E293B',
+    liveRowTime: isLightTheme ? '#64748B' : '#94A3B8',
+    textStrong: isLightTheme ? '#1E293B' : '#F9FAFB',
+    textBase: isLightTheme ? '#334155' : '#E5E7EB',
+    textMuted: isLightTheme ? '#64748B' : '#9CA3AF',
+    parseOk: isLightTheme ? '#15803D' : '#86EFAC',
+    parseHint: isLightTheme ? '#64748B' : '#94A3B8',
+    helperText: isLightTheme ? '#8B9CB1' : '#64748B',
+    chipBackground: isLightTheme ? '#F8FBFF' : '#0B1220',
+    chipBorder: isLightTheme ? '#C7D5E8' : '#1F2937',
+    chipText: isLightTheme ? '#1F2D3D' : '#E5E7EB',
+    chevron: isLightTheme ? themeTokens.link : COLORS.actionSecondary,
+    chevronDisabled: isLightTheme ? '#94A3B8' : '#374151',
+    listBorderTop: isLightTheme ? '#D6DFEA' : '#111827',
+    selectRowBg: isLightTheme ? '#FFFFFF' : '#020617',
+    selectRowSelectedBg: isLightTheme ? '#EEF4FF' : '#0B1220',
+    dialogBackdrop: isLightTheme ? 'rgba(15, 23, 42, 0.34)' : 'rgba(2, 6, 23, 0.72)',
+    dialogCardBg: isLightTheme ? '#FFFFFF' : '#020617',
+    dialogCardBorder: isLightTheme ? '#D6DFEA' : '#1F2937',
+    dialogInputBg: isLightTheme ? '#F8FBFF' : '#0B1220',
+    dialogInputBorder: isLightTheme ? '#CBD5E1' : '#1F2937',
+    dialogInputText: isLightTheme ? '#1E293B' : '#F9FAFB',
+    errorText: isLightTheme ? '#DC2626' : '#F97373',
+    secondaryBtnBg: isLightTheme ? '#EEF4FF' : '#111827',
+    secondaryBtnBorder: isLightTheme ? '#C7D5E8' : '#374151',
+    secondaryBtnText: isLightTheme ? '#334155' : '#9CA3AF',
+    primarySmallBg: isLightTheme ? '#2563EB' : '#3B82F6',
+    primarySmallText: '#F9FAFB',
+    sheetBackdrop: isLightTheme ? 'rgba(15, 23, 42, 0.34)' : 'rgba(2, 6, 23, 0.72)',
+    sheetCardBg: isLightTheme ? '#FFFFFF' : '#020617',
+    sheetCardBorder: isLightTheme ? '#D6DFEA' : '#111827',
+    selectionColor: isLightTheme ? '#2F6FBC' : COLORS.blue3,
+  };
+}
 
 export const QuickLogScreen: React.FC<Props> = ({
   appState,
@@ -69,8 +196,12 @@ export const QuickLogScreen: React.FC<Props> = ({
   showLocalOnlyNotice = false,
 }) => {
   const language = appState.language ?? 'en';
+  const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const palette = useMemo(() => createQuickLogPalette(themeTokens), [themeTokens]);
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const massUnit = appState.massUnit ?? 'kg';
   const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
+  const keypadVariant = palette.isLightTheme ? 'light' : 'dark';
   const [input, setInput] = useState('');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [pendingExercise, setPendingExercise] = useState<{
@@ -345,7 +476,7 @@ export const QuickLogScreen: React.FC<Props> = ({
           blurOnSubmit={false}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          selectionColor={COLORS.blue3}
+          selectionColor={palette.selectionColor}
         />
       </View>
 
@@ -398,8 +529,10 @@ export const QuickLogScreen: React.FC<Props> = ({
               style={[
                 styles.chip,
                 {
-                  borderColor: selected ? tone.accent : '#1F2937',
-                  backgroundColor: selected ? tone.soft : '#0B1220',
+                  borderColor: selected ? tone.accent : palette.chipBorder,
+                  backgroundColor: selected
+                    ? (palette.isLightTheme ? toRgba(tone.accent, 0.14) : tone.soft)
+                    : palette.chipBackground,
                 },
               ]}
               onPress={() => {
@@ -631,12 +764,12 @@ export const QuickLogScreen: React.FC<Props> = ({
             <TextInput
               style={styles.dialogInput}
               placeholder="0"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={palette.placeholderText}
               value={weightText}
               onChangeText={setWeightText}
               keyboardType="numeric"
             />
-            <QuickKeypad value={weightText} onChange={setWeightText} rows={WEIGHT_KEYS} />
+            <QuickKeypad value={weightText} onChange={setWeightText} rows={WEIGHT_KEYS} variant={keypadVariant} />
 
             {setError ? <Text style={styles.error}>{setError}</Text> : null}
 
@@ -687,12 +820,12 @@ export const QuickLogScreen: React.FC<Props> = ({
             <TextInput
               style={styles.dialogInput}
               placeholder="1"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={palette.placeholderText}
               value={repsText}
               onChangeText={setRepsText}
               keyboardType="numeric"
             />
-            <QuickKeypad value={repsText} onChange={setRepsText} rows={REPS_KEYS} />
+            <QuickKeypad value={repsText} onChange={setRepsText} rows={REPS_KEYS} variant={keypadVariant} />
 
             {setError ? <Text style={styles.error}>{setError}</Text> : null}
 
@@ -735,7 +868,7 @@ export const QuickLogScreen: React.FC<Props> = ({
             <TextInput
               style={styles.dialogInput}
               placeholder="5"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={palette.placeholderText}
               value={distanceText}
               onChangeText={setDistanceText}
               keyboardType="numeric"
@@ -744,7 +877,7 @@ export const QuickLogScreen: React.FC<Props> = ({
             <TextInput
               style={styles.dialogInput}
               placeholder="30"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={palette.placeholderText}
               value={durationText}
               onChangeText={setDurationText}
               keyboardType="numeric"
@@ -824,10 +957,11 @@ export const QuickLogScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: QuickLogPalette) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#020617',
+    backgroundColor: palette.screenBg,
     paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.lg,
     ...Platform.select({
       web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
@@ -851,7 +985,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    color: '#F9FAFB',
+    color: palette.headerTitle,
     fontSize: TEXT.md,
     fontWeight: '800',
     textAlign: 'center',
@@ -869,26 +1003,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   back: {
-    color: '#93C5FD',
+    color: palette.backText,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
   localOnlyNotice: {
-    color: '#9CA3AF',
+    color: palette.noticeText,
     fontSize: TEXT.xs,
     marginBottom: SPACING.md,
   },
   inputCard: {
-    backgroundColor: '#0A1224',
+    backgroundColor: palette.cardBgAlt,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: palette.cardBorder,
     padding: SPACING.lg,
     ...Platform.select({
-      web: { boxShadow: '0 12px 24px rgba(2, 6, 23, 0.3)' },
+      web: { boxShadow: palette.webShadow },
       default: {
-        shadowColor: '#020617',
-        shadowOpacity: 0.35,
+        shadowColor: palette.shadowColor,
+        shadowOpacity: palette.isLightTheme ? 0.08 : 0.35,
         shadowRadius: 16,
         shadowOffset: { width: 0, height: 8 },
       },
@@ -900,11 +1034,11 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
-    color: '#E2E8F0',
+    color: palette.inputText,
     fontSize: TEXT.lg,
     fontWeight: '600',
     lineHeight: TEXT.lg + 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: palette.inputBg,
   },
   placeholderWrapper: {
     position: 'absolute',
@@ -914,21 +1048,21 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   placeholderOverlay: {
-    color: '#94A3B8',
+    color: palette.placeholderText,
     fontSize: TEXT.sm,
     fontWeight: '600',
     opacity: 0.9,
   },
   savedNotice: {
     marginTop: SPACING.sm,
-    color: '#86EFAC',
+    color: palette.savedText,
     fontSize: TEXT.sm,
   },
   actionBar: {
     marginTop: SPACING.md,
   },
   primaryActionButton: {
-    backgroundColor: COLORS.blue2,
+    backgroundColor: palette.primaryActionBg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.md,
@@ -939,32 +1073,32 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   primaryActionButtonDisabled: {
-    backgroundColor: '#1E293B',
+    backgroundColor: palette.primaryActionDisabledBg,
   },
   primaryActionText: {
-    color: '#FFFFFF',
+    color: palette.primaryActionText,
     fontWeight: '700',
     fontSize: TEXT.md,
   },
   primaryActionTextDisabled: {
-    color: '#94A3B8',
+    color: palette.primaryActionDisabledText,
   },
   liveLogCard: {
     marginTop: SPACING.xl,
-    backgroundColor: '#0B1220',
+    backgroundColor: palette.cardBg,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: palette.cardBorder,
     padding: SPACING.lg,
   },
   liveLogTitle: {
-    color: '#F9FAFB',
+    color: palette.textStrong,
     fontSize: TEXT.md,
     fontWeight: '800',
     marginBottom: SPACING.xs,
   },
   liveLogEmpty: {
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.sm,
   },
   liveLogList: {
@@ -976,7 +1110,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
   showAllText: {
-    color: '#60A5FA',
+    color: palette.linkText,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -988,11 +1122,11 @@ const styles = StyleSheet.create({
   },
   liveLogRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: palette.rowDivider,
   },
   liveLogTime: {
     width: 64,
-    color: '#94A3B8',
+    color: palette.liveRowTime,
     fontSize: TEXT.xs,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
@@ -1006,7 +1140,7 @@ const styles = StyleSheet.create({
   },
   liveLogText: {
     flex: 1,
-    color: '#E2E8F0',
+    color: palette.inputText,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
@@ -1024,7 +1158,7 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   guidedTitle: {
-    color: '#F9FAFB',
+    color: palette.textStrong,
     fontSize: TEXT.lg,
     fontWeight: '700',
     marginBottom: SPACING.xs,
@@ -1041,13 +1175,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   parsePreviewOk: {
-    color: '#86EFAC',
+    color: palette.parseOk,
   },
   parsePreviewHint: {
-    color: '#94A3B8',
+    color: palette.parseHint,
   },
   inputHelper: {
-    color: '#64748B',
+    color: palette.helperText,
     fontSize: TEXT.xs,
     fontWeight: '600',
   },
@@ -1055,20 +1189,20 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: '#0B1220',
+    borderColor: palette.cardBorder,
+    backgroundColor: palette.cardBg,
     overflow: 'hidden',
   },
   chipsCard: {
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: '#0B1220',
+    borderColor: palette.cardBorder,
+    backgroundColor: palette.cardBg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.md,
   },
   sectionLabel: {
-    color: '#E5E7EB',
+    color: palette.textBase,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -1092,7 +1226,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   chipText: {
-    color: '#E5E7EB',
+    color: palette.chipText,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -1108,37 +1242,37 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   selectLabel: {
-    color: '#E5E7EB',
+    color: palette.textBase,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
   selectValue: {
     flex: 1,
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
   selectHint: {
-    color: COLORS.actionSecondary,
+    color: palette.chevron,
     fontSize: TEXT.xs,
   },
   selectStatus: {
-    color: COLORS.actionSecondary,
+    color: palette.chevron,
     fontSize: TEXT.sm,
     maxWidth: 180,
     textAlign: 'right',
   },
   chevron: {
     fontSize: TEXT.md,
-    color: COLORS.actionSecondary,
+    color: palette.chevron,
     fontWeight: '700',
   },
   chevronDisabled: {
-    color: '#374151',
+    color: palette.chevronDisabled,
   },
   selectList: {
     borderTopWidth: 1,
-    borderTopColor: '#111827',
+    borderTopColor: palette.listBorderTop,
   },
   compactList: {
     maxHeight: 260,
@@ -1150,12 +1284,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#0B1220',
-    backgroundColor: '#020617',
+    borderBottomColor: palette.rowDivider,
+    backgroundColor: palette.selectRowBg,
     gap: SPACING.md,
   },
   selectRowSelected: {
-    backgroundColor: '#0B1220',
+    backgroundColor: palette.selectRowSelectedBg,
   },
   dot: {
     width: 10,
@@ -1163,22 +1297,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   selectRowText: {
-    color: '#F9FAFB',
+    color: palette.textStrong,
     fontSize: TEXT.sm,
     fontWeight: '700',
     flex: 1,
   },
   emptyText: {
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.xs,
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
   },
   suggestionCard: {
-    backgroundColor: '#0B1220',
+    backgroundColor: palette.cardBg,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: palette.cardBorder,
     padding: SPACING.md,
     marginTop: SPACING.md,
     gap: SPACING.sm,
@@ -1189,7 +1323,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   suggestionTitle: {
-    color: '#E5E7EB',
+    color: palette.textBase,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -1203,12 +1337,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
   suggestionLabel: {
-    color: '#E5E7EB',
+    color: palette.textBase,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
   suggestionMeta: {
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.xs,
   },
   suggestionAction: {
@@ -1225,42 +1359,42 @@ const styles = StyleSheet.create({
   // Dialogs
   dialogBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    backgroundColor: palette.dialogBackdrop,
     justifyContent: 'center',
     paddingHorizontal: SCREEN_PADDING,
   },
   dialogCard: {
-    backgroundColor: '#020617',
+    backgroundColor: palette.dialogCardBg,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: palette.dialogCardBorder,
     padding: SPACING.xl,
   },
   dialogTitle: {
-    color: '#F9FAFB',
+    color: palette.textStrong,
     fontSize: TEXT.lg,
     fontWeight: '800',
     marginBottom: SPACING.xs,
   },
   dialogSubtitle: {
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.sm,
     fontWeight: '700',
     marginBottom: SPACING.sm,
   },
   dialogInput: {
-    backgroundColor: '#0B1220',
+    backgroundColor: palette.dialogInputBg,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: palette.dialogInputBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
-    color: '#F9FAFB',
+    color: palette.dialogInputText,
     fontSize: TEXT.lg,
     fontWeight: '700',
   },
   error: {
-    color: '#F97373',
+    color: palette.errorText,
     fontSize: TEXT.xs,
     marginTop: SPACING.sm,
   },
@@ -1270,6 +1404,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
   },
   secondaryButton: {
+    backgroundColor: palette.secondaryBtnBg,
+    borderWidth: 1,
+    borderColor: palette.secondaryBtnBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.pill,
@@ -1281,7 +1418,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
   },
   secondaryButtonText: {
-    color: '#9CA3AF',
+    color: palette.secondaryBtnText,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
@@ -1289,10 +1426,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.pill,
-    backgroundColor: '#3B82F6',
+    backgroundColor: palette.primarySmallBg,
   },
   primarySmallButtonText: {
-    color: '#F9FAFB',
+    color: palette.primarySmallText,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -1300,25 +1437,25 @@ const styles = StyleSheet.create({
   // Bottom sheet
   sheetBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    backgroundColor: palette.sheetBackdrop,
     justifyContent: 'flex-end',
   },
   sheetCard: {
-    backgroundColor: '#020617',
+    backgroundColor: palette.sheetCardBg,
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#111827',
+    borderColor: palette.sheetCardBorder,
     padding: SPACING.xl,
   },
   sheetTitle: {
-    color: '#F9FAFB',
+    color: palette.textStrong,
     fontSize: TEXT.md,
     fontWeight: '700',
     marginBottom: SPACING.xs,
   },
   sheetSubtitle: {
-    color: '#9CA3AF',
+    color: palette.textMuted,
     fontSize: TEXT.sm,
     marginBottom: SPACING.md,
   },
@@ -1341,10 +1478,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   otherLabel: {
-    color: '#E5E7EB',
+    color: palette.textBase,
     fontSize: TEXT.sm,
     fontWeight: '700',
     marginTop: SPACING.md,
     marginBottom: SPACING.xs,
   },
-});
+  });

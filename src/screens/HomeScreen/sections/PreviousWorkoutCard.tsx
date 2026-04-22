@@ -133,6 +133,7 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
   const reserveExercisePreview = wrapInCard && display.status === 'ready';
   const hideReservedExercisePreview = reserveExercisePreview && !hasExercisePreview;
   const chipMinimumFontScale = Platform.OS === 'ios' ? 0.78 : 0.84;
+  const exampleDetailPlaceholderText = '000 kg x 00 reps';
 
   const renderExamples = () => {
     if (!hasExercisePreview) {
@@ -150,19 +151,28 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
             >
               {'\u00A0'}
             </Text>
-            <Text
-              style={[styles.lastWorkoutExampleDetail, themeTextStyle, STAT_NUMBER_STYLE, compactExerciseMetricsStyle]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {'\u00A0'}
-            </Text>
+            <View style={homeScreenStyles.previousWorkoutExerciseDetailRowReserved}>
+              <Text
+                style={[
+                  styles.lastWorkoutExampleDetail,
+                  themeTextStyle,
+                  STAT_NUMBER_STYLE,
+                  compactExerciseMetricsStyle,
+                  homeScreenStyles.previousWorkoutExerciseDetailPlaceholder,
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                pointerEvents="none"
+              >
+                {exampleDetailPlaceholderText}
+              </Text>
+            </View>
           </View>
         </View>
       );
     }
 
-    const renderExampleDetail = () => {
+    const renderExampleDetailContent = () => {
       if (!display.exampleSetLine) return null;
       if (!display.parsedSetLine) {
         return (
@@ -194,6 +204,32 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
           </Text>
           <Text style={[styles.lastWorkoutMetricUnit, themeAccentTextStyle, compactExerciseMetricUnitStyle]}> reps</Text>
         </Text>
+      );
+    };
+
+    const renderExampleDetail = () => {
+      const detailContent = renderExampleDetailContent();
+      if (!wrapInCard) return detailContent;
+
+      return (
+        <View style={homeScreenStyles.previousWorkoutExerciseDetailRowReserved}>
+          {detailContent ?? (
+            <Text
+              style={[
+                styles.lastWorkoutExampleDetail,
+                themeTextStyle,
+                STAT_NUMBER_STYLE,
+                compactExerciseMetricsStyle,
+                homeScreenStyles.previousWorkoutExerciseDetailPlaceholder,
+              ]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              pointerEvents="none"
+            >
+              {exampleDetailPlaceholderText}
+            </Text>
+          )}
+        </View>
       );
     };
 

@@ -243,7 +243,7 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
           ['1', '2', '3'],
           ['4', '5', '6'],
           ['7', '8', '9'],
-          ['0', CLEAR_KEY, BACKSPACE_KEY],
+          [CLEAR_KEY, '0', BACKSPACE_KEY],
         ];
 
   return (

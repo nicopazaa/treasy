@@ -852,10 +852,10 @@ export const HomeScreen: React.FC<Props> = ({
   const notesButtonPressedStyle = useMemo(() => ({ backgroundColor: '#0F766E' }), []);
   const notesButtonDisabledStyle = useMemo(
     () => ({
-      backgroundColor: '#0B5A57',
-      borderColor: '#0E6E69',
+      backgroundColor: toRgba(themeTokens.accent, themeTokens.id === 'darkBlue' ? 0.2 : 0.16),
+      borderColor: toRgba(themeTokens.stroke, themeTokens.id === 'darkBlue' ? 0.86 : 0.92),
     }),
-    []
+    [themeTokens.accent, themeTokens.id, themeTokens.stroke]
   );
   const wordmarkDotGlowStyle = themeTokens.id === 'darkBlue' ? styles.wordmarkDotGlow : null;
   const refreshRecentNotes = useCallback(async () => {
@@ -1781,12 +1781,18 @@ export const HomeScreen: React.FC<Props> = ({
   );
 
   const hasNoteText = noteText.trim().length > 0;
+  const noteDraftCount = hasNoteText ? noteText.trim().length : 0;
   const notertTitle = language === 'nb' ? 'Notert' : language === 'es' ? 'Notas' : 'Notes';
   const notertEmpty = t(language, 'home.notes.empty');
   const recentNoteLines = useMemo(
     () => recentNotes.map((note) => note.text.trim()).filter((text) => text.length > 0),
     [recentNotes]
   );
+  const totalRecentNotesCount = useMemo(
+    () => allNotes.reduce((count, note) => (note.text.trim().length > 0 ? count + 1 : count), 0),
+    [allNotes]
+  );
+  const notertOverflowCount = Math.max(0, totalRecentNotesCount - NOTERT_PREVIEW_ROWS);
   const timelineNotesByDate = useMemo(() => {
     const byDate: Record<string, string> = {};
     const sorted = allNotes
@@ -1808,61 +1814,85 @@ export const HomeScreen: React.FC<Props> = ({
     containerStyle,
     itemTextStyle,
     emptyTextStyle,
+    maxRows,
     reserveRows,
+    overflowCount,
+    overflowTextStyle,
   }: {
     lines: string[];
     emptyLabel: string;
     containerStyle?: StyleProp<ViewStyle>;
     itemTextStyle: StyleProp<TextStyle>;
     emptyTextStyle: StyleProp<TextStyle>;
+    maxRows?: number;
     reserveRows?: number;
-  }) => (
-    <View style={containerStyle}>
-      {lines.length ? (
-        lines.map((line, index) => (
-          <View key={`${index}-${line.slice(0, 24)}`} style={styles.notePreviewRow}>
-            <Text style={[styles.notePreviewBullet, itemTextStyle]}>{'\u2022 '}</Text>
-            <Text style={[styles.notePreviewText, itemTextStyle]}>{line}</Text>
-          </View>
-        ))
-      ) : (
-        <Text style={emptyTextStyle}>{emptyLabel}</Text>
-      )}
-      {reserveRows != null && reserveRows > 0
-        ? Array.from({
-            length: Math.max(0, reserveRows - (lines.length > 0 ? lines.length : 1)),
-          }).map((_, index) => (
-            <View key={`placeholder-${index}`} style={styles.notePreviewRow}>
-              <Text style={[styles.notePreviewBullet, itemTextStyle, styles.notePreviewPlaceholder]}>{'\u2022 '}</Text>
-              <Text style={[styles.notePreviewText, itemTextStyle, styles.notePreviewPlaceholder]}>{'placeholder'}</Text>
+    overflowCount?: number;
+    overflowTextStyle?: StyleProp<TextStyle>;
+  }) => {
+    const visibleLines = maxRows != null && maxRows > 0 ? lines.slice(0, maxRows) : lines;
+    const visibleCount = visibleLines.length > 0 ? visibleLines.length : 1;
+
+    return (
+      <View style={containerStyle}>
+        {visibleLines.length ? (
+          visibleLines.map((line, index) => (
+            <View key={`${index}-${line.slice(0, 24)}`} style={styles.notePreviewRow}>
+              <View style={styles.notePreviewDot} />
+              <Text style={[styles.notePreviewText, itemTextStyle]} numberOfLines={1} ellipsizeMode="tail">
+                {line}
+              </Text>
             </View>
           ))
-        : null}
-    </View>
-  );
+        ) : (
+          <Text style={emptyTextStyle}>{emptyLabel}</Text>
+        )}
+        {reserveRows != null && reserveRows > 0
+          ? Array.from({
+              length: Math.max(0, reserveRows - visibleCount),
+            }).map((_, index) => (
+              <View key={`placeholder-${index}`} style={styles.notePreviewRow}>
+                <View style={[styles.notePreviewDot, styles.notePreviewDotPlaceholder]} />
+                <Text style={[styles.notePreviewText, itemTextStyle, styles.notePreviewPlaceholder]}>{'placeholder'}</Text>
+              </View>
+            ))
+          : null}
+        {overflowCount != null && overflowCount > 0 ? <Text style={overflowTextStyle}>{`+${overflowCount}`}</Text> : null}
+      </View>
+    );
+  };
 
   const notesCard = (
     <View style={[styles.notesCard, themeSurfaceStyle, notesCardFillStyle]}>
       <View style={styles.notesHeaderRow}>
         <Text style={[styles.notesTitle, themeTextStyle]}>{language === 'nb' ? 'Notater' : 'Notes'}</Text>
+        <View style={styles.notesHeaderAffordance}>
+          <View style={[styles.notertCountChip, { borderColor: themeTokens.stroke, backgroundColor: themeTokens.chip }]}>
+            <Text style={[styles.notertCountText, themeTextMutedStyle]}>{noteDraftCount}</Text>
+          </View>
+        </View>
       </View>
-      <TextInput
+      <View
         style={[
-          styles.notesInput,
-          styles.notesInputNudged,
+          styles.notesInputSurface,
           notesInputFillStyle,
-          { color: themeTokens.text },
-          notesFocused ? [styles.notesInputFocused, { backgroundColor: toRgba(themeTokens.accent, 0.06) }] : null,
+          {
+            borderColor: notesFocused ? themeTokens.accent : themeTokens.stroke,
+            backgroundColor: toRgba(themeTokens.chip, themeTokens.id === 'darkBlue' ? 0.48 : 0.78),
+          },
         ]}
-        placeholder={notesFocused ? '' : t(language, 'home.notes.placeholder')}
-        placeholderTextColor={themeTokens.textMuted}
-        value={noteText}
-        onChangeText={setNoteText}
-        onFocus={() => setNotesFocused(true)}
-        onBlur={() => setNotesFocused(false)}
-        multiline
-        scrollEnabled
-      />
+      >
+        <TextInput
+          style={[styles.notesInput, styles.notesInputNudged, { color: themeTokens.text }]}
+          placeholder={notesFocused ? '' : t(language, 'home.notes.placeholder')}
+          placeholderTextColor={themeTokens.textMuted}
+          value={noteText}
+          onChangeText={setNoteText}
+          onFocus={() => setNotesFocused(true)}
+          onBlur={() => setNotesFocused(false)}
+          multiline
+          scrollEnabled
+        />
+      </View>
       <Pressable
         style={({ pressed }) => [
           styles.notesButton,
@@ -1878,7 +1908,7 @@ export const HomeScreen: React.FC<Props> = ({
         accessibilityRole="button"
         disabled={!hasNoteText}
       >
-        <Text style={[styles.notesButtonText, { color: themeTokens.textOnAccent }]}>
+        <Text style={[styles.notesButtonText, { color: hasNoteText ? themeTokens.textOnAccent : themeTokens.textMuted }]}>
           {language === 'nb' ? 'Lagre' : 'Save'}
         </Text>
       </Pressable>
@@ -2455,11 +2485,12 @@ export const HomeScreen: React.FC<Props> = ({
                       <View style={[styles.navTileLeft, styles.notertTileLeft]}>
                         <View style={styles.notertHeaderRow}>
                           <Text style={[styles.notertHeaderText, themeAccentTextStyle]}>{notertTitle}</Text>
-                          {recentNoteLines.length ? (
+                          <View style={styles.notesHeaderAffordance}>
                             <View style={[styles.notertCountChip, { borderColor: themeTokens.stroke, backgroundColor: themeTokens.chip }]}>
-                              <Text style={[styles.notertCountText, themeTextMutedStyle]}>{recentNoteLines.length}</Text>
+                              <Text style={[styles.notertCountText, themeTextMutedStyle]}>{totalRecentNotesCount}</Text>
                             </View>
-                          ) : null}
+                            <Text style={[styles.notesHeaderChevron, themeAccentTextStyle]}>{NAV_CHEVRON}</Text>
+                          </View>
                         </View>
                         <View style={[styles.notertContentDivider, { backgroundColor: themeTokens.stroke }]} />
                         {renderRecentNotesList({
@@ -2468,10 +2499,12 @@ export const HomeScreen: React.FC<Props> = ({
                           containerStyle: styles.notertPreviewList,
                           itemTextStyle: [styles.notertLineText, themeTextStyle],
                           emptyTextStyle: [styles.notertEmptyText, themeTextMutedStyle],
+                          maxRows: NOTERT_PREVIEW_ROWS,
                           reserveRows: NOTERT_PREVIEW_ROWS,
+                          overflowCount: notertOverflowCount,
+                          overflowTextStyle: [styles.notertOverflowText, themeTextMutedStyle],
                         })}
                       </View>
-                      <Text style={[styles.analysisNavChevron, styles.analysisCardChevron, themeAccentTextStyle]}>{'>'}</Text>
                     </PressScale>
                   </View>
                 </View>
