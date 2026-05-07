@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { SyncState } from '../../../shared/types';
+import type { SyncOutboxEvent, SyncState, SyncStatus } from '../../../shared/types';
 import type { NoteEntry } from '../../../domain/workouts/types';
 import { now } from '../../../shared/time';
 import { createStableId } from '../../../shared/utils/id';
@@ -15,9 +15,15 @@ import {
 const STORAGE_KEY = 'treasy_notes_v1';
 const VALID_SOURCES: NoteEntry['source'][] = ['home_notes', 'quicklog', 'other'];
 const NOTES_SCHEMA_VERSION = 1 as const;
+const noteListeners = new Set<() => void>();
 
 type NotesStorageEnvelope = {
   schemaVersion: 1;
+  notes: NoteEntry[];
+  sync: SyncState;
+};
+
+export type NotesSyncSnapshot = {
   notes: NoteEntry[];
   sync: SyncState;
 };
@@ -143,9 +149,55 @@ async function saveEnvelope(envelope: NotesStorageEnvelope): Promise<void> {
         sync: normalizeSyncState(envelope.sync),
       } satisfies NotesStorageEnvelope)
     );
+    for (const listener of noteListeners) {
+      listener();
+    }
   } catch (e) {
     console.warn('Failed to save notes', e);
   }
+}
+
+function removeAckedEvents(sync: SyncState, events: SyncOutboxEvent[]): SyncState {
+  if (!events.length) return normalizeSyncState(sync);
+  const ackedIds = new Set(events.map((event) => event.id));
+  const ackedDeletes = new Map<string, SyncOutboxEvent>();
+  for (const event of events) {
+    if (event.operation !== 'delete') continue;
+    ackedDeletes.set(event.entityId, event);
+  }
+
+  const normalized = normalizeSyncState(sync);
+  return {
+    ...normalized,
+    outbox: normalized.outbox.filter((event) => !ackedIds.has(event.id)),
+    tombstones: normalized.tombstones.filter((tombstone) => {
+      const matchingDelete = ackedDeletes.get(tombstone.entityId);
+      if (!matchingDelete) return true;
+      if (matchingDelete.entityType !== tombstone.entityType) return true;
+      return tombstone.version > matchingDelete.version;
+    }),
+  };
+}
+
+function applyStatusToNote(note: NoteEntry, event: SyncOutboxEvent, status: SyncStatus): NoteEntry {
+  const currentVersion = note.version ?? 1;
+  if (currentVersion !== event.version) return note;
+  if ((note.syncStatus ?? 'local') === status) return note;
+  return { ...note, syncStatus: status };
+}
+
+function applyAckToNote(note: NoteEntry, event: SyncOutboxEvent): NoteEntry {
+  const currentVersion = note.version ?? 1;
+  if (currentVersion > event.version) return note;
+  if ((note.syncStatus ?? 'local') === 'synced' && currentVersion === event.version) return note;
+  return { ...note, syncStatus: 'synced' };
+}
+
+export function subscribeToNotesChanges(listener: () => void): () => void {
+  noteListeners.add(listener);
+  return () => {
+    noteListeners.delete(listener);
+  };
 }
 
 export async function listNotes(): Promise<NoteEntry[]> {
@@ -156,6 +208,14 @@ export async function listNotes(): Promise<NoteEntry[]> {
 export async function getNotesSyncState(): Promise<SyncState> {
   const envelope = await loadEnvelope();
   return normalizeSyncState(envelope.sync);
+}
+
+export async function getNotesSyncSnapshot(): Promise<NotesSyncSnapshot> {
+  const envelope = await loadEnvelope();
+  return {
+    notes: envelope.notes.slice(),
+    sync: normalizeSyncState(envelope.sync),
+  };
 }
 
 export async function getLatestNote(): Promise<NoteEntry | null> {
@@ -308,6 +368,85 @@ export async function clearAllNotes(): Promise<void> {
   await saveEnvelope({
     schemaVersion: NOTES_SCHEMA_VERSION,
     notes: [],
+    sync: nextSync,
+  });
+}
+
+export async function markNotesSyncStatus(events: SyncOutboxEvent[], status: SyncStatus): Promise<void> {
+  if (!events.length) return;
+  const envelope = await loadEnvelope();
+  const eventsById = new Map(events.map((event) => [event.id, event] as const));
+  let changed = false;
+
+  const nextNotes = envelope.notes.map((note) => {
+    let nextNote = note;
+    for (const event of eventsById.values()) {
+      if (event.entityType !== 'note' || event.entityId !== note.id) continue;
+      const updated = applyStatusToNote(nextNote, event, status);
+      if (updated !== nextNote) {
+        nextNote = updated;
+        changed = true;
+      }
+    }
+    return nextNote;
+  });
+
+  if (!changed) return;
+  await saveEnvelope({
+    schemaVersion: NOTES_SCHEMA_VERSION,
+    notes: nextNotes,
+    sync: normalizeSyncState(envelope.sync),
+  });
+}
+
+export async function acknowledgeNotesSyncEvents(events: SyncOutboxEvent[]): Promise<void> {
+  const noteEvents = events.filter((event) => event.entityType === 'note');
+  if (!noteEvents.length) return;
+
+  const envelope = await loadEnvelope();
+  const nextSync = removeAckedEvents(envelope.sync, noteEvents);
+  const noteEventsById = new Map(noteEvents.map((event) => [event.id, event] as const));
+  let changed = false;
+
+  const nextNotes = envelope.notes.map((note) => {
+    let nextNote = note;
+    for (const event of noteEventsById.values()) {
+      if (event.operation !== 'upsert' || event.entityId !== note.id) continue;
+      const updated = applyAckToNote(nextNote, event);
+      if (updated !== nextNote) {
+        nextNote = updated;
+        changed = true;
+      }
+    }
+    return nextNote;
+  });
+
+  const syncChanged =
+    nextSync.outbox.length !== envelope.sync.outbox.length ||
+    nextSync.tombstones.length !== envelope.sync.tombstones.length;
+
+  if (!changed && !syncChanged) return;
+  await saveEnvelope({
+    schemaVersion: NOTES_SCHEMA_VERSION,
+    notes: nextNotes,
+    sync: nextSync,
+  });
+}
+
+export async function discardNotesSyncEvents(events: SyncOutboxEvent[]): Promise<void> {
+  const noteEvents = events.filter((event) => event.entityType === 'note');
+  if (!noteEvents.length) return;
+
+  const envelope = await loadEnvelope();
+  const nextSync = removeAckedEvents(envelope.sync, noteEvents);
+  const syncChanged =
+    nextSync.outbox.length !== envelope.sync.outbox.length ||
+    nextSync.tombstones.length !== envelope.sync.tombstones.length;
+
+  if (!syncChanged) return;
+  await saveEnvelope({
+    schemaVersion: NOTES_SCHEMA_VERSION,
+    notes: envelope.notes,
     sync: nextSync,
   });
 }

@@ -11,8 +11,9 @@ import { buildWorkoutTimeline } from '../domain/analytics/insights';
 import { PreviousWorkoutsTimeline } from '../features/analytics/ui/PreviousWorkoutsTimeline';
 import { listNotes } from '../features/notes';
 import type { NoteEntry } from '../domain/workouts/types';
-import { formatWeight, type MassUnit } from '../shared/utils/units';
+import { formatWeight, fromKg, type MassUnit } from '../shared/utils/units';
 import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 
 type Props = {
   appState: AppState;
@@ -101,29 +102,130 @@ function inferSetType(set: GroupSet): 'weighted' | 'bodyweight' | 'cardio' {
   return 'weighted';
 }
 
-function formatSetLine(
+function localeForLanguage(language: AppState['language']): string {
+  if (language === 'nb') return 'nb-NO';
+  if (language === 'es') return 'es-ES';
+  return 'en-US';
+}
+
+function formatLocalizedNumber(
+  language: AppState['language'],
+  value: number,
+  options?: { maximumFractionDigits?: number }
+): string {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat(localeForLanguage(language), {
+    maximumFractionDigits: options?.maximumFractionDigits ?? 0,
+  }).format(safeValue);
+}
+
+function formatWholeNumber(language: AppState['language'], value: number): string {
+  return formatLocalizedNumber(language, Math.round(value), { maximumFractionDigits: 0 });
+}
+
+function splitWeightParts(valueKg: number, massUnit: MassUnit, language: AppState['language']): { value: string; unit: string } {
+  const formatted = formatWeight(valueKg, massUnit, language ?? 'en');
+  const match = formatted.match(/^(.*)\s+(\S+)$/);
+  if (!match) return { value: formatted, unit: massUnit };
+  return { value: match[1], unit: match[2] };
+}
+
+function countTotalVolumeKg(sets: GroupSet[]): number {
+  return sets.reduce((total, set) => {
+    if (!Number.isFinite(set.weight) || !Number.isFinite(set.reps)) return total;
+    if (set.weight < 0 || set.reps <= 0) return total;
+    return total + set.weight * set.reps;
+  }, 0);
+}
+
+function formatVolumeParts(
+  language: AppState['language'],
+  massUnit: MassUnit,
+  totalVolumeKg: number
+): { value: string; unit: string } {
+  const converted = fromKg(totalVolumeKg, massUnit);
+  const value = formatWholeNumber(language, converted);
+  const unit = t(language ?? 'en', massUnit === 'lb' ? 'units.lb' : 'units.kg');
+  return { value, unit };
+}
+
+function renderSummaryMetric(
+  label: string,
+  value: string,
+  styles: ReturnType<typeof createStyles>,
+  suffix?: string
+): React.ReactElement {
+  return (
+    <Text style={styles.exerciseDetailSummary}>
+      <Text style={styles.groupDetailMuted}>{`${label}: `}</Text>
+      <Text style={styles.groupDetailValue}>{value}</Text>
+      {suffix ? <Text style={styles.groupDetailMuted}>{` ${suffix}`}</Text> : null}
+    </Text>
+  );
+}
+
+function renderSetLine(
   language: AppState['language'],
   massUnit: MassUnit,
   set: GroupSet,
-  index: number
-): string {
+  index: number,
+  styles: ReturnType<typeof createStyles>
+): React.ReactElement {
   const locale = language ?? 'en';
   const setType = inferSetType(set);
 
   if (setType === 'cardio') {
-    const cardioParts: string[] = [];
-    if (set.distanceKm != null) cardioParts.push(`${set.distanceKm} km`);
-    if (set.durationMin != null) cardioParts.push(`${set.durationMin} min`);
-    if (set.pauseSec != null) cardioParts.push(`${t(locale, 'pauseShort')} ${set.pauseSec}s`);
-    if (cardioParts.length === 0) cardioParts.push(`${set.weight ?? 0}`);
-    return `${index}) ${cardioParts.join(' / ')}`;
+    const cardioParts: Array<{ label?: string; value: string; suffix?: string }> = [];
+    if (set.distanceKm != null) cardioParts.push({ value: formatLocalizedNumber(locale, set.distanceKm, { maximumFractionDigits: 1 }), suffix: 'km' });
+    if (set.durationMin != null) cardioParts.push({ value: formatWholeNumber(locale, set.durationMin), suffix: 'min' });
+    if (set.pauseSec != null) cardioParts.push({ label: t(locale, 'pauseShort'), value: formatWholeNumber(locale, set.pauseSec), suffix: 's' });
+    if (cardioParts.length === 0) cardioParts.push({ value: formatWholeNumber(locale, set.weight ?? 0) });
+
+    return (
+      <Text style={styles.groupDetail}>
+        <Text style={styles.groupDetailValue}>{index}</Text>
+        <Text style={styles.groupDetailMuted}>{') '}</Text>
+        {cardioParts.map((part, partIndex) => (
+          <React.Fragment key={`cardio-part-${index}-${partIndex}`}>
+            {partIndex > 0 ? <Text style={styles.groupDetailMuted}>{' / '}</Text> : null}
+            {part.label ? <Text style={styles.groupDetailMuted}>{`${part.label} `}</Text> : null}
+            <Text style={styles.groupDetailValue}>{part.value}</Text>
+            {part.suffix ? <Text style={styles.groupDetailMuted}>{` ${part.suffix}`}</Text> : null}
+          </React.Fragment>
+        ))}
+      </Text>
+    );
   }
 
   const isBodyweight = setType === 'bodyweight' || set.isBodyweight === true || set.weight === 0;
   const reps = Number.isFinite(set.reps) && set.reps > 0 ? Math.round(set.reps) : 0;
   const repsLabel = t(locale, 'repmax.reps');
-  const weightPart = isBodyweight ? 'BW' : formatWeight(set.weight ?? 0, massUnit, locale);
-  return `${index}) ${weightPart} x ${reps} ${repsLabel}`;
+  const weightParts = isBodyweight ? null : splitWeightParts(set.weight ?? 0, massUnit, locale);
+
+  return (
+    <Text style={styles.groupDetail}>
+      <Text style={styles.groupDetailValue}>{index}</Text>
+      <Text style={styles.groupDetailMuted}>{') '}</Text>
+      {isBodyweight ? (
+        <Text style={styles.groupDetailMuted}>{'BW'}</Text>
+      ) : (
+        <>
+          <Text style={styles.groupDetailValue}>{weightParts?.value}</Text>
+          <Text style={styles.groupDetailMuted}>{` ${weightParts?.unit}`}</Text>
+        </>
+      )}
+      <Text style={styles.groupDetailMuted}>{' x '}</Text>
+      <Text style={styles.groupDetailValue}>{reps}</Text>
+      <Text style={styles.groupDetailMuted}>{` ${repsLabel}`}</Text>
+    </Text>
+  );
+}
+
+function countTotalReps(sets: GroupSet[]): number {
+  return sets.reduce((total, set) => {
+    if (!Number.isFinite(set.reps) || set.reps <= 0) return total;
+    return total + Math.round(set.reps);
+  }, 0);
 }
 
 function toTimelineNotesByDate(notes: NoteEntry[]): Record<string, string> {
@@ -285,6 +387,9 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                       const exerciseKey = `${dateKey}::${group.id}`;
                       const exerciseIsExpanded = expandedExercises.has(exerciseKey);
                       const exerciseColor = getDotColor(group.blockId ?? block.blockId ?? block.blockName ?? '');
+                      const totalExerciseReps = countTotalReps(group.sets);
+                      const totalExerciseVolumeKg = countTotalVolumeKg(group.sets);
+                      const totalVolumeParts = formatVolumeParts(language, massUnit, totalExerciseVolumeKg);
 
                       return (
                         <View key={exerciseKey} style={styles.exerciseRowWrap}>
@@ -295,18 +400,42 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
                           >
                             <View style={styles.exerciseHeaderLeft}>
                               <View style={[styles.exerciseDot, { backgroundColor: exerciseColor }]} />
-                              <Text style={styles.exerciseName}>{group.exerciseLabel}</Text>
+                              <ExerciseLabelText
+                                label={group.exerciseLabel}
+                                style={styles.exerciseNameWrap}
+                                mainStyle={styles.exerciseName}
+                                secondaryStyle={styles.exerciseNameMeta}
+                              />
                             </View>
-                            <Text style={styles.exerciseSummary}>{`${setsLabel}: ${group.sets.length} ${exerciseIsExpanded ? 'v' : '>'}`}</Text>
+                            <Text style={styles.exerciseSummary}>
+                              <Text style={styles.groupDetailMuted}>{`${setsLabel}: `}</Text>
+                              <Text style={styles.groupDetailValue}>{group.sets.length}</Text>
+                              <Text style={styles.groupDetailMuted}>{` ${exerciseIsExpanded ? 'v' : '>'}`}</Text>
+                            </Text>
                           </TouchableOpacity>
 
                           {exerciseIsExpanded ? (
                             <View style={styles.setList}>
                               {group.sets.map((set, setIndex) => (
-                                <Text key={`${exerciseKey}-set-${setIndex}`} style={styles.groupDetail}>
-                                  {formatSetLine(language, massUnit, set, setIndex + 1)}
-                                </Text>
+                                <React.Fragment key={`${exerciseKey}-set-${setIndex}`}>
+                                  {renderSetLine(language, massUnit, set, setIndex + 1, styles)}
+                                </React.Fragment>
                               ))}
+                              {totalExerciseReps > 0 ? (
+                                renderSummaryMetric(
+                                  t(language, 'analysis.previousWorkouts.totalReps'),
+                                  formatWholeNumber(language, totalExerciseReps),
+                                  styles
+                                )
+                              ) : null}
+                              {totalExerciseVolumeKg > 0
+                                ? renderSummaryMetric(
+                                    t(language, 'analysis.previousWorkouts.totalVolume'),
+                                    totalVolumeParts.value,
+                                    styles,
+                                    totalVolumeParts.unit
+                                  )
+                                : null}
                             </View>
                           ) : null}
                         </View>
@@ -355,6 +484,7 @@ const HistoryScreenContent: React.FC<Props> = ({ appState, onBack, initialExpand
           expandedRowBackgroundColor={timelineExpandedRowBackgroundColor}
           lineOpacity={0.72}
           borderless
+          includeRepCountInSummary
           scrollY={scrollY}
           heroTopCount={3}
           expandedDateKey={expandedDateKey}
@@ -489,6 +619,16 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       letterSpacing: 0.1,
       flexShrink: 1,
     },
+    exerciseNameWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+    exerciseNameMeta: {
+      color: themeTokens.textMuted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+      marginTop: 2,
+    },
     exerciseSummary: {
       color: themeTokens.textMuted,
       fontSize: TEXT.xs,
@@ -500,10 +640,21 @@ function createStyles(themeTokens: TreasyThemeTokens) {
       paddingLeft: SPACING.sm,
     },
     groupDetail: {
-      color: toRgba(themeTokens.text, isLightTheme ? 0.78 : 0.76),
       fontSize: TEXT.xs + 1,
       fontWeight: '600',
       lineHeight: TEXT.xs + 7,
+    },
+    groupDetailMuted: {
+      color: toRgba(themeTokens.text, isLightTheme ? 0.78 : 0.76),
+      fontWeight: '600',
+    },
+    groupDetailValue: {
+      color: isLightTheme ? toRgba(themeTokens.text, 0.96) : toRgba(themeTokens.text, 0.92),
+      fontWeight: '800',
+    },
+    exerciseDetailSummary: {
+      fontSize: TEXT.xs,
+      marginTop: SPACING.xs,
     },
   });
 }

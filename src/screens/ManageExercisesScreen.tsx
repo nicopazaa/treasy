@@ -9,6 +9,7 @@ import { COLORS, RADIUS, SCREEN_PADDING, SPACING, TEXT } from '../shared/theme/t
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { LabeledInput } from '../shared/ui/LabeledInput';
 import { Surface } from '../shared/ui/Surface';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 
 type Props = {
   appState: AppState;
@@ -201,9 +202,11 @@ export const ManageExercisesScreen: React.FC<Props> = ({ appState, onBack, onMer
                       ]}
                     >
                       <View style={styles.exerciseTextWrap}>
-                        <Text style={styles.exerciseName} numberOfLines={1}>
-                          {label}
-                        </Text>
+                        <ExerciseLabelText
+                          label={label}
+                          mainStyle={styles.exerciseName}
+                          secondaryStyle={styles.exerciseNameMeta}
+                        />
                         <Text style={styles.exerciseMeta}>
                           {t(language, 'aliasesCount', { count: aliasesCount })}
                         </Text>
@@ -337,6 +340,12 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: TEXT.sm,
     fontWeight: '800',
+  },
+  exerciseNameMeta: {
+    color: '#9CA3AF',
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    marginTop: 2,
   },
   exerciseMeta: {
     color: '#9CA3AF',

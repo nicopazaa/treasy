@@ -7,16 +7,9 @@ import {
   View,
 } from 'react-native';
 import { SPACING, TEXT, COLORS } from '../theme/tokens';
+import { ExerciseLabelText } from './ExerciseLabelText';
 
 const DEFAULT_ACCENT = COLORS.blue2;
-
-function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
-  const idx = label.indexOf('(');
-  if (idx <= 0) return { main: label, parentheses: null };
-  const main = label.slice(0, idx).trimEnd();
-  const parentheses = label.slice(idx).trim();
-  return parentheses.startsWith('(') && parentheses.length > 0 ? { main, parentheses } : { main: label, parentheses: null };
-}
 
 function parseHexColor(color: string): [number, number, number] | null {
   const clean = color.trim().replace('#', '');
@@ -55,8 +48,6 @@ export const ExerciseRow: React.FC<Props> = ({
   accentColor = DEFAULT_ACCENT,
 }) => {
   const isLight = variant === 'light';
-  const splitLabel = splitLabelParentheses(name);
-  const showSplitLabel = Boolean(splitLabel.parentheses);
   const bestChipBg = toRgba(accentColor, isLight ? 0.1 : 0.18);
   const menuBg = toRgba(accentColor, isLight ? 0.08 : 0.16);
 
@@ -75,28 +66,17 @@ export const ExerciseRow: React.FC<Props> = ({
       <View style={[styles.leadingDot, { backgroundColor: accentColor }]} />
 
       <View style={styles.nameColumn}>
-        <Text
-          style={[
+        <ExerciseLabelText
+          label={name}
+          mainStyle={[
             styles.nameMain,
             isLight ? styles.nameMainLight : styles.nameMainDark,
           ]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {splitLabel.main}
-        </Text>
-        {showSplitLabel ? (
-          <Text
-            style={[
-              styles.nameParen,
-              isLight ? styles.nameParenLight : styles.nameParenDark,
-            ]}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {splitLabel.parentheses}
-          </Text>
-        ) : null}
+          secondaryStyle={[
+            styles.nameParen,
+            isLight ? styles.nameParenLight : styles.nameParenDark,
+          ]}
+        />
       </View>
 
       <View style={styles.right} pointerEvents="box-none">

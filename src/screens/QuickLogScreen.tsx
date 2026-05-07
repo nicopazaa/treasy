@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLanguage } from '../shared/types';
-import type { AppState, Exercise, LogEntry, TrainingBlock, TrainingBlockId } from '../features/workouts';
+import type { AppState, Exercise, LogEntry, SetEntry, TrainingBlock, TrainingBlockId } from '../features/workouts';
 import { QuickKeypad } from '../shared/ui/QuickKeypad';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
@@ -23,7 +23,9 @@ import { blockLabel, t } from '../shared/i18n/i18n';
 import { useKeyboardInset } from '../shared/hooks/useKeyboardInset';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatWeight, toKg } from '../shared/utils/units';
+import { formatInputWeight, formatSetListLabel } from '../shared/utils/setFormatting';
 import { parseInputToAction } from '../domain/quicklog/parseInputToAction';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 
 type Props = {
   appState: AppState;
@@ -37,7 +39,13 @@ type Props = {
     exerciseId: string,
     weight: number,
     reps: number,
-    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
+    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null }
+  ) => void;
+  onUpdateSet: (
+    setId: string,
+    weight: number,
+    reps: number,
+    options?: { isBodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null }
   ) => void;
   onCategorizeExercise: (exerciseId: string, blockId: TrainingBlockId) => void;
   showLocalOnlyNotice?: boolean;
@@ -62,6 +70,16 @@ const REPS_KEYS = [
 ];
 
 const HEADER_SIDE_WIDTH = 96;
+const EDITABLE_LOG_WINDOW_MS = 2000;
+
+type LiveLogItem = {
+  entry: LogEntry;
+  linkedSet: SetEntry | null;
+  displayText: string;
+  editable: boolean;
+};
+
+type DurationUnit = 'seconds' | 'minutes' | 'hours';
 
 type QuickLogPalette = {
   isLightTheme: boolean;
@@ -129,6 +147,36 @@ function toRgba(color: string, alpha: number): string {
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
 }
 
+function inferDurationUnit(durationMin: number | null | undefined): DurationUnit {
+  if (!Number.isFinite(durationMin) || (durationMin ?? 0) <= 0) return 'minutes';
+  if ((durationMin ?? 0) < 1) return 'seconds';
+  if ((durationMin ?? 0) >= 60 && Math.abs((durationMin ?? 0) % 60) < 0.0001) return 'hours';
+  return 'minutes';
+}
+
+function trimNumericString(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  return `${rounded}`.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+}
+
+function formatDurationInputValue(language: AppLanguage, durationMin: number, unit: DurationUnit): string {
+  if (!Number.isFinite(durationMin) || durationMin <= 0) return '';
+  const rawValue =
+    unit === 'seconds' ? durationMin * 60 :
+    unit === 'hours' ? durationMin / 60 :
+    durationMin;
+  const normalized = trimNumericString(rawValue);
+  return language === 'nb' || language === 'es' ? normalized.replace('.', ',') : normalized;
+}
+
+function convertDurationToMinutes(value: number, unit: DurationUnit): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (unit === 'seconds') return value / 60;
+  if (unit === 'hours') return value * 60;
+  return value;
+}
+
 function createQuickLogPalette(themeTokens: TreasyThemeTokens): QuickLogPalette {
   const isLightTheme = themeTokens.id === 'calmLight';
 
@@ -192,6 +240,7 @@ export const QuickLogScreen: React.FC<Props> = ({
   onBack,
   onSave,
   onLogSet,
+  onUpdateSet,
   onCategorizeExercise,
   showLocalOnlyNotice = false,
 }) => {
@@ -201,6 +250,14 @@ export const QuickLogScreen: React.FC<Props> = ({
   const styles = useMemo(() => createStyles(palette), [palette]);
   const massUnit = appState.massUnit ?? 'kg';
   const unitLabel = massUnit === 'lb' ? t(language, 'units.lb') : t(language, 'units.kg');
+  const durationUnitOptions = useMemo(
+    () => [
+      { id: 'seconds' as const, label: t(language, 'durationUnit.secondsShort') },
+      { id: 'minutes' as const, label: t(language, 'durationUnit.minutesShort') },
+      { id: 'hours' as const, label: t(language, 'durationUnit.hoursShort') },
+    ],
+    [language]
+  );
   const keypadVariant = palette.isLightTheme ? 'light' : 'dark';
   const [input, setInput] = useState('');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
@@ -221,11 +278,21 @@ export const QuickLogScreen: React.FC<Props> = ({
   const [cardioModalOpen, setCardioModalOpen] = useState(false);
   const [distanceText, setDistanceText] = useState('');
   const [durationText, setDurationText] = useState('');
+  const [pauseText, setPauseText] = useState('');
+  const [cardioDurationUnit, setCardioDurationUnit] = useState<DurationUnit>('minutes');
   const [setError, setSetError] = useState<string | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const [showAllLogs, setShowAllLogs] = useState(false);
   const placeholderOpacity = useRef(new Animated.Value(1)).current;
   const [isFocused, setIsFocused] = useState(false);
+  const [editingSet, setEditingSet] = useState<SetEntry | null>(null);
+  const [editWeightText, setEditWeightText] = useState('');
+  const [editRepsText, setEditRepsText] = useState('');
+  const [editDistanceText, setEditDistanceText] = useState('');
+  const [editDurationText, setEditDurationText] = useState('');
+  const [editPauseText, setEditPauseText] = useState('');
+  const [editDurationUnit, setEditDurationUnit] = useState<DurationUnit>('minutes');
+  const [editError, setEditError] = useState<string | null>(null);
   const { keyboardHeight, isKeyboardVisible } = useKeyboardInset();
 
   const placeholderText = t(language, 'quicklog.placeholder.start');
@@ -291,11 +358,159 @@ export const QuickLogScreen: React.FC<Props> = ({
       .reverse();
   }, [appState.logs]);
 
+  const todaySets: SetEntry[] = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    return appState.sets
+      .filter((set) => (set.createdAt ?? '').slice(0, 10) === todayKey)
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }, [appState.sets]);
+
+  const exerciseById = useMemo(
+    () => new Map(appState.exercises.map((exercise) => [exercise.id, exercise] as const)),
+    [appState.exercises]
+  );
+
+  const editingExercise = editingSet ? exerciseById.get(editingSet.exerciseId) ?? null : null;
+
+  const liveLogItems: LiveLogItem[] = useMemo(() => {
+    const remainingSets = [...todaySets];
+
+    const claimLinkedSet = (entry: LogEntry): SetEntry | null => {
+      const exactMatches = remainingSets.filter((set) => set.createdAt === entry.createdAt);
+      if (exactMatches.length === 1) {
+        const match = exactMatches[0];
+        const index = remainingSets.findIndex((set) => set.id === match.id);
+        if (index >= 0) remainingSets.splice(index, 1);
+        return match;
+      }
+      if (exactMatches.length > 1) return null;
+
+      const entryMs = Date.parse(entry.createdAt);
+      if (!Number.isFinite(entryMs)) return null;
+
+      const nearbyMatches = remainingSets
+        .map((set) => ({ set, diff: Math.abs(Date.parse(set.createdAt) - entryMs) }))
+        .filter((candidate) => Number.isFinite(candidate.diff) && candidate.diff <= EDITABLE_LOG_WINDOW_MS)
+        .sort((a, b) => a.diff - b.diff);
+
+      if (nearbyMatches.length !== 1 && !(nearbyMatches.length > 1 && nearbyMatches[0].diff < nearbyMatches[1].diff)) {
+        return null;
+      }
+
+      const match = nearbyMatches[0]?.set ?? null;
+      if (!match) return null;
+      const index = remainingSets.findIndex((set) => set.id === match.id);
+      if (index >= 0) remainingSets.splice(index, 1);
+      return match;
+    };
+
+    return todayLogs.map((entry) => {
+      const linkedSet = claimLinkedSet(entry);
+      const exercise = linkedSet ? exerciseById.get(linkedSet.exerciseId) ?? null : null;
+      const displayText =
+        linkedSet && exercise
+          ? `${formatExerciseLabel(exercise)} ${formatSetListLabel(language, linkedSet, massUnit)}`
+          : entry.text;
+
+      return {
+        entry,
+        linkedSet,
+        displayText,
+        editable: Boolean(linkedSet && exercise),
+      };
+    });
+  }, [todayLogs, todaySets, exerciseById, language, massUnit]);
+
   const formatTime = (iso: string, lang: AppLanguage): string => {
     const locale = lang === 'nb' ? 'nb-NO' : lang === 'es' ? 'es-ES' : 'en-US';
     const dt = new Date(iso);
     if (Number.isNaN(dt.getTime())) return '';
     return dt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const parseOptionalNumber = (value: string): number | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  const openEditSet = (set: SetEntry) => {
+    setEditError(null);
+    setEditingSet(set);
+    if (set.setType === 'cardio') {
+      const nextDurationUnit = inferDurationUnit(set.durationMin);
+      setEditWeightText('');
+      setEditRepsText('');
+      setEditDistanceText(set.distanceKm != null ? String(set.distanceKm).replace('.', ',') : '');
+      setEditDurationUnit(nextDurationUnit);
+      setEditDurationText(set.durationMin != null ? formatDurationInputValue(language, set.durationMin, nextDurationUnit) : '');
+      setEditPauseText(set.pauseSec != null ? String(set.pauseSec) : '');
+      return;
+    }
+
+    setEditWeightText(
+      set.isBodyweight || set.setType === 'bodyweight' || set.weight === 0
+        ? ''
+        : formatInputWeight(set.weight, massUnit, language)
+    );
+    setEditRepsText(String(set.reps));
+    setEditDistanceText('');
+    setEditDurationText('');
+    setEditPauseText('');
+    setEditDurationUnit('minutes');
+  };
+
+  const closeEditSet = () => {
+    setEditingSet(null);
+    setEditWeightText('');
+    setEditRepsText('');
+    setEditDistanceText('');
+    setEditDurationText('');
+    setEditPauseText('');
+    setEditDurationUnit('minutes');
+    setEditError(null);
+  };
+
+  const handleUpdateLoggedSet = () => {
+    if (!editingSet) return;
+
+    if (editingSet.setType === 'cardio') {
+      const distanceKm = parseOptionalNumber(editDistanceText);
+      const durationValue = parseOptionalNumber(editDurationText);
+      const durationMin = durationValue != null ? convertDurationToMinutes(durationValue, editDurationUnit) : null;
+      const pauseSec = parseOptionalNumber(editPauseText);
+      if (distanceKm == null && durationMin == null && pauseSec == null) {
+        setEditError(t(language, 'cardioInvalid'));
+        return;
+      }
+      onUpdateSet(editingSet.id, 0, 1, { distanceKm, durationMin, pauseSec });
+      closeEditSet();
+      return;
+    }
+
+    const reps = Number(editRepsText.trim());
+    const isBodyweight = editingSet.isBodyweight || editingSet.setType === 'bodyweight' || editingSet.weight === 0;
+    if (isBodyweight) {
+      if (!Number.isFinite(reps) || reps <= 0) {
+        setEditError(t(language, 'invalidWeightReps'));
+        return;
+      }
+      onUpdateSet(editingSet.id, 0, reps, { isBodyweight: true });
+      closeEditSet();
+      return;
+    }
+
+    const inputWeight = Number(editWeightText.trim().replace(',', '.'));
+    const weightKg = toKg(inputWeight, massUnit);
+    if (!editWeightText.trim() || !Number.isFinite(weightKg) || weightKg < 0 || !Number.isFinite(reps) || reps <= 0) {
+      setEditError(t(language, 'invalidWeightReps'));
+      return;
+    }
+
+    onUpdateSet(editingSet.id, weightKg, reps);
+    closeEditSet();
   };
 
   const blockTitle = (block: TrainingBlock): string => {
@@ -421,15 +636,30 @@ export const QuickLogScreen: React.FC<Props> = ({
     setCardioModalOpen(false);
     setDistanceText('');
     setDurationText('');
+    setPauseText('');
+    setCardioDurationUnit('minutes');
   };
 
   const startSetFlow = (exerciseId: string) => {
+    const exercise = appState.exercises.find((entry) => entry.id === exerciseId);
+    const isCardioExercise = exercise?.blockId === 'cardio' || selectedBlockId === 'cardio';
     setSelectedExerciseId(exerciseId);
     setIsExerciseOpen(false);
     setWeightText('');
     setRepsText('');
     setSetError(null);
     setBodyweightMode(false);
+    if (isCardioExercise) {
+      setDistanceText('');
+      setDurationText('');
+      setPauseText('');
+      setCardioDurationUnit('minutes');
+      setWeightModalOpen(false);
+      setRepsModalOpen(false);
+      setCardioModalOpen(true);
+      return;
+    }
+    setCardioModalOpen(false);
     setWeightModalOpen(true);
   };
 
@@ -582,7 +812,12 @@ export const QuickLogScreen: React.FC<Props> = ({
                     activeOpacity={0.9}
                   >
                     <View style={[styles.dot, { backgroundColor: getDotColor(selectedBlockId) }]} />
-                    <Text style={styles.selectRowText}>{formatExerciseLabel(ex)}</Text>
+                    <ExerciseLabelText
+                      label={formatExerciseLabel(ex)}
+                      style={styles.selectRowTextWrap}
+                      mainStyle={styles.selectRowText}
+                      secondaryStyle={[styles.selectRowTextMeta, { color: palette.textMuted }]}
+                    />
                   </TouchableOpacity>
                 );
               })}
@@ -633,32 +868,35 @@ export const QuickLogScreen: React.FC<Props> = ({
 
             {selectedExercise ? (
               <View style={styles.quickActions}>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, styles.inlineButton]}
-                  onPress={() => {
-                    setBodyweightMode(true);
-                    setWeightText('0');
-                    setWeightModalOpen(false);
-                    setRepsModalOpen(true);
-                  }}
-                  activeOpacity={0.9}
-                >
-                  <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
-                </TouchableOpacity>
-
                 {selectedBlockId === 'cardio' ? (
                   <TouchableOpacity
                     style={[styles.secondaryButton, styles.inlineButton]}
                     onPress={() => {
+                      setSetError(null);
                       setCardioModalOpen(true);
                       setDistanceText('');
                       setDurationText('');
+                      setPauseText('');
+                      setCardioDurationUnit('minutes');
                     }}
                     activeOpacity={0.9}
                   >
                     <Text style={styles.secondaryButtonText}>{t(language, 'logDistanceTime')}</Text>
                   </TouchableOpacity>
-                ) : null}
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.inlineButton]}
+                    onPress={() => {
+                      setBodyweightMode(true);
+                      setWeightText('0');
+                      setWeightModalOpen(false);
+                      setRepsModalOpen(true);
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={styles.secondaryButtonText}>{t(language, 'logBodyweight')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : null}
             {quickLogInputSection}
@@ -713,28 +951,33 @@ export const QuickLogScreen: React.FC<Props> = ({
 
         <View style={[styles.liveLogCard, { marginTop: SPACING.md }]}>
           <Text style={styles.liveLogTitle}>{t(language, 'liveLogTitle')}</Text>
-          {todayLogs.length === 0 ? (
+          {liveLogItems.length === 0 ? (
             <Text style={styles.liveLogEmpty}>{t(language, 'liveLogEmpty')}</Text>
           ) : (
             <>
               <View style={styles.liveLogList}>
-                {(showAllLogs ? todayLogs : todayLogs.slice(0, 5)).map((entry, index, array) => (
-                  <View
+                {(showAllLogs ? liveLogItems : liveLogItems.slice(0, 5)).map(({ entry, linkedSet, displayText, editable }, index, array) => (
+                  <TouchableOpacity
                     key={entry.id}
                     style={[
                       styles.liveLogRow,
                       index < array.length - 1 ? styles.liveLogRowDivider : null,
                     ]}
+                    activeOpacity={editable ? 0.82 : 1}
+                    disabled={!editable}
+                    onPress={() => {
+                      if (linkedSet) openEditSet(linkedSet);
+                    }}
                   >
                     <Text style={styles.liveLogTime}>{formatTime(entry.createdAt, language)}</Text>
                     <View style={styles.liveLogContent}>
-                      <Text style={styles.liveLogText}>{entry.text}</Text>
+                      <Text style={styles.liveLogText}>{displayText}</Text>
                       {entry.pinned ? <Text style={styles.liveLogPin}>{'📌'}</Text> : null}
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
-              {!showAllLogs && todayLogs.length > 5 ? (
+              {!showAllLogs && liveLogItems.length > 5 ? (
                 <TouchableOpacity
                   onPress={() => setShowAllLogs(true)}
                   hitSlop={8}
@@ -750,12 +993,111 @@ export const QuickLogScreen: React.FC<Props> = ({
       </ScrollView>
       </KeyboardAvoidingView>
 
+      <Modal visible={Boolean(editingSet)} transparent animationType="fade">
+        <Pressable style={styles.dialogBackdrop} onPress={closeEditSet}>
+          <Pressable style={styles.dialogCard} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>{t(language, 'editSetTitle')}</Text>
+            <Text style={styles.dialogSubtitle}>
+              {editingExercise ? formatExerciseLabel(editingExercise) : t(language, 'editSetSubtitle')}
+            </Text>
+
+            {editingSet?.setType === 'cardio' ? (
+              <>
+                <Text style={styles.dialogFieldLabel}>{t(language, 'distanceLabel')}</Text>
+                <TextInput
+                  style={styles.dialogInput}
+                  placeholder="0"
+                  placeholderTextColor={palette.placeholderText}
+                  value={editDistanceText}
+                  onChangeText={setEditDistanceText}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.dialogFieldLabel}>{t(language, 'cardioDurationLabel')}</Text>
+                <View style={styles.durationUnitRow}>
+                  {durationUnitOptions.map((option) => {
+                    const active = editDurationUnit === option.id;
+                    return (
+                      <TouchableOpacity
+                        key={`edit-${option.id}`}
+                        style={[styles.durationUnitButton, active ? styles.durationUnitButtonActive : null]}
+                        onPress={() => setEditDurationUnit(option.id)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.durationUnitText, active ? styles.durationUnitTextActive : null]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  style={styles.dialogInput}
+                  placeholder="0"
+                  placeholderTextColor={palette.placeholderText}
+                  value={editDurationText}
+                  onChangeText={setEditDurationText}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.dialogFieldLabel}>{t(language, 'pauseLabel')}</Text>
+                <TextInput
+                  style={styles.dialogInput}
+                  placeholder="0"
+                  placeholderTextColor={palette.placeholderText}
+                  value={editPauseText}
+                  onChangeText={setEditPauseText}
+                  keyboardType="numeric"
+                />
+              </>
+            ) : (
+              <>
+                {editingSet?.isBodyweight || editingSet?.setType === 'bodyweight' || editingSet?.weight === 0 ? null : (
+                  <>
+                    <Text style={styles.dialogFieldLabel}>{t(language, 'weightKg', { unit: unitLabel })}</Text>
+                    <TextInput
+                      style={styles.dialogInput}
+                      placeholder="0"
+                      placeholderTextColor={palette.placeholderText}
+                      value={editWeightText}
+                      onChangeText={setEditWeightText}
+                      keyboardType="numeric"
+                    />
+                  </>
+                )}
+                <Text style={styles.dialogFieldLabel}>{t(language, 'reps')}</Text>
+                <TextInput
+                  style={styles.dialogInput}
+                  placeholder="1"
+                  placeholderTextColor={palette.placeholderText}
+                  value={editRepsText}
+                  onChangeText={setEditRepsText}
+                  keyboardType="numeric"
+                />
+              </>
+            )}
+
+            {editError ? <Text style={styles.error}>{editError}</Text> : null}
+
+            <View style={styles.dialogButtons}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={closeEditSet}>
+                <Text style={styles.secondaryButtonText}>{t(language, 'cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.primarySmallButton} onPress={handleUpdateLoggedSet}>
+                <Text style={styles.primarySmallButtonText}>{t(language, 'save')}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <Modal visible={weightModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
           <Pressable style={styles.dialogCard} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>
-              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
-            </Text>
+            {selectedExercise ? (
+              <ExerciseLabelText
+                label={formatExerciseLabel(selectedExercise)}
+                style={styles.dialogTitleWrap}
+                mainStyle={styles.dialogTitle}
+                secondaryStyle={[styles.dialogTitleMeta, { color: palette.textMuted }]}
+              />
+            ) : null}
             <Text style={styles.dialogSubtitle}>{t(language, 'weightKg', { unit: unitLabel })}</Text>
             <TextInput
               style={styles.dialogInput}
@@ -809,9 +1151,14 @@ export const QuickLogScreen: React.FC<Props> = ({
       <Modal visible={repsModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
           <Pressable style={styles.dialogCard} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>
-              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
-            </Text>
+            {selectedExercise ? (
+              <ExerciseLabelText
+                label={formatExerciseLabel(selectedExercise)}
+                style={styles.dialogTitleWrap}
+                mainStyle={styles.dialogTitle}
+                secondaryStyle={[styles.dialogTitleMeta, { color: palette.textMuted }]}
+              />
+            ) : null}
             <Text style={styles.dialogSubtitle}>{t(language, 'reps')}</Text>
             <TextInput
               style={styles.dialogInput}
@@ -857,10 +1204,15 @@ export const QuickLogScreen: React.FC<Props> = ({
       <Modal visible={cardioModalOpen} transparent animationType="fade">
         <Pressable style={styles.dialogBackdrop} onPress={resetSetFlow}>
           <Pressable style={styles.dialogCard} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>
-              {selectedExercise ? formatExerciseLabel(selectedExercise) : ''}
-            </Text>
-            <Text style={styles.dialogSubtitle}>{t(language, 'distanceLabel')}</Text>
+            {selectedExercise ? (
+              <ExerciseLabelText
+                label={formatExerciseLabel(selectedExercise)}
+                style={styles.dialogTitleWrap}
+                mainStyle={styles.dialogTitle}
+                secondaryStyle={[styles.dialogTitleMeta, { color: palette.textMuted }]}
+              />
+            ) : null}
+            <Text style={styles.dialogFieldLabel}>{t(language, 'distanceLabel')}</Text>
             <TextInput
               style={styles.dialogInput}
               placeholder="5"
@@ -869,13 +1221,37 @@ export const QuickLogScreen: React.FC<Props> = ({
               onChangeText={setDistanceText}
               keyboardType="numeric"
             />
-            <Text style={styles.dialogSubtitle}>{t(language, 'durationLabel')}</Text>
+            <Text style={styles.dialogFieldLabel}>{t(language, 'cardioDurationLabel')}</Text>
+            <View style={styles.durationUnitRow}>
+              {durationUnitOptions.map((option) => {
+                const active = cardioDurationUnit === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.durationUnitButton, active ? styles.durationUnitButtonActive : null]}
+                    onPress={() => setCardioDurationUnit(option.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.durationUnitText, active ? styles.durationUnitTextActive : null]}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <TextInput
               style={styles.dialogInput}
               placeholder="30"
               placeholderTextColor={palette.placeholderText}
               value={durationText}
               onChangeText={setDurationText}
+              keyboardType="numeric"
+            />
+            <Text style={styles.dialogFieldLabel}>{t(language, 'pauseLabel')}</Text>
+            <TextInput
+              style={styles.dialogInput}
+              placeholder="0"
+              placeholderTextColor={palette.placeholderText}
+              value={pauseText}
+              onChangeText={setPauseText}
               keyboardType="numeric"
             />
 
@@ -889,8 +1265,13 @@ export const QuickLogScreen: React.FC<Props> = ({
                 style={styles.primarySmallButton}
                 onPress={() => {
                   const dist = distanceText ? Number(distanceText.trim().replace(',', '.')) : null;
-                  const dur = durationText ? Number(durationText.trim().replace(',', '.')) : null;
-                  if ((!dist || dist <= 0) && (!dur || dur <= 0)) {
+                  const durationValue = durationText ? Number(durationText.trim().replace(',', '.')) : null;
+                  const dur =
+                    durationValue != null && Number.isFinite(durationValue) && durationValue > 0
+                      ? convertDurationToMinutes(durationValue, cardioDurationUnit)
+                      : null;
+                  const pauseSec = pauseText ? Number(pauseText.trim().replace(',', '.')) : null;
+                  if ((!dist || dist <= 0) && (dur == null || dur <= 0) && (!pauseSec || pauseSec <= 0)) {
                     setSetError(t(language, 'cardioInvalid'));
                     return;
                   }
@@ -899,6 +1280,7 @@ export const QuickLogScreen: React.FC<Props> = ({
                       bodyweight: false,
                       distanceKm: dist && dist > 0 ? dist : null,
                       durationMin: dur && dur > 0 ? dur : null,
+                      pauseSec: pauseSec && pauseSec > 0 ? pauseSec : null,
                     });
                     flashSaved('workout');
                   }
@@ -1290,6 +1672,14 @@ const createStyles = (palette: QuickLogPalette) =>
     fontWeight: '700',
     flex: 1,
   },
+  selectRowTextWrap: {
+    flex: 1,
+  },
+  selectRowTextMeta: {
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   emptyText: {
     color: palette.textMuted,
     fontSize: TEXT.xs,
@@ -1362,13 +1752,55 @@ const createStyles = (palette: QuickLogPalette) =>
     color: palette.textStrong,
     fontSize: TEXT.lg,
     fontWeight: '800',
+  },
+  dialogTitleWrap: {
     marginBottom: SPACING.xs,
+  },
+  dialogTitleMeta: {
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginTop: 2,
   },
   dialogSubtitle: {
     color: palette.textMuted,
     fontSize: TEXT.sm,
     fontWeight: '700',
     marginBottom: SPACING.sm,
+  },
+  dialogFieldLabel: {
+    color: palette.textMuted,
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
+  durationUnitRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  durationUnitButton: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: palette.secondaryBtnBorder,
+    backgroundColor: palette.secondaryBtnBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.sm,
+  },
+  durationUnitButtonActive: {
+    backgroundColor: palette.primarySmallBg,
+    borderColor: palette.primarySmallBg,
+  },
+  durationUnitText: {
+    color: palette.secondaryBtnText,
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+  },
+  durationUnitTextActive: {
+    color: palette.primarySmallText,
   },
   dialogInput: {
     backgroundColor: palette.dialogInputBg,

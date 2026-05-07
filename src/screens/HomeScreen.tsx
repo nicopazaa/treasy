@@ -15,7 +15,6 @@ import {
   Pressable,
   useWindowDimensions,
   type StyleProp,
-  type TextStyle,
   type ViewStyle,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
@@ -59,6 +58,7 @@ import { QuickLogCard } from './HomeScreen/sections/QuickLogCard';
 import { MuscleGroupGrid } from './HomeScreen/sections/MuscleGroupGrid';
 import { PreviousWorkoutCard, type PreviousWorkoutCardDisplay } from './HomeScreen/sections/PreviousWorkoutCard';
 import { AnalysisSection } from './HomeScreen/sections/AnalysisSection';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 
 type Props = {
   appState: AppState;
@@ -91,7 +91,6 @@ const GROUP_ICON_DARK_BLUE = '#1E3A8A';
 const TWO_COLUMN_MIN_WIDTH = 640;
 const NAV_CHEVRON = '\u203A';
 const HOME_SURFACE_DARK_BORDER = '#2E415A';
-const NOTERT_PREVIEW_ROWS = 3;
 const STICKY_WORDMARK_MIN_TRANSLATE_Y = -6;
 const QUICKLOG_HERO_CYAN = '#00E5FF';
 const QUICKLOG_HERO_TEAL = '#0D9488';
@@ -166,22 +165,6 @@ const ANALYSIS_SECTION_STYLES = {
   cardTitle: styles.cardTitle,
   cardText: styles.cardText,
 };
-
-function getLatestPreviewNotes(notes: NoteEntry[]): NoteEntry[] {
-  return notes
-    .filter((note) => note.text.trim().length > 0)
-    .slice()
-    .sort((a, b) => {
-      const aCreatedAt = a.createdAt ?? '';
-      const bCreatedAt = b.createdAt ?? '';
-      if (aCreatedAt === bCreatedAt) {
-        if (a.id === b.id) return 0;
-        return a.id < b.id ? 1 : -1;
-      }
-      return aCreatedAt < bCreatedAt ? 1 : -1;
-    })
-    .slice(0, 3);
-}
 
 type HomeTileInteraction = {
   pressed: boolean;
@@ -530,7 +513,6 @@ export const HomeScreen: React.FC<Props> = ({
   const [notesButtonHovered, setNotesButtonHovered] = useState(false);
   const [notesNotice, setNotesNotice] = useState<string | null>(null);
   const [volumeExpanded, setVolumeExpanded] = useState(false);
-  const [recentNotes, setRecentNotes] = useState<NoteEntry[]>([]);
   const [allNotes, setAllNotes] = useState<NoteEntry[]>([]);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [analysisAnchorY, setAnalysisAnchorY] = useState<number | null>(null);
@@ -864,10 +846,8 @@ export const HomeScreen: React.FC<Props> = ({
       const notes = await listNotes();
       if (!isMountedRef.current) return;
       setAllNotes(notes);
-      const newest = getLatestPreviewNotes(notes);
-      setRecentNotes(newest);
     } catch (e) {
-      console.warn('Failed to load notes preview', e);
+      console.warn('Failed to load notes', e);
     }
   }, []);
 
@@ -1784,16 +1764,6 @@ export const HomeScreen: React.FC<Props> = ({
 
   const hasNoteText = noteText.trim().length > 0;
   const notertTitle = t(language, 'home.notes.previewTitle');
-  const notertEmpty = t(language, 'home.notes.empty');
-  const recentNoteLines = useMemo(
-    () => recentNotes.map((note) => note.text.trim()).filter((text) => text.length > 0),
-    [recentNotes]
-  );
-  const totalRecentNotesCount = useMemo(
-    () => allNotes.reduce((count, note) => (note.text.trim().length > 0 ? count + 1 : count), 0),
-    [allNotes]
-  );
-  const notertOverflowCount = Math.max(0, totalRecentNotesCount - NOTERT_PREVIEW_ROWS);
   const timelineNotesByDate = useMemo(() => {
     const byDate: Record<string, string> = {};
     const sorted = allNotes
@@ -1808,59 +1778,6 @@ export const HomeScreen: React.FC<Props> = ({
     }
     return byDate;
   }, [allNotes]);
-
-  const renderRecentNotesList = ({
-    lines,
-    emptyLabel,
-    containerStyle,
-    itemTextStyle,
-    emptyTextStyle,
-    maxRows,
-    reserveRows,
-    overflowCount,
-    overflowTextStyle,
-  }: {
-    lines: string[];
-    emptyLabel: string;
-    containerStyle?: StyleProp<ViewStyle>;
-    itemTextStyle: StyleProp<TextStyle>;
-    emptyTextStyle: StyleProp<TextStyle>;
-    maxRows?: number;
-    reserveRows?: number;
-    overflowCount?: number;
-    overflowTextStyle?: StyleProp<TextStyle>;
-  }) => {
-    const visibleLines = maxRows != null && maxRows > 0 ? lines.slice(0, maxRows) : lines;
-    const visibleCount = visibleLines.length > 0 ? visibleLines.length : 1;
-
-    return (
-      <View style={containerStyle}>
-        {visibleLines.length ? (
-          visibleLines.map((line, index) => (
-            <View key={`${index}-${line.slice(0, 24)}`} style={styles.notePreviewRow}>
-              <View style={styles.notePreviewDot} />
-              <Text style={[styles.notePreviewText, itemTextStyle]} numberOfLines={1} ellipsizeMode="tail">
-                {line}
-              </Text>
-            </View>
-          ))
-        ) : (
-          <Text style={emptyTextStyle}>{emptyLabel}</Text>
-        )}
-        {reserveRows != null && reserveRows > 0
-          ? Array.from({
-              length: Math.max(0, reserveRows - visibleCount),
-            }).map((_, index) => (
-              <View key={`placeholder-${index}`} style={styles.notePreviewRow}>
-                <View style={[styles.notePreviewDot, styles.notePreviewDotPlaceholder]} />
-                <Text style={[styles.notePreviewText, itemTextStyle, styles.notePreviewPlaceholder]}>{'placeholder'}</Text>
-              </View>
-            ))
-          : null}
-        {overflowCount != null && overflowCount > 0 ? <Text style={overflowTextStyle}>{`+${overflowCount}`}</Text> : null}
-      </View>
-    );
-  };
 
   const notesCard = (
     <View style={[styles.notesCard, themeSurfaceStyle, notesCardFillStyle]}>
@@ -1912,23 +1829,7 @@ export const HomeScreen: React.FC<Props> = ({
     </View>
   );
 
-  const overloadWindowDays = 30;
-  const analyseFallback =
-    language === 'nb'
-      ? 'Se progresjon og volum'
-      : language === 'es'
-        ? 'Ver progreso y volumen'
-        : 'See progress & volume';
-  const analyseMetricValue = overloadDeltaText && overload.exerciseName ? overloadDeltaText : null;
-  const analyseMetricContext =
-    analyseMetricValue && overload.exerciseName
-      ? language === 'nb'
-        ? `${overload.exerciseName} (${overloadWindowDays} dager)`
-        : language === 'es'
-          ? `${overload.exerciseName} (${overloadWindowDays} d\u00EDas)`
-          : `${overload.exerciseName} (${overloadWindowDays} days)`
-      : null;
-  const analyseSubtitle = analyseMetricContext ?? analyseFallback;
+  const analysisTitle = language === 'nb' ? 'Analyse' : language === 'es' ? 'An\u00E1lisis' : 'Analysis';
   const todayPanelHeight = Math.max(360, Math.round(viewportHeight * 0.8));
   const timerReferenceMs = todayPanelVisible ? todayTimerNowMs : Date.now();
   const todayElapsedSeconds =
@@ -2203,7 +2104,12 @@ export const HomeScreen: React.FC<Props> = ({
                         </View>
                         <View style={[styles.todayExerciseCard, themeSurfaceAltStyle]}>
                           <View style={styles.todayExerciseHeaderRow}>
-                            <Text style={[styles.todayExerciseTitle, themeTextStyle]}>{group.exerciseLabel}</Text>
+                            <ExerciseLabelText
+                              label={group.exerciseLabel}
+                              style={styles.todayExerciseTitleWrap}
+                              mainStyle={[styles.todayExerciseTitle, themeTextStyle]}
+                              secondaryStyle={[styles.todayExerciseTitleMeta, themeTextMutedStyle]}
+                            />
                             <View style={styles.todayExerciseMetaRight}>
                               <Text style={[styles.todayExerciseTime, themeTextMutedStyle]}>{group.timeLabel}</Text>
                               <Text style={[styles.todayExerciseVolume, themeLinkTextStyle, STAT_NUMBER_STYLE]}>{group.volumeLabel}</Text>
@@ -2411,61 +2317,155 @@ export const HomeScreen: React.FC<Props> = ({
                     onPress={onOpenAnalysis}
                     activeOpacity={0.9}
                   >
-                    <View
-                      style={[styles.analysisCardAccentTint, { backgroundColor: toRgba(themeTokens.accent, 0.08) }]}
-                      pointerEvents="none"
-                    />
-                    <View style={[styles.analysisCardAccentStripe, { backgroundColor: themeTokens.accent }]} pointerEvents="none" />
-                    <View style={[styles.navTileLeft, styles.analysisCardForeground]}>
-                      <View style={styles.navTileTextStack}>
-                        <Text
+                    <View style={[styles.navTileLeft, styles.analysisTileLeft]}>
+                      <View style={styles.analysisCtaButton}>
+                        <View
                           style={[
-                            styles.analysisNavText,
-                            styles.navTileTitleCompact,
-                            styles.analysisCardTitleText,
-                            themeAccentTextStyle,
+                            styles.analysisGlow,
+                            { backgroundColor: toRgba(themeTokens.accent, isDarkTheme ? 0.18 : 0.12) },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.analysisAccentPanel,
+                            {
+                              backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.32 : 0.5),
+                              borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.42 : 0.5),
+                            },
                           ]}
                         >
-                          {language === 'nb' ? 'Analyse' : language === 'es' ? 'An\u00E1lisis' : 'Analysis'}
-                        </Text>
-                        {analyseMetricValue ? (
-                          <>
+                          <View
+                            style={[
+                              styles.analysisMiniBadge,
+                              {
+                                backgroundColor: toRgba(themeTokens.link, isDarkTheme ? 0.12 : 0.08),
+                                borderColor: toRgba(themeTokens.link, isDarkTheme ? 0.18 : 0.14),
+                              },
+                            ]}
+                          />
+                          <View style={styles.analysisChartGrid}>
+                            <View
+                              style={[
+                                styles.analysisGridLine,
+                                { backgroundColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.86 : 0.82) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisGridLine,
+                                { backgroundColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.72 : 0.68) },
+                              ]}
+                            />
+                          </View>
+                          <View style={styles.analysisBars}>
+                            <View
+                              style={[
+                                styles.analysisBar,
+                                styles.analysisBarTiny,
+                                { backgroundColor: toRgba(themeTokens.textMuted, isDarkTheme ? 0.72 : 0.66) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisBar,
+                                styles.analysisBarShort,
+                                { backgroundColor: toRgba(themeTokens.textMuted, isDarkTheme ? 0.82 : 0.74) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisBar,
+                                styles.analysisBarMedium,
+                                { backgroundColor: toRgba(themeTokens.text, 0.9) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisBar,
+                                styles.analysisBarTall,
+                                { backgroundColor: themeTokens.accent },
+                              ]}
+                            />
+                          </View>
+                          <View style={styles.analysisTrendPath}>
+                            <View
+                              style={[
+                                styles.analysisTrendSegment,
+                                styles.analysisTrendSegmentOne,
+                                { backgroundColor: toRgba(themeTokens.link, isDarkTheme ? 0.9 : 0.82) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisTrendSegment,
+                                styles.analysisTrendSegmentTwo,
+                                { backgroundColor: toRgba(themeTokens.link, isDarkTheme ? 0.94 : 0.86) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisTrendSegment,
+                                styles.analysisTrendSegmentThree,
+                                { backgroundColor: themeTokens.accent },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                        <View style={styles.analysisHeaderRow}>
+                          <View style={styles.analysisTitleCluster}>
+                            <View
+                              style={[
+                                styles.analysisTitleDot,
+                                { backgroundColor: themeTokens.accent },
+                              ]}
+                            />
                             <Text
-                              style={[styles.navTileMetricValue, styles.analysisCardMetricValue, { color: themeTokens.success }]}
+                              style={[styles.analysisCtaText, themeAccentTextStyle]}
                               numberOfLines={1}
-                              ellipsizeMode="tail"
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.82}
                             >
-                              {analyseMetricValue}
+                              {analysisTitle}
                             </Text>
-                            <Text
-                              style={[styles.navTileMetricContext, styles.analysisCardMetricContext, themeTextMutedStyle]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {analyseSubtitle}
-                            </Text>
-                          </>
-                        ) : (
-                          <Text
-                            style={[styles.navTileSubText, styles.analysisCardSubText, themeTextMutedStyle]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
+                          </View>
+                          <View
+                            style={[
+                              styles.analysisArrowBadge,
+                              {
+                                backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.54 : 0.88),
+                                borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.92 : 0.9),
+                              },
+                            ]}
                           >
-                            {analyseSubtitle}
-                          </Text>
-                        )}
+                            <Text style={[styles.analysisCtaChevron, themeAccentTextStyle]}>{NAV_CHEVRON}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.analysisFooterRow}>
+                          <View style={styles.analysisPillRow}>
+                            <View
+                              style={[
+                                styles.analysisPill,
+                                { backgroundColor: toRgba(themeTokens.accent, isDarkTheme ? 0.16 : 0.12) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisPill,
+                                styles.analysisPillMid,
+                                { backgroundColor: toRgba(themeTokens.link, isDarkTheme ? 0.14 : 0.1) },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.analysisPill,
+                                styles.analysisPillShort,
+                                { backgroundColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.84 : 0.76) },
+                              ]}
+                            />
+                          </View>
+                        </View>
                       </View>
                     </View>
-                    <Text
-                      style={[
-                        styles.analysisNavChevron,
-                        styles.analysisCardForeground,
-                        styles.analysisCardChevron,
-                        themeAccentTextStyle,
-                      ]}
-                    >
-                      {NAV_CHEVRON}
-                    </Text>
                   </TouchableOpacity>
                   <View style={styles.lowerGap} />
                   <View style={styles.notertMeasure}>
@@ -2480,26 +2480,119 @@ export const HomeScreen: React.FC<Props> = ({
                       ]}
                       onPress={onOpenNotert}
                     >
-                      <View style={[styles.navTileLeft, styles.notertTileLeft]}>
-                        <View style={styles.notertHeaderRow}>
-                          <Text style={[styles.notertHeaderText, themeAccentTextStyle]}>{notertTitle}</Text>
-                          <View style={styles.notesHeaderAffordance}>
-                            <Text style={[styles.notesHeaderChevron, themeAccentTextStyle]}>{NAV_CHEVRON}</Text>
+                        <View style={[styles.navTileLeft, styles.notertTileLeft]}>
+                          <View style={styles.notertCtaButton}>
+                            <View
+                              style={[
+                                styles.notertPaperBack,
+                                {
+                                  backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.28 : 0.52),
+                                  borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.4 : 0.46),
+                                },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.notertPaperFront,
+                                {
+                                  backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.38 : 0.68),
+                                  borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.48 : 0.58),
+                                },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.notertGlow,
+                                {
+                                  backgroundColor: toRgba(themeTokens.accent, isDarkTheme ? 0.18 : 0.12),
+                                },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.notertAccentOrb,
+                                {
+                                  backgroundColor: toRgba(themeTokens.link, isDarkTheme ? 0.16 : 0.1),
+                                  borderColor: toRgba(themeTokens.link, isDarkTheme ? 0.22 : 0.16),
+                                },
+                              ]}
+                            />
+                            <View
+                              style={[
+                                styles.notertAccentTrack,
+                                {
+                                  backgroundColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.82 : 0.68),
+                                },
+                              ]}
+                            >
+                              <View
+                                style={[
+                                  styles.notertAccentTrackFill,
+                                  { backgroundColor: toRgba(themeTokens.accent, isDarkTheme ? 0.85 : 0.78) },
+                                ]}
+                              />
+                            </View>
+                            <View style={styles.notertFooterRow}>
+                              <View
+                                style={[
+                                  styles.notertIconBadge,
+                                  {
+                                    backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.5 : 0.82),
+                                    borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.92 : 0.9),
+                                  },
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.notertIconDot,
+                                    { backgroundColor: themeTokens.accent },
+                                  ]}
+                                />
+                                <View style={styles.notertIconLines}>
+                                  <View
+                                    style={[
+                                      styles.notertIconLine,
+                                      styles.notertIconLineWide,
+                                      { backgroundColor: toRgba(themeTokens.text, 0.92) },
+                                    ]}
+                                  />
+                                  <View
+                                    style={[
+                                      styles.notertIconLine,
+                                      { backgroundColor: toRgba(themeTokens.textMuted, isDarkTheme ? 0.88 : 0.82) },
+                                    ]}
+                                  />
+                                  <View
+                                    style={[
+                                      styles.notertIconLine,
+                                      styles.notertIconLineShort,
+                                      { backgroundColor: toRgba(themeTokens.textMuted, isDarkTheme ? 0.72 : 0.66) },
+                                    ]}
+                                  />
+                                </View>
+                              </View>
+                              <Text
+                                style={[styles.notertCtaText, themeAccentTextStyle]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.82}
+                              >
+                                {notertTitle}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.notertArrowBadge,
+                                  {
+                                    backgroundColor: toRgba(themeTokens.chip, isDarkTheme ? 0.54 : 0.88),
+                                    borderColor: toRgba(themeTokens.stroke, isDarkTheme ? 0.92 : 0.9),
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.notertCtaChevron, themeAccentTextStyle]}>{NAV_CHEVRON}</Text>
+                              </View>
+                            </View>
                           </View>
                         </View>
-                        <View style={[styles.notertContentDivider, { backgroundColor: themeTokens.stroke }]} />
-                        {renderRecentNotesList({
-                          lines: recentNoteLines,
-                          emptyLabel: notertEmpty,
-                          containerStyle: styles.notertPreviewList,
-                          itemTextStyle: [styles.notertLineText, themeTextStyle],
-                          emptyTextStyle: [styles.notertEmptyText, themeTextMutedStyle],
-                          maxRows: NOTERT_PREVIEW_ROWS,
-                          reserveRows: NOTERT_PREVIEW_ROWS,
-                          overflowCount: notertOverflowCount,
-                          overflowTextStyle: [styles.notertOverflowText, themeTextMutedStyle],
-                        })}
-                      </View>
                     </PressScale>
                   </View>
                 </View>

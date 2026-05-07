@@ -15,10 +15,8 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppLanguage } from '../shared/types';
 import type { AppState, TrainingBlock, Exercise, SetEntry, TrainingBlockId } from '../features/workouts';
 import { getBlockTone, getDotColor } from '../shared/theme/blockTone';
-import { formatRelativeDateTime, formatShortDate } from '../shared/utils/dateLabels';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { blockLabel, t, type StringKey } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
@@ -26,516 +24,79 @@ import { formatWeight, fromKg, roundForDisplay, toKg, type MassUnit } from '../s
 import { now } from '../shared/time';
 import { useBackSwipeContext } from '../app/navigation/BackSwipeContext';
 import { BLOCK_ICON_SOURCES } from '../shared/ui/blockIcons';
+import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
+import {
+  AGGREGATION_LABEL_KEY,
+  CHART_AXIS_WIDTH,
+  CHART_HEIGHT,
+  CHART_LINE_THICKNESS,
+  CHART_POINT_SIZE,
+  CHART_TREND_ALPHA,
+  CHART_TREND_LINE_THICKNESS,
+  CHART_X_PADDING,
+  FEEDBACK_WINDOW_SETS,
+  INSIGHTS_FALLBACK_SESSIONS,
+  INSIGHTS_TREND_WINDOW_DAYS,
+  MAIN_BLOCK_ORDER,
+  MODE_BLOCK_IDS,
+  PLATEAU_WINDOW_SETS,
+  RANGE_LABEL_KEY,
+  RANGE_LONG_LABEL_KEY,
+  VALID_BLOCK_IDS,
+  aggregateChartRows,
+  average,
+  buildAxis,
+  buildSetRow,
+  clamp,
+  clampViewport,
+  computeEwma,
+  daysForRange,
+  estimateOneRm,
+  findNearestRow,
+  formatAggregationLabel,
+  formatChartTick,
+  formatMetricLabel,
+  formatMetricValue,
+  formatSignedInteger,
+  hexToRgba,
+  isOtherBlock,
+  labelForBlock,
+  metricValueChart,
+  metricValueSet,
+  splitLabelParentheses,
+  timeForChartX,
+  type Aggregation,
+  type ChartAggregation,
+  type ChartPoint,
+  type ChartRow,
+  type InstantFeedback,
+  type Metric,
+  type NextSetSuggestion,
+  type NextTarget,
+  type PlateauInsight,
+  type RecentPerformanceSnapshot,
+  type SetRow,
+  type TileVariant,
+  type TimeRange,
+  type TrendPoint,
+  weightStep,
+  xForChartTime,
+  yForChartValue,
+} from './ProgressScreen.model';
 
 interface Props {
   appState: AppState;
   onBack: () => void;
 }
 
-type TimeRange = 'all' | '90d' | '30d' | '14d' | '7d';
-type Metric = 'weight' | 'oneRm' | 'volume' | 'reps';
-type Aggregation = 'auto' | 'day' | 'week' | 'month' | 'year';
-type ChartAggregation = Exclude<Aggregation, 'auto'>;
-type TileVariant = 'primary' | 'secondary';
-
-const RANGE_LABEL_KEY: Record<TimeRange, StringKey> = {
-  all: 'progress.range.all',
-  '90d': 'progress.range.90d',
-  '30d': 'progress.range.30d',
-  '14d': 'progress.range.14d',
-  '7d': 'progress.range.7d',
-};
-
-const RANGE_LONG_LABEL_KEY: Record<TimeRange, StringKey> = {
-  all: 'progress.rangeLong.all',
-  '90d': 'progress.rangeLong.90d',
-  '30d': 'progress.rangeLong.30d',
-  '14d': 'progress.rangeLong.14d',
-  '7d': 'progress.rangeLong.7d',
-};
-
-const AGGREGATION_LABEL_KEY: Record<Aggregation, StringKey> = {
-  auto: 'progress.aggregation.auto',
-  day: 'progress.aggregation.day',
-  week: 'progress.aggregation.week',
-  month: 'progress.aggregation.month',
-  year: 'progress.aggregation.year',
-};
-
-const CHART_AXIS_WIDTH = 56;
-const CHART_HEIGHT = 140;
-const CHART_X_PADDING = 10;
-const CHART_Y_PADDING_TOP = 12;
-const CHART_Y_PADDING_BOTTOM = 12;
-const CHART_POINT_SIZE = 8;
-const CHART_LINE_THICKNESS = 1;
-const CHART_TREND_LINE_THICKNESS = 2;
-const CHART_TREND_ALPHA = 0.34;
-
-const INSIGHTS_TREND_WINDOW_DAYS = 14;
-const INSIGHTS_FALLBACK_SESSIONS = 5;
-const FEEDBACK_WINDOW_SETS = 4;
-const PLATEAU_WINDOW_SETS = 6;
-
-const MAIN_BLOCK_ORDER: TrainingBlockId[] = ['chest', 'shoulders', 'back', 'arms', 'core', 'legs'];
-const MODE_BLOCK_IDS: TrainingBlockId[] = ['cardio', 'bodyweight'];
-const VALID_BLOCK_IDS = new Set<string>([...MAIN_BLOCK_ORDER, ...MODE_BLOCK_IDS]);
-
-interface SetRow {
-  id: string;
-  createdAtMs: number;
-  dateLabel: string;
-  dateTimeLabel: string;
-  weight: number;
-  reps: number;
-  oneRm: number;
-  volume: number;
-  volumeUsesWeight: boolean;
-  setLabel: string;
-}
-
-type NextTarget =
-  | { kind: 'reps'; next: number; progress: number; diff: number }
-  | { kind: 'weight'; nextKg: number; progress: number; diffKg: number };
-
-type RecentPerformanceSnapshot = {
-  baselineMetric: number;
-  latestMetric: number;
-  deltaMetric: number;
-  deltaPct: number;
-  baselineReps: number;
-  latestReps: number;
-};
-
-type InstantFeedback = {
-  tone: 'up' | 'stable' | 'down';
-  title: string;
-  detail: string;
-  accent: string;
-};
-
-type NextSetSuggestion = {
-  title: string;
-  detail: string;
-  accent: string;
-};
-
-type PlateauInsight = {
-  level: 'plateau' | 'regression';
-  title: string;
-  detail: string;
-  actionPrimary: string;
-  actionSecondary: string;
-  accent: string;
-};
-
-interface ChartRow {
-  id: string;
-  createdAtMs: number;
-  dateLabel: string;
-  weightMax: number;
-  oneRmMax: number;
-  volumeSum: number;
-  repsSum: number;
-  bestSet: SetRow | null;
-}
-
-type ChartPoint = {
-  id: string;
-  row: ChartRow;
-  x: number;
-  y: number;
-  value: number;
-};
-
-type TrendPoint = {
-  id: string;
-  x: number;
-  y: number;
-};
-
-function metricValueSet(row: SetRow, metric: Metric): number {
-  if (metric === 'oneRm') return row.oneRm;
-  if (metric === 'reps') return row.reps;
-  if (metric === 'volume') return row.volume;
-  return row.weight;
-}
-
-function metricValueChart(row: ChartRow, metric: Metric): number {
-  if (metric === 'oneRm') return row.oneRmMax;
-  if (metric === 'reps') return row.repsSum;
-  if (metric === 'volume') return row.volumeSum;
-  return row.weightMax;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function average(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function formatSignedInteger(value: number): string {
-  const rounded = Math.round(value);
-  if (rounded > 0) return `+${rounded}`;
-  return String(rounded);
-}
-
-function computeEwma(values: number[], alpha: number): number[] {
-  if (values.length === 0) return [];
-  const safeAlpha = Number.isFinite(alpha) ? clamp(alpha, 0.05, 0.95) : 0.3;
-  const smoothed: number[] = [];
-  let prev = values[0] ?? 0;
-  for (let index = 0; index < values.length; index += 1) {
-    const current = values[index] ?? prev;
-    prev = index === 0 ? current : prev + safeAlpha * (current - prev);
-    smoothed.push(prev);
-  }
-  return smoothed;
-}
-
-function splitLabelParentheses(label: string): { main: string; parentheses: string | null } {
-  const idx = label.indexOf('(');
-  if (idx <= 0) return { main: label, parentheses: null };
-  const main = label.slice(0, idx).trimEnd();
-  const parentheses = label.slice(idx).trim();
-  return parentheses.startsWith('(') && parentheses.length > 0 ? { main, parentheses } : { main: label, parentheses: null };
-}
-
-function localeForLanguage(language: AppLanguage): string {
-  if (language === 'nb') return 'nb-NO';
-  if (language === 'es') return 'es-ES';
-  return 'en-US';
-}
-
-function formatChartTick(
-  language: AppLanguage,
-  value: number,
-  metric: Metric,
-  massUnit: MassUnit,
-  volumeUsesWeight: boolean
-): string {
-  if (!Number.isFinite(value)) return '';
-  if (metric === 'reps' || (metric === 'volume' && !volumeUsesWeight)) {
-    return String(Math.round(value));
-  }
-  const maximumFractionDigits = massUnit === 'lb' ? 0 : 1;
-  try {
-    const nf = new Intl.NumberFormat(localeForLanguage(language), {
-      maximumFractionDigits,
-      minimumFractionDigits: 0,
-    });
-    return nf.format(value);
-  } catch {
-    return maximumFractionDigits === 0 ? String(Math.round(value)) : String(value);
-  }
-}
-
-function formatDateTime(date: Date, language: AppLanguage): string {
-  const time = date.toLocaleTimeString(localeForLanguage(language), {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  return `${formatShortDate(date)} ${time}`;
-}
-
-function formatSetLabel(
-  weightKg: number,
-  reps: number,
-  isBodyweight: boolean,
-  massUnit: MassUnit,
-  language: AppLanguage
-): string {
-  if (isBodyweight || weightKg === 0) {
-    return `${reps} ${t(language, 'reps')}`;
-  }
-  return `${formatWeight(weightKg, massUnit, language)} x ${reps} ${t(language, 'reps')}`;
-}
-
-function formatMetricLabel(language: AppLanguage, metric: Metric): string {
-  if (metric === 'oneRm') return t(language, 'oneRm');
-  if (metric === 'volume') return t(language, 'analysis.volume.title');
-  if (metric === 'reps') return t(language, 'reps');
-  return t(language, 'weight');
-}
-
-function formatMetricValue(
-  value: number,
-  metric: Metric,
-  massUnit: MassUnit,
-  language: AppLanguage,
-  volumeUsesWeight: boolean
-): string {
-  if (!Number.isFinite(value)) return '';
-  if (metric === 'reps') return `${Math.round(value)} ${t(language, 'reps')}`;
-  if (metric === 'volume' && !volumeUsesWeight) return `${Math.round(value)} ${t(language, 'reps')}`;
-  return formatWeight(value, massUnit, language);
-}
-
-function niceStep(rawStep: number, candidates: number[]): number {
-  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
-  const exp = Math.floor(Math.log10(rawStep));
-  const base = Math.pow(10, exp);
-  const fraction = rawStep / base;
-
-  let best = candidates[candidates.length - 1] ?? 1;
-  for (const c of candidates) {
-    if (fraction <= c) {
-      best = c;
-      break;
-    }
-  }
-  return best * base;
-}
-
-function makeTicks(minValue: number, maxValue: number, step: number): number[] {
-  const res: number[] = [];
-  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || !Number.isFinite(step) || step <= 0) return res;
-  const roundedStep = Number(step.toFixed(10));
-  const maxIter = 200;
-  let v = minValue;
-  let iter = 0;
-  while (v <= maxValue + roundedStep * 0.5 && iter < maxIter) {
-    res.push(Number(v.toFixed(10)));
-    v += roundedStep;
-    iter += 1;
-  }
-  return res;
-}
-
-function buildAxis(values: number[], desiredTickCount: number, candidates: number[]): { min: number; max: number; ticks: number[] } {
-  const finite = values.filter((v) => Number.isFinite(v));
-  if (finite.length === 0) return { min: 0, max: 1, ticks: [0, 1] };
-
-  let min = Math.min(...finite);
-  let max = Math.max(...finite);
-
-  if (min === max) {
-    const pad = min === 0 ? 1 : Math.max(1, Math.abs(min) * 0.1);
-    min -= pad;
-    max += pad;
-  }
-
-  const range = max - min;
-  const rawStep = range / Math.max(1, desiredTickCount - 1);
-  let step = niceStep(rawStep, candidates);
-  if (!Number.isFinite(step) || step <= 0) step = 1;
-
-  let axisMin = Math.floor(min / step) * step;
-  let axisMax = Math.ceil(max / step) * step;
-  let ticks = makeTicks(axisMin, axisMax, step);
-
-  while (ticks.length > desiredTickCount + 2) {
-    step *= 2;
-    axisMin = Math.floor(min / step) * step;
-    axisMax = Math.ceil(max / step) * step;
-    ticks = makeTicks(axisMin, axisMax, step);
-  }
-
-  if (ticks.length < 2) {
-    return { min, max, ticks: [min, max] };
-  }
-
-  return { min: axisMin, max: axisMax, ticks };
-}
-
-function yForChartValue(value: number, axisMin: number, axisMax: number): number {
-  if (axisMax === axisMin) return CHART_Y_PADDING_TOP + (CHART_HEIGHT - CHART_Y_PADDING_TOP - CHART_Y_PADDING_BOTTOM) / 2;
-  const t = (value - axisMin) / (axisMax - axisMin);
-  const inner = CHART_HEIGHT - CHART_Y_PADDING_TOP - CHART_Y_PADDING_BOTTOM;
-  return CHART_Y_PADDING_TOP + (1 - t) * inner;
-}
-
-function xForChartTime(timestampMs: number, minMs: number, maxMs: number, width: number): number {
-  const innerWidth = Math.max(1, width - CHART_X_PADDING * 2);
-  if (maxMs === minMs) return CHART_X_PADDING + innerWidth / 2;
-  const t = (timestampMs - minMs) / (maxMs - minMs);
-  return CHART_X_PADDING + t * innerWidth;
-}
-
-function timeForChartX(x: number, minMs: number, maxMs: number, width: number): number {
-  const innerWidth = Math.max(1, width - CHART_X_PADDING * 2);
-  if (maxMs === minMs) return minMs;
-  const clampedX = clamp(x - CHART_X_PADDING, 0, innerWidth);
-  const t = clampedX / innerWidth;
-  return minMs + t * (maxMs - minMs);
-}
-
-function daysForRange(range: TimeRange): number | null {
-  if (range === '7d') return 7;
-  if (range === '14d') return 14;
-  if (range === '30d') return 30;
-  if (range === '90d') return 90;
-  return null;
-}
-
-function weightStep(unit: MassUnit): number {
-  return unit === 'lb' ? 5 : 2.5;
-}
-
-function estimateOneRm(weight: number, reps: number): number {
-  if (reps <= 1) return weight;
-  const est = weight * (1 + reps / 30);
-  return Math.round(est * 10) / 10;
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function bucketStartMs(timestampMs: number, aggregation: ChartAggregation): number {
-  const date = new Date(timestampMs);
-  if (aggregation === 'year') return new Date(date.getFullYear(), 0, 1).getTime();
-  if (aggregation === 'month') return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
-  if (aggregation === 'week') {
-    const copy = new Date(date);
-    const day = copy.getDay(); // 0 = Sun
-    const diff = (day + 6) % 7; // Monday start
-    copy.setHours(0, 0, 0, 0);
-    copy.setDate(copy.getDate() - diff);
-    return copy.getTime();
-  }
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
-
-function formatAggregationLabel(date: Date, aggregation: ChartAggregation, language: AppLanguage): string {
-  if (aggregation === 'year') return String(date.getFullYear());
-  if (aggregation === 'month') {
-    try {
-      return date.toLocaleDateString(localeForLanguage(language), { month: 'short', year: '2-digit' });
-    } catch {
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = String(date.getFullYear()).slice(-2);
-      return `${month}/${year}`;
-    }
-  }
-  if (aggregation === 'week') return formatShortDate(date);
-  return formatShortDate(date);
-}
-
-function pickBestSet(current: SetRow | null, candidate: SetRow): SetRow {
-  if (!current) return candidate;
-  if (candidate.oneRm > current.oneRm) return candidate;
-  if (candidate.oneRm < current.oneRm) return current;
-  if (candidate.weight > current.weight) return candidate;
-  if (candidate.weight < current.weight) return current;
-  if (candidate.reps > current.reps) return candidate;
-  if (candidate.reps < current.reps) return current;
-  return candidate.createdAtMs > current.createdAtMs ? candidate : current;
-}
-
-function aggregateChartRows(rows: SetRow[], aggregation: ChartAggregation, language: AppLanguage): ChartRow[] {
-  const buckets = new Map<string, ChartRow>();
-
-  for (const row of rows) {
-    const bucketMs = bucketStartMs(row.createdAtMs, aggregation);
-    const key = String(bucketMs);
-    const existing = buckets.get(key);
-
-    if (!existing) {
-      buckets.set(key, {
-        id: `${bucketMs}`,
-        createdAtMs: bucketMs,
-        dateLabel: '',
-        weightMax: row.weight,
-        oneRmMax: row.oneRm,
-        volumeSum: row.volume,
-        repsSum: row.reps,
-        bestSet: row,
-      });
-      continue;
-    }
-
-    existing.weightMax = Math.max(existing.weightMax, row.weight);
-    existing.oneRmMax = Math.max(existing.oneRmMax, row.oneRm);
-    existing.volumeSum += row.volume;
-    existing.repsSum += row.reps;
-    existing.bestSet = pickBestSet(existing.bestSet, row);
-  }
-
-  const aggregated = Array.from(buckets.values()).map((row) => ({
-    ...row,
-    dateLabel: formatAggregationLabel(new Date(row.createdAtMs), aggregation, language),
-  }));
-
-  aggregated.sort((a, b) => a.createdAtMs - b.createdAtMs);
-  return aggregated;
-}
-
-function findNearestRow(rows: ChartRow[], targetMs: number): ChartRow | null {
-  if (rows.length === 0) return null;
-  let lo = 0;
-  let hi = rows.length - 1;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const value = rows[mid].createdAtMs;
-    if (value === targetMs) return rows[mid];
-    if (value < targetMs) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  const before = rows[Math.max(0, hi)];
-  const after = rows[Math.min(rows.length - 1, lo)];
-  if (!before) return after;
-  if (!after) return before;
-  return Math.abs(before.createdAtMs - targetMs) <= Math.abs(after.createdAtMs - targetMs) ? before : after;
-}
-
-function clampViewport(
-  startMs: number,
-  endMs: number,
-  minMs: number,
-  maxMs: number,
-  minWindowMs: number
-): { startMs: number; endMs: number } {
-  let windowMs = Math.max(minWindowMs, endMs - startMs);
-  const maxWindow = Math.max(1, maxMs - minMs);
-  if (windowMs > maxWindow) windowMs = maxWindow;
-
-  let nextStart = startMs;
-  let nextEnd = nextStart + windowMs;
-  if (nextStart < minMs) {
-    nextStart = minMs;
-    nextEnd = nextStart + windowMs;
-  }
-  if (nextEnd > maxMs) {
-    nextEnd = maxMs;
-    nextStart = nextEnd - windowMs;
-  }
-  return { startMs: nextStart, endMs: nextEnd };
-}
-
-function labelForBlock(block: TrainingBlock, language: AppLanguage): string {
-  const id = block.id as TrainingBlockId;
-  if (['chest', 'shoulders', 'back', 'arms', 'core', 'legs', 'bodyweight'].includes(id)) {
-    return blockLabel(id, language);
-  }
-  return block.name;
-}
-
-const OTHER_BLOCK_NAMES = new Set(['annet', 'other', 'otro']);
-
-function normalizeBlockName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function isOtherBlock(block: TrainingBlock): boolean {
-  const id = String(block.id ?? '').toLowerCase();
-  if (id === 'other') return true;
-  const name = normalizeBlockName(block.name ?? '');
-  return OTHER_BLOCK_NAMES.has(name);
-}
-
 type SelectableTileProps = {
   label: string;
   subtitle?: string | null;
   accent: string;
+  isLightTheme: boolean;
   selected: boolean;
+  styles: ReturnType<typeof createStyles>;
   variant?: TileVariant;
   onPress: () => void;
 };
@@ -545,7 +106,9 @@ type MuscleGroupTileProps = {
   accent: string;
   dotColor: string;
   icon?: ImageSourcePropType | null;
+  isLightTheme: boolean;
   selected: boolean;
+  styles: ReturnType<typeof createStyles>;
   onPress: () => void;
 };
 
@@ -553,7 +116,9 @@ type IconModeButtonProps = {
   label: string;
   icon?: ImageSourcePropType | null;
   accent: string;
+  isLightTheme: boolean;
   selected: boolean;
+  styles: ReturnType<typeof createStyles>;
   onPress: () => void;
 };
 
@@ -561,7 +126,9 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
   label,
   subtitle,
   accent,
+  isLightTheme,
   selected,
+  styles,
   variant = 'primary',
   onPress,
 }) => {
@@ -571,15 +138,23 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
   const selectedBg = isExerciseCard
     ? selected
       ? hexToRgba(accent, 0.24)
-      : '#0D1A31'
+      : isLightTheme
+        ? '#E8EEF7'
+        : '#0D1A31'
     : selected
       ? hexToRgba(accent, 0.2)
-      : '#0A152A';
-  const borderColor = selected ? hexToRgba(accent, 0.72) : 'rgba(148, 163, 184, 0.2)';
-  const glowColor = selected ? accent : '#081226';
+      : isLightTheme
+        ? '#F4F0EA'
+        : '#0A152A';
+  const borderColor = selected
+    ? hexToRgba(accent, 0.72)
+    : isLightTheme
+      ? 'rgba(31, 45, 61, 0.14)'
+      : 'rgba(148, 163, 184, 0.2)';
+  const glowColor = selected ? accent : isLightTheme ? '#D5CCBE' : '#081226';
   const dotOpacity = variant === 'primary' ? 1 : selected ? 0.95 : 0.72;
-  const exerciseMainTextColor = selected ? '#F8FBFF' : '#D7E6FF';
-  const exerciseSubTextColor = selected ? '#BFD9FF' : '#8EA5C6';
+  const exerciseMainTextColor = selected ? (isLightTheme ? '#1F2D3D' : '#F8FBFF') : isLightTheme ? '#1F2D3D' : '#D7E6FF';
+  const exerciseSubTextColor = selected ? (isLightTheme ? '#4C5D70' : '#BFD9FF') : isLightTheme ? '#6E7480' : '#8EA5C6';
 
   return (
     <Pressable
@@ -645,7 +220,7 @@ const SelectableTile: React.FC<SelectableTileProps> = ({
           styles.tileChevron,
           variant === 'secondary' ? styles.tileChevronSecondary : null,
           variant === 'secondary'
-            ? { color: selected ? accent : '#79A5D9', opacity: 1 }
+            ? { color: selected ? accent : isLightTheme ? '#2F6FBC' : '#79A5D9', opacity: 1 }
             : { opacity: selected ? 1 : 0.4 },
         ]}
       >
@@ -660,7 +235,9 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
   accent,
   dotColor,
   icon,
+  isLightTheme,
   selected,
+  styles,
   onPress,
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -681,11 +258,23 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
     }).start();
   }, [scaleAnim]);
 
-  const selectedBg = selected ? hexToRgba(accent, 0.2) : '#09162C';
-  const borderColor = selected ? hexToRgba(accent, 0.62) : 'rgba(148, 163, 184, 0.22)';
-  const glowColor = selected ? accent : '#09162C';
-  const iconBorderColor = selected ? hexToRgba(accent, 0.5) : 'rgba(148, 163, 184, 0.24)';
-  const iconBgColor = selected ? hexToRgba(accent, 0.16) : 'rgba(148, 163, 184, 0.08)';
+  const selectedBg = selected ? hexToRgba(accent, 0.2) : isLightTheme ? '#F4F0EA' : '#09162C';
+  const borderColor = selected
+    ? hexToRgba(accent, 0.62)
+    : isLightTheme
+      ? 'rgba(31, 45, 61, 0.14)'
+      : 'rgba(148, 163, 184, 0.22)';
+  const glowColor = selected ? accent : isLightTheme ? '#D5CCBE' : '#09162C';
+  const iconBorderColor = selected
+    ? hexToRgba(accent, 0.5)
+    : isLightTheme
+      ? 'rgba(31, 45, 61, 0.14)'
+      : 'rgba(148, 163, 184, 0.24)';
+  const iconBgColor = selected
+    ? hexToRgba(accent, 0.16)
+    : isLightTheme
+      ? 'rgba(79, 142, 232, 0.08)'
+      : 'rgba(148, 163, 184, 0.08)';
 
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
@@ -702,7 +291,12 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
         </Text>
         <View style={[styles.groupTileIconWrap, { borderColor: iconBorderColor, backgroundColor: iconBgColor }]}>
           {icon ? (
-            <Image source={icon} style={styles.groupTileIcon} resizeMode="contain" tintColor={selected ? '#F8FBFF' : '#B8CCEA'} />
+            <Image
+              source={icon}
+              style={styles.groupTileIcon}
+              resizeMode="contain"
+              tintColor={selected ? (isLightTheme ? '#1F2D3D' : '#F8FBFF') : isLightTheme ? '#4F8EE8' : '#B8CCEA'}
+            />
           ) : (
             <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
           )}
@@ -712,7 +306,15 @@ const MuscleGroupTile: React.FC<MuscleGroupTileProps> = ({
   );
 };
 
-const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, selected, onPress }) => {
+const IconModeButton: React.FC<IconModeButtonProps> = ({
+  label,
+  icon,
+  accent,
+  isLightTheme,
+  selected,
+  styles,
+  onPress,
+}) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const handlePressIn = useCallback(() => {
     Animated.timing(scaleAnim, {
@@ -729,8 +331,12 @@ const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, se
     }).start();
   }, [scaleAnim]);
   const webTooltipProps = Platform.OS === 'web' ? ({ title: label } as any) : {};
-  const ringColor = selected ? hexToRgba(accent, 0.7) : 'rgba(148, 163, 184, 0.2)';
-  const fillColor = selected ? hexToRgba(accent, 0.2) : '#0B1220';
+  const ringColor = selected
+    ? hexToRgba(accent, 0.7)
+    : isLightTheme
+      ? 'rgba(31, 45, 61, 0.14)'
+      : 'rgba(148, 163, 184, 0.2)';
+  const fillColor = selected ? hexToRgba(accent, 0.2) : isLightTheme ? '#F4F0EA' : '#0B1220';
   return (
     <View style={styles.modeButtonWrap}>
       <Pressable
@@ -749,7 +355,7 @@ const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, se
               borderColor: ringColor,
               borderWidth: selected ? 2 : 1,
               backgroundColor: fillColor,
-              shadowColor: selected ? accent : '#0B1220',
+              shadowColor: selected ? accent : isLightTheme ? '#D5CCBE' : '#0B1220',
               transform: [{ scale: scaleAnim }],
             },
             selected ? styles.modeButtonSelected : null,
@@ -760,7 +366,7 @@ const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, se
               source={icon}
               style={styles.modeButtonIcon}
               resizeMode="contain"
-              tintColor={selected ? accent : '#93C5FD'}
+              tintColor={selected ? accent : isLightTheme ? '#2F6FBC' : '#93C5FD'}
             />
           ) : (
             <View style={[styles.groupTileFallbackDot, { backgroundColor: accent }]} />
@@ -775,6 +381,9 @@ const IconModeButton: React.FC<IconModeButtonProps> = ({ label, icon, accent, se
 export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
+  const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const isLightTheme = themeTokens.id === 'calmLight';
+  const styles = useMemo(() => createStyles(themeTokens), [themeTokens]);
   const backSwipeContext = useBackSwipeContext();
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
     const preferred =
@@ -931,28 +540,17 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
       .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)) as SetEntry[];
 
     return setsForExercise.map((s) => {
-      const date = new Date(s.createdAt);
-      const createdAtMs = date.getTime();
-      const dateLabel = formatRelativeDateTime(date, new Date(), language);
-      const dateTimeLabel = formatDateTime(date, language);
       const isBodyweight = s.isBodyweight || s.setType === 'bodyweight' || s.weight === 0;
-      const usesBodyweight = isBodyweight && bodyweightKg > 0;
-      const volumeUsesWeight = s.weight > 0 || usesBodyweight;
-      const baseWeightKg = s.weight > 0 ? s.weight : usesBodyweight ? bodyweightKg : 0;
-      const volume = baseWeightKg > 0 ? baseWeightKg * s.reps : s.reps;
-      const setLabel = formatSetLabel(s.weight, s.reps, isBodyweight, massUnit, language);
-      return {
+      return buildSetRow({
         id: s.id,
-        createdAtMs,
-        dateLabel,
-        dateTimeLabel,
+        createdAt: s.createdAt,
         weight: s.weight,
         reps: s.reps,
-        oneRm: estimateOneRm(s.weight, s.reps),
-        volume,
-        volumeUsesWeight,
-        setLabel,
-      };
+        isBodyweight,
+        bodyweightKg,
+        massUnit,
+        language,
+      });
     });
   }, [appState.sets, bodyweightKg, language, massUnit, selectedExerciseId]);
 
@@ -1734,7 +1332,10 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                   ]}
                 >
                   <View style={[styles.heroMetaDot, { backgroundColor: getDotColor(selectedBlock.id as TrainingBlockId) }]} />
-                  <Text style={[styles.heroMetaText, { color: '#EAF1FF' }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.heroMetaText, isLightTheme ? { color: themeTokens.text } : { color: '#EAF1FF' }]}
+                    numberOfLines={1}
+                  >
                     {labelForBlock(selectedBlock, language)}
                   </Text>
                 </View>
@@ -1775,7 +1376,9 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                   accent={tone.accent}
                   dotColor={dotColor}
                   icon={icon}
+                  isLightTheme={isLightTheme}
                   selected={selected}
+                  styles={styles}
                   onPress={() => {
                     animateNext();
                     setSelectedBlockId(item.id);
@@ -1807,7 +1410,9 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                       label={formatExerciseLabel(ex)}
                       subtitle={subtitle}
                       accent={selectedBlockTone.accent}
+                      isLightTheme={isLightTheme}
                       selected={selected}
+                      styles={styles}
                       variant="secondary"
                       onPress={() => {
                         animateNext();
@@ -2279,9 +1884,11 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                                         {selectedChartPoint && chartTooltipStyle ? (
                                           <View style={[styles.chartTooltip, chartTooltipStyle]} pointerEvents="none">
                                             {selectedExercise ? (
-                                              <Text style={styles.chartTooltipTitle} numberOfLines={1}>
-                                                {formatExerciseLabel(selectedExercise)}
-                                              </Text>
+                                              <ExerciseLabelText
+                                                label={formatExerciseLabel(selectedExercise)}
+                                                mainStyle={styles.chartTooltipTitle}
+                                                secondaryStyle={styles.chartTooltipTitleMeta}
+                                              />
                                             ) : null}
                                             <Text style={styles.chartTooltipValue} numberOfLines={1}>
                                               {chartMetricLabel}:{' '}
@@ -2661,9 +2268,11 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
                           {selectedChartPoint && chartTooltipStyle ? (
                             <View style={[styles.chartTooltip, chartTooltipStyle]} pointerEvents="none">
                               {selectedExercise ? (
-                                <Text style={styles.chartTooltipTitle} numberOfLines={1}>
-                                  {formatExerciseLabel(selectedExercise)}
-                                </Text>
+                                <ExerciseLabelText
+                                  label={formatExerciseLabel(selectedExercise)}
+                                  mainStyle={styles.chartTooltipTitle}
+                                  secondaryStyle={styles.chartTooltipTitleMeta}
+                                />
                               ) : null}
                               <Text style={styles.chartTooltipValue} numberOfLines={1}>
                                 {chartMetricLabel}:{' '}
@@ -2743,10 +2352,30 @@ export const ProgressScreen: React.FC<Props> = ({ appState, onBack }) => {
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(themeTokens: TreasyThemeTokens) {
+  const isLightTheme = themeTokens.id === 'calmLight';
+  const screenBg = themeTokens.bg;
+  const surface = isLightTheme ? '#F4F0EA' : '#0B1220';
+  const surfaceAlt = isLightTheme ? '#E8EEF7' : '#0A152A';
+  const surfaceAlt2 = isLightTheme ? '#EDE7DD' : '#0A162C';
+  const surfaceDeep = isLightTheme ? '#F8F5F0' : '#081227';
+  const surfacePanel = isLightTheme ? '#E9E2D7' : '#091429';
+  const border = isLightTheme ? '#D8D1C5' : 'rgba(148, 163, 184, 0.24)';
+  const borderSoft = isLightTheme ? 'rgba(31, 45, 61, 0.14)' : 'rgba(148, 163, 184, 0.2)';
+  const borderMuted = isLightTheme ? 'rgba(31, 45, 61, 0.08)' : 'rgba(148, 163, 184, 0.16)';
+  const textPrimary = themeTokens.text;
+  const textStrong = isLightTheme ? '#1F2D3D' : '#F8FBFF';
+  const textMuted = themeTokens.textMuted;
+  const textSecondary = isLightTheme ? '#516070' : '#A9BCD8';
+  const textSoft = isLightTheme ? '#6E7480' : '#9FB0C8';
+  const textLink = themeTokens.link;
+  const shadowBase = isLightTheme ? '#D5CCBE' : '#020617';
+  const shadowAccent = isLightTheme ? '#B9C8DA' : '#2F6FBC';
+
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#040B1A',
+    backgroundColor: screenBg,
   },
   backdropWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -2759,7 +2388,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     right: -120,
     top: -84,
-    backgroundColor: 'rgba(51, 111, 198, 0.24)',
+    backgroundColor: isLightTheme ? 'rgba(79, 142, 232, 0.12)' : 'rgba(51, 111, 198, 0.24)',
   },
   backdropOrbMid: {
     position: 'absolute',
@@ -2768,7 +2397,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     left: -132,
     top: 240,
-    backgroundColor: 'rgba(13, 148, 136, 0.14)',
+    backgroundColor: isLightTheme ? 'rgba(13, 148, 136, 0.08)' : 'rgba(13, 148, 136, 0.14)',
   },
   backdropOrbBottom: {
     position: 'absolute',
@@ -2777,7 +2406,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     right: -150,
     bottom: -170,
-    backgroundColor: 'rgba(79, 142, 232, 0.12)',
+    backgroundColor: isLightTheme ? 'rgba(79, 142, 232, 0.08)' : 'rgba(79, 142, 232, 0.12)',
   },
   scroll: {
     flex: 1,
@@ -2798,32 +2427,32 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: 'rgba(10, 21, 43, 0.78)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? surface : 'rgba(10, 21, 43, 0.78)',
     paddingHorizontal: SPACING.md,
     justifyContent: 'center',
     marginBottom: SPACING.sm,
   },
   back: {
-    color: '#B8D3FA',
+    color: textLink,
     fontSize: TEXT.sm,
     fontWeight: '600',
   },
   heroCard: {
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    backgroundColor: 'rgba(11, 22, 42, 0.88)',
+    borderColor: borderSoft,
+    backgroundColor: isLightTheme ? surface : 'rgba(11, 22, 42, 0.88)',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.lg,
     gap: SPACING.xs,
     ...Platform.select({
       web: {
-        boxShadow: '0 12px 28px rgba(2, 6, 23, 0.45)',
+        boxShadow: isLightTheme ? '0 12px 28px rgba(148, 126, 96, 0.14)' : '0 12px 28px rgba(2, 6, 23, 0.45)',
       },
       default: {
-        shadowColor: '#020617',
-        shadowOpacity: 0.42,
+        shadowColor: shadowBase,
+        shadowOpacity: isLightTheme ? 0.12 : 0.42,
         shadowRadius: 14,
         shadowOffset: { width: 0, height: 8 },
         elevation: 3,
@@ -2831,7 +2460,7 @@ const styles = StyleSheet.create({
     }),
   },
   heroEyebrow: {
-    color: '#8FB5FF',
+    color: textLink,
     fontSize: TEXT.xs,
     fontWeight: '700',
     letterSpacing: 0.36,
@@ -2841,11 +2470,11 @@ const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 36,
     fontWeight: '700',
-    color: '#F8FBFF',
+    color: textStrong,
   },
   subtitle: {
     marginTop: SPACING.xs - 1,
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.sm,
     lineHeight: 20,
   },
@@ -2863,8 +2492,8 @@ const styles = StyleSheet.create({
     minHeight: 30,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.26)',
-    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(148, 163, 184, 0.08)',
     paddingHorizontal: SPACING.sm,
   },
   heroMetaDot: {
@@ -2873,14 +2502,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   heroMetaText: {
-    color: '#C5D4EA',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
   sectionLabel: {
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
-    color: '#EAF1FF',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -2896,7 +2525,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
   },
   sectionTitle: {
-    color: '#EAF1FF',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '700',
     letterSpacing: 0.22,
@@ -2907,14 +2536,14 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.34)',
-    backgroundColor: 'rgba(79, 142, 232, 0.12)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(79, 142, 232, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: SPACING.xs,
   },
   sectionCountText: {
-    color: '#B8D3FA',
+    color: textLink,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -2934,7 +2563,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    backgroundColor: '#0B1220',
+    backgroundColor: surface,
     shadowOpacity: 0.24,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -2951,7 +2580,7 @@ const styles = StyleSheet.create({
   modeButtonLabel: {
     marginTop: 4,
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: textMuted,
     fontWeight: '600',
   },
   groupGrid: {
@@ -2972,15 +2601,15 @@ const styles = StyleSheet.create({
     minHeight: 70,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: '#0A152A',
+    borderColor: border,
+    backgroundColor: surfaceAlt,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
-    shadowColor: '#020617',
-    shadowOpacity: 0.36,
+    shadowColor: shadowBase,
+    shadowOpacity: isLightTheme ? 0.1 : 0.36,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 7 },
     elevation: 2,
@@ -2996,13 +2625,13 @@ const styles = StyleSheet.create({
   },
   groupTileText: {
     flex: 1,
-    color: '#E5EEFC',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '700',
     marginLeft: 2,
   },
   groupTileTextSelected: {
-    color: '#FFFFFF',
+    color: textStrong,
   },
   groupTileIconWrap: {
     width: 38,
@@ -3012,8 +2641,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 'auto',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(148, 163, 184, 0.08)',
   },
   groupTileIcon: {
     width: 24,
@@ -3036,15 +2665,15 @@ const styles = StyleSheet.create({
     minHeight: 74,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    backgroundColor: '#0A152A',
+    borderColor: borderSoft,
+    backgroundColor: surfaceAlt,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
-    shadowColor: '#020617',
-    shadowOpacity: 0.36,
+    shadowColor: shadowBase,
+    shadowOpacity: isLightTheme ? 0.1 : 0.36,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 7 },
     elevation: 2,
@@ -3056,9 +2685,9 @@ const styles = StyleSheet.create({
   tileSecondary: {
     minHeight: 76,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
-    shadowColor: '#020617',
-    shadowOpacity: 0.34,
+    borderColor: border,
+    shadowColor: shadowBase,
+    shadowOpacity: isLightTheme ? 0.08 : 0.34,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 7 },
     elevation: 2,
@@ -3088,12 +2717,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   tileLabel: {
-    color: '#D7E6FF',
+    color: textPrimary,
     fontSize: TEXT.md,
     fontWeight: '700',
   },
   tileLabelSecondary: {
-    color: '#D7E6FF',
+    color: textPrimary,
     fontWeight: '700',
   },
   tileLabelSecondaryMain: {
@@ -3105,36 +2734,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tileLabelSelected: {
-    color: '#F8FBFF',
+    color: textStrong,
   },
   tileSubtitle: {
-    color: '#8EA5C6',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '600',
   },
   tileSubtitleSecondary: {
-    color: '#8EA5C6',
+    color: textMuted,
   },
   tileSubtitleSelected: {
-    color: '#C7DDFF',
+    color: isLightTheme ? textSecondary : '#C7DDFF',
   },
   tileChevron: {
-    color: '#79A5D9',
+    color: textLink,
     fontSize: TEXT.sm,
     fontWeight: '800',
     width: 14,
     textAlign: 'right',
   },
   tileChevronSecondary: {
-    color: '#79A5D9',
+    color: textLink,
   },
   emptyText: {
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.sm,
   },
   chooseExerciseHint: {
     marginTop: SPACING.lg,
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -3143,13 +2772,13 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   progressCard: {
-    backgroundColor: '#0C1A33',
+    backgroundColor: isLightTheme ? surface : '#0C1A33',
     borderRadius: RADIUS.lg + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.28)',
+    borderColor: border,
     padding: SPACING.lg,
-    shadowColor: '#2F6FBC',
-    shadowOpacity: 0.22,
+    shadowColor: shadowAccent,
+    shadowOpacity: isLightTheme ? 0.08 : 0.22,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 2,
@@ -3175,20 +2804,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   progressTitle: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.lg,
     fontWeight: '700',
   },
   insightsSubtitle: {
     marginTop: 6,
     marginBottom: SPACING.md,
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
   progressSubtitle: {
-    color: '#9CA3AF',
+    color: textMuted,
     marginBottom: SPACING.sm,
     fontSize: TEXT.sm,
     fontWeight: '700',
@@ -3199,12 +2828,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   insightsSelectedExerciseMain: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
   insightsSelectedExerciseParen: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3212,7 +2841,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   insightsProgressionHeadline: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.md,
     fontWeight: '900',
     lineHeight: TEXT.md + 4,
@@ -3222,7 +2851,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   insightsProgressionDetail: {
-    color: '#DFEBFF',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -3234,7 +2863,7 @@ const styles = StyleSheet.create({
   },
   insightsEmpty: {
     marginBottom: SPACING.md,
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -3243,13 +2872,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   insightsLabel: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
   insightsValue: {
-    color: '#F3F8FF',
+    color: textStrong,
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -3268,7 +2897,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   feedbackCardDetail: {
-    color: '#EAF1FF',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '700',
   },
@@ -3276,8 +2905,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     borderRadius: RADIUS.md + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(148, 163, 184, 0.08)',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: 3,
@@ -3289,12 +2918,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   nextSetMain: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
   nextSetDetail: {
-    color: '#C5D4EA',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3311,12 +2940,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   plateauDetail: {
-    color: '#EAF1FF',
+    color: textPrimary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
   plateauAction: {
-    color: '#D7E6FF',
+    color: textPrimary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3324,7 +2953,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     marginBottom: SPACING.lg,
     height: 1,
-    backgroundColor: 'rgba(148, 163, 184, 0.24)',
+    backgroundColor: border,
   },
   controlsSummary: {
     flexDirection: 'row',
@@ -3335,32 +2964,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.md + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(148, 163, 184, 0.12)',
   },
   controlsSummaryText: {
     flex: 1,
     minWidth: 0,
-    color: '#C5D4EA',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   controlsSummaryChevron: {
-    color: '#C5D4EA',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '900',
   },
   controlTray: {
     overflow: 'hidden',
-    backgroundColor: '#0A162C',
+    backgroundColor: surfaceAlt2,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
+    borderColor: border,
     padding: SPACING.md,
     gap: SPACING.xs + 2,
   },
   controlTrayLabel: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.3,
@@ -3377,13 +3006,13 @@ const styles = StyleSheet.create({
     minWidth: 150,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.18)',
-    backgroundColor: '#020617',
+    borderColor: borderSoft,
+    backgroundColor: surfaceDeep,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
   },
   kpiLabel: {
-    color: '#94A3B8',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.3,
@@ -3405,24 +3034,24 @@ const styles = StyleSheet.create({
   },
   kpiValue: {
     marginTop: 4,
-    color: '#F9FAFB',
+    color: textStrong,
     fontSize: TEXT.md,
     fontWeight: '900',
   },
   kpiValueLast: {
-    color: '#F8FAFC',
+    color: textStrong,
   },
   kpiValuePr: {
     color: '#FBBF24',
   },
   kpiSub: {
     marginTop: 2,
-    color: '#94A3B8',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
   kpiSubMuted: {
-    color: '#64748B',
+    color: textSoft,
     fontWeight: '700',
   },
   deltaUp: {
@@ -3438,8 +3067,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    backgroundColor: '#091429',
+    borderColor: borderSoft,
+    backgroundColor: surfacePanel,
     padding: SPACING.md,
   },
   targetRow: {
@@ -3449,13 +3078,13 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   targetLabel: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   targetValue: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.sm,
     fontWeight: '900',
   },
@@ -3463,7 +3092,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     height: 10,
     borderRadius: RADIUS.pill,
-    backgroundColor: '#10213E',
+    backgroundColor: isLightTheme ? '#DCE7F5' : '#10213E',
     overflow: 'hidden',
   },
   progressFill: {
@@ -3472,7 +3101,7 @@ const styles = StyleSheet.create({
   },
   targetHint: {
     marginTop: SPACING.xs,
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3488,8 +3117,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: '#081227',
+    borderColor: border,
+    backgroundColor: surfaceDeep,
     overflow: 'hidden',
   },
   segmentButton: {
@@ -3499,15 +3128,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentButtonSelected: {
-    backgroundColor: '#122447',
+    backgroundColor: isLightTheme ? '#DCE7F5' : '#122447',
   },
   segmentText: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   segmentTextSelected: {
-    color: '#F8FBFF',
+    color: textStrong,
   },
   chartHeader: {
     marginTop: SPACING.md,
@@ -3518,7 +3147,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   chartCaption: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -3561,7 +3190,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.success,
   },
   chartLegendText: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3575,13 +3204,13 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: '#081227',
+    borderColor: border,
+    backgroundColor: surfaceDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chartControlText: {
-    color: '#EAF1FF',
+    color: textPrimary,
     fontSize: TEXT.sm,
     fontWeight: '800',
   },
@@ -3589,8 +3218,8 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: '#081227',
+    borderColor: border,
+    backgroundColor: surfaceDeep,
     paddingHorizontal: SPACING.sm,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3599,23 +3228,23 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   chartResetText: {
-    color: '#9FC6FB',
+    color: textLink,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   chartResetTextDisabled: {
-    color: '#6E819D',
+    color: textSoft,
   },
   chart: {
     marginBottom: SPACING.md,
     borderRadius: RADIUS.lg + 2,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
-    backgroundColor: '#081227',
+    borderColor: border,
+    backgroundColor: surfaceDeep,
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.sm,
-    shadowColor: '#2F6FBC',
-    shadowOpacity: 0.16,
+    shadowColor: shadowAccent,
+    shadowOpacity: isLightTheme ? 0.08 : 0.16,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
@@ -3632,7 +3261,7 @@ const styles = StyleSheet.create({
   chartYAxisLabel: {
     position: 'absolute',
     right: SPACING.xs,
-    color: '#B4C7E4',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -3648,7 +3277,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(168, 189, 220, 0.24)',
+    backgroundColor: isLightTheme ? 'rgba(31, 45, 61, 0.12)' : 'rgba(168, 189, 220, 0.24)',
   },
   chartLine: {
     position: 'absolute',
@@ -3678,7 +3307,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: SPACING.xs,
     top: SPACING.xs,
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -3686,25 +3315,31 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.34)',
-    backgroundColor: 'rgba(6, 13, 27, 0.98)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? '#FBF9F4' : 'rgba(6, 13, 27, 0.98)',
     paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.sm,
     gap: 2,
     zIndex: 5,
   },
   chartTooltipTitle: {
-    color: '#CFE0FA',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
+  chartTooltipTitleMeta: {
+    color: textMuted,
+    fontSize: TEXT.xs,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   chartTooltipValue: {
-    color: '#F8FBFF',
+    color: textStrong,
     fontSize: TEXT.xs,
     fontWeight: '900',
   },
   chartTooltipDetail: {
-    color: '#A9BCD8',
+    color: textSecondary,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3714,7 +3349,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   chartTooltipLabel: {
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '700',
   },
@@ -3726,14 +3361,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   chartXAxisLabel: {
-    color: '#9FB0C8',
+    color: textMuted,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
   table: {
     marginTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(148, 163, 184, 0.26)',
+    borderTopColor: border,
   },
   tableToggle: {
     marginTop: SPACING.sm,
@@ -3742,11 +3377,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.24)',
-    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderColor: border,
+    backgroundColor: isLightTheme ? themeTokens.chip : 'rgba(148, 163, 184, 0.1)',
   },
   tableToggleText: {
-    color: '#CFE0FA',
+    color: textLink,
     fontSize: TEXT.xs,
     fontWeight: '800',
   },
@@ -3754,14 +3389,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: SPACING.xs,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.16)',
+    borderBottomColor: borderMuted,
   },
   headerRow: {
-    backgroundColor: '#0A162C',
+    backgroundColor: surfaceAlt2,
   },
   cell: {
     fontSize: TEXT.xs,
-    color: '#EAF1FF',
+    color: textPrimary,
   },
   cellDate: {
     flex: 1.6,
@@ -3770,5 +3405,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
   },
-});
+  });
+}
 

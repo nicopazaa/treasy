@@ -18,6 +18,8 @@ import { SPACING, TEXT, SCREEN_PADDING, RADIUS, COLORS } from '../shared/theme/t
 import { blockLabel, t } from '../shared/i18n/i18n';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatWeight, type MassUnit } from '../shared/utils/units';
+import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 
 interface Props {
   appState: AppState;
@@ -121,6 +123,8 @@ function labelForBlock(block: TrainingBlock, language: AppState['language']): st
 const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
+  const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const styles = useMemo(() => createStyles(themeTokens), [themeTokens]);
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
 
   const sections: RepMaxSection[] = useMemo(() => {
@@ -254,9 +258,12 @@ const RepMaxScreenContent: React.FC<Props> = ({ appState, onBack }) => {
                 <View style={[styles.cardAccent, isGroupTop ? styles.cardAccentTop : null]} />
                 <View style={styles.cardBody}>
                   <View style={styles.cardHeaderRow}>
-                    <Text style={styles.exerciseName} numberOfLines={1} ellipsizeMode="tail">
-                      {item.exerciseName}
-                    </Text>
+                    <ExerciseLabelText
+                      label={item.exerciseName}
+                      style={styles.exerciseNameWrap}
+                      mainStyle={styles.exerciseName}
+                      secondaryStyle={styles.exerciseNameMeta}
+                    />
                     <Text style={[styles.star, isGroupTop ? styles.starTop : null]}>⭐</Text>
                   </View>
                   <Text style={styles.bestSet} numberOfLines={1}>
@@ -309,179 +316,199 @@ export const RepMaxScreen: React.FC<Props> = (props) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#020617',
-    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
-    ...Platform.select({
-      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-    }),
-  },
-  content: {
-    paddingHorizontal: SCREEN_PADDING,
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    marginBottom: SPACING.md,
-  },
-  back: {
-    color: '#93C5FD',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: TEXT.xl,
-    fontWeight: '800',
-    color: '#F9FAFB',
-    marginTop: SPACING.xs,
-  },
-  subtitle: {
-    marginTop: SPACING.xs,
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
-  },
-  emptyText: {
-    marginTop: SPACING.lg,
-    color: '#9CA3AF',
-    fontSize: TEXT.sm,
-  },
-  listContent: {
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xxxl,
-    paddingHorizontal: SCREEN_PADDING,
-  },
-  sectionHeader: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#111827',
-    backgroundColor: '#0B1220',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: COLORS.blue2,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  sectionAccent: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  sectionTitle: {
-    color: '#F9FAFB',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  sectionMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  sectionCount: {
-    color: '#94A3B8',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  sectionChevron: {
-    color: '#94A3B8',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  card: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#111827',
-    backgroundColor: '#0B1220',
-    shadowColor: COLORS.blue2,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  cardTop: {
-    borderColor: 'rgba(251, 191, 36, 0.35)',
-    shadowColor: '#FBBF24',
-    shadowOpacity: 0.14,
-  },
-  cardAccent: {
-    width: 3,
-    borderRadius: 999,
-    backgroundColor: COLORS.blue2,
-    alignSelf: 'stretch',
-  },
-  cardAccentTop: {
-    backgroundColor: '#FBBF24',
-  },
-  cardBody: {
-    flex: 1,
-    gap: SPACING.sm,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-  },
-  exerciseName: {
-    color: '#CBD5F5',
-    fontSize: TEXT.md,
-    fontWeight: '600',
-  },
-  star: {
-    color: 'rgba(251, 191, 36, 0.55)',
-    fontSize: TEXT.sm,
-  },
-  starTop: {
-    color: '#FBBF24',
-  },
-  bestSet: {
-    color: '#F9FAFB',
-    fontSize: TEXT.xl,
-    fontWeight: '800',
-  },
-  bestSetValue: {
-    color: '#F9FAFB',
-  },
-  bestSetValueTop: {
-    color: '#FBBF24',
-  },
-  bestSetUnit: {
-    color: '#94A3B8',
-    fontSize: TEXT.md,
-    fontWeight: '600',
-  },
-  bestSetDivider: {
-    color: '#94A3B8',
-    fontWeight: '700',
-  },
-  est1rm: {
-    color: '#E2E8F0',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  setOn: {
-    color: '#64748B',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-  },
-  itemSpacer: {
-    height: SPACING.sm,
-  },
-});
+function createStyles(themeTokens: TreasyThemeTokens) {
+  const isLightTheme = themeTokens.id === 'calmLight';
+  const surface = isLightTheme ? '#F4F0EA' : '#0B1220';
+  const border = isLightTheme ? '#D8D1C5' : '#111827';
+  const textMuted = isLightTheme ? themeTokens.textMuted : '#94A3B8';
+  const textSubtle = isLightTheme ? '#4E5B6B' : '#CBD5F5';
+  const textSoft = isLightTheme ? '#6E7480' : '#64748B';
+  const shadowColor = isLightTheme ? '#CFC5B6' : COLORS.blue2;
+
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: themeTokens.bg,
+      paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+      ...Platform.select({
+        web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+      }),
+    },
+    content: {
+      paddingHorizontal: SCREEN_PADDING,
+    },
+    backButton: {
+      minWidth: 44,
+      minHeight: 44,
+      justifyContent: 'center',
+      marginBottom: SPACING.md,
+    },
+    back: {
+      color: themeTokens.link,
+      fontSize: TEXT.sm,
+      fontWeight: '600',
+    },
+    title: {
+      fontSize: TEXT.xl,
+      fontWeight: '800',
+      color: themeTokens.text,
+      marginTop: SPACING.xs,
+    },
+    subtitle: {
+      marginTop: SPACING.xs,
+      color: textMuted,
+      fontSize: TEXT.sm,
+    },
+    emptyText: {
+      marginTop: SPACING.lg,
+      color: textMuted,
+      fontSize: TEXT.sm,
+    },
+    listContent: {
+      paddingTop: SPACING.md,
+      paddingBottom: SPACING.xxxl,
+      paddingHorizontal: SCREEN_PADDING,
+    },
+    sectionHeader: {
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      marginTop: SPACING.md,
+      marginBottom: SPACING.sm,
+      borderRadius: RADIUS.lg,
+      borderWidth: 1,
+      borderColor: border,
+      backgroundColor: surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      shadowColor,
+      shadowOpacity: isLightTheme ? 0.05 : 0.08,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    sectionAccent: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
+    sectionTitle: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '700',
+    },
+    sectionMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+    },
+    sectionCount: {
+      color: textMuted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+    },
+    sectionChevron: {
+      color: textMuted,
+      fontSize: TEXT.sm,
+      fontWeight: '700',
+    },
+    card: {
+      flexDirection: 'row',
+      gap: SPACING.md,
+      padding: SPACING.lg,
+      borderRadius: RADIUS.lg,
+      borderWidth: 1,
+      borderColor: border,
+      backgroundColor: surface,
+      shadowColor,
+      shadowOpacity: isLightTheme ? 0.05 : 0.08,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
+    },
+    cardTop: {
+      borderColor: 'rgba(251, 191, 36, 0.35)',
+      shadowColor: '#FBBF24',
+      shadowOpacity: 0.14,
+    },
+    cardAccent: {
+      width: 3,
+      borderRadius: 999,
+      backgroundColor: COLORS.blue2,
+      alignSelf: 'stretch',
+    },
+    cardAccentTop: {
+      backgroundColor: '#FBBF24',
+    },
+    cardBody: {
+      flex: 1,
+      gap: SPACING.sm,
+    },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.sm,
+    },
+    exerciseName: {
+      color: textSubtle,
+      fontSize: TEXT.md,
+      fontWeight: '600',
+    },
+    exerciseNameWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+    exerciseNameMeta: {
+      color: textMuted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+      marginTop: 2,
+    },
+    star: {
+      color: 'rgba(251, 191, 36, 0.55)',
+      fontSize: TEXT.sm,
+    },
+    starTop: {
+      color: '#FBBF24',
+    },
+    bestSet: {
+      color: themeTokens.text,
+      fontSize: TEXT.xl,
+      fontWeight: '800',
+    },
+    bestSetValue: {
+      color: themeTokens.text,
+    },
+    bestSetValueTop: {
+      color: '#FBBF24',
+    },
+    bestSetUnit: {
+      color: textMuted,
+      fontSize: TEXT.md,
+      fontWeight: '600',
+    },
+    bestSetDivider: {
+      color: textMuted,
+      fontWeight: '700',
+    },
+    est1rm: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '700',
+    },
+    setOn: {
+      color: textSoft,
+      fontSize: TEXT.xs,
+      fontWeight: '600',
+    },
+    itemSpacer: {
+      height: SPACING.sm,
+    },
+  });
+}

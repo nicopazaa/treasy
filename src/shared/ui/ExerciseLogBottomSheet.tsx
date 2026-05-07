@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
-  Dimensions,
   FlatList,
   Modal,
   PanResponder,
@@ -11,6 +10,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import type { Exercise, SetEntry } from '../../domain/workouts/types';
@@ -25,6 +25,7 @@ import { formatInputWeight, formatSetListLabel } from '../utils/setFormatting';
 import type { MassUnit } from '../utils/units';
 import { useCardioLoggerInput, useSetLoggerInput } from '../hooks/useSetLoggerInput';
 import { QuickKeypad } from './QuickKeypad';
+import { ExerciseLabelText } from './ExerciseLabelText';
 
 export type SetLoggerMeta = {
   distanceKm?: number | null;
@@ -74,8 +75,8 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
   onCopyLastSet,
   onClose,
 }) => {
-  const screenHeight = Dimensions.get('window').height;
-  const sheetHeight = Math.min(Math.round(screenHeight * 0.74), 680);
+  const { height: screenHeight } = useWindowDimensions();
+  const sheetHeight = Math.min(Math.round(screenHeight * 0.86), screenHeight - SPACING.sm * 2, 720);
 
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -270,9 +271,12 @@ export const ExerciseLogBottomSheet: React.FC<Props> = ({
 
             <View style={styles.headerRow}>
               <View style={styles.headerSide} />
-              <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
-                {formatExerciseLabel(exercise)}
-              </Text>
+              <ExerciseLabelText
+                label={formatExerciseLabel(exercise)}
+                style={styles.titleWrap}
+                mainStyle={[styles.title, { color: titleColor }]}
+                secondaryStyle={[styles.titleMeta, { color: closeColor }]}
+              />
               <TouchableOpacity
                 onPress={closeWithReset}
                 style={styles.closeButton}
@@ -492,6 +496,7 @@ const styles = StyleSheet.create({
   },
   sheetCard: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: COLORS.treasyNavy,
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
@@ -523,11 +528,21 @@ const styles = StyleSheet.create({
     height: 44,
   },
   title: {
-    flex: 1,
     color: '#F9FAFB',
     fontSize: TEXT.lg + 1,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  titleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xs,
+  },
+  titleMeta: {
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
   },
   closeButton: {
     width: 44,
@@ -542,8 +557,9 @@ const styles = StyleSheet.create({
     lineHeight: TEXT.xl,
   },
   historyWrap: {
-    minHeight: 94,
+    minHeight: 72,
     maxHeight: 196,
+    flexShrink: 1,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.24)',

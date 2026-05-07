@@ -17,6 +17,7 @@ import type { TrainingBlock, Exercise, TrainingBlockId, SetEntry, ExerciseMetada
 import { PrimaryButton } from '../shared/ui/PrimaryButton';
 import { BlockScreenHeader } from '../shared/ui/BlockScreenHeader';
 import { UndoToast } from '../shared/ui/UndoToast';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 import { getBlockTone } from '../shared/theme/blockTone';
 import { SPACING, TEXT, RADIUS, SCREEN_PADDING, COLORS } from '../shared/theme/tokens';
 import { resolveThemeTokens } from '../shared/theme/themes';
@@ -423,9 +424,14 @@ export const BlockScreen: React.FC<Props> = ({
       >
         <Pressable style={[styles.sheetBackdrop, { backgroundColor: bottomSheetOverlayColor }]} onPress={() => setExerciseAction(null)}>
           <Pressable style={[styles.sheetCard, sheetCardStyle]} onPress={() => {}}>
-            <Text style={[styles.sheetTitle, { color: bodyTextColor }]}>
-              {exerciseAction ? formatExerciseLabel(exerciseAction) : ''}
-            </Text>
+            {exerciseAction ? (
+              <ExerciseLabelText
+                label={formatExerciseLabel(exerciseAction)}
+                style={styles.sheetTitleWrap}
+                mainStyle={[styles.sheetTitle, { color: bodyTextColor }]}
+                secondaryStyle={[styles.sheetTitleMeta, { color: mutedTextColor }]}
+              />
+            ) : null}
 
             <TouchableOpacity
               style={[styles.sheetAction, { borderTopColor: sheetActionBorderColor }]}
@@ -761,6 +767,14 @@ const styles = StyleSheet.create({
     fontSize: TEXT.lg,
     fontWeight: '800',
     marginBottom: SPACING.sm,
+  },
+  sheetTitleWrap: {
+    marginBottom: SPACING.sm,
+  },
+  sheetTitleMeta: {
+    fontSize: TEXT.sm,
+    fontWeight: '700',
+    marginTop: 2,
   },
   sheetSubtitle: {
     color: 'rgba(203, 213, 225, 0.7)',

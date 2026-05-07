@@ -211,3 +211,60 @@ Workout and notes mutations now emit deterministic sync outbox events with tombs
 - Benefits: Mutations now produce idempotency-safe outbox records; deletes are represented as tombstones; persistence writes are partitioned by entity group instead of a single app-state blob.
 - Tradeoffs/risks: Remote transport/ACK loop is still not implemented, so outbox growth/compaction policy is currently local-only.
 - Follow-ups: Implement sync processor (send/ack/retry), then retire legacy fallback reads when migration confidence is sufficient.
+
+---
+
+### DEC-011 - 2026-04-26
+### Status
+Accepted
+
+### Decision (one line)
+Remote sync now runs through a single optional app-level batch processor with ACK handling and exponential retry/backoff, and remains disabled when no endpoint is configured.
+
+### Context
+- Problem: Local outbox/tombstone capture existed, but nothing actually sent events or cleared acknowledged work.
+- Constraints: No new dependencies, preserve existing UI flows, keep local-only behavior unchanged when backend config is absent, and support both `AppState.sync` and notes-repository sync envelopes.
+- Affected paths: `src/app/sync/useSyncProcessor.ts`, `src/shared/config/env.ts`, `src/features/notes/data/notesRepository.ts`, `App.tsx`.
+
+### Consequences
+- Benefits: Local mutations can now be shipped to a backend, ACKed safely, and retried with bounded backoff; notes participate in the same runtime without screen-specific wiring.
+- Tradeoffs/risks: Conflict resolution is still undefined, so the processor currently treats transport/ACK as authoritative success/failure only.
+- Follow-ups: Define conflict rules, add automated regression coverage for retries/ACK/deletes/app-upgrade cases, then retire legacy fallback reads after migration confidence is high.
+
+---
+
+### DEC-012 - 2026-04-26
+### Status
+Accepted
+
+### Decision (one line)
+Cloud identity now prefers optional Supabase Auth with GitHub OAuth, while preserving the existing Netlify GitHub OAuth path as a fallback when Supabase is not configured.
+
+### Context
+- Problem: `AppState.userId` was device-local, so the sync processor could transport events but still lacked a real cross-device account identity.
+- Constraints: Keep current local-first behavior intact, avoid breaking the existing GitHub login flow, and make the new auth path inert when env vars are absent.
+- Affected paths: `src/app/auth/useSupabaseAuth.ts`, `src/app/auth/supabaseClient.ts`, `App.tsx`, `src/app/sync/useSyncProcessor.ts`, `src/shared/config/env.ts`.
+
+### Consequences
+- Benefits: A signed-in user can now map to a stable Supabase auth user id, which unblocks authenticated multi-device sync without replacing guest/local behavior.
+- Tradeoffs/risks: The backend storage/write path is still not implemented, so Supabase currently provides identity/session foundation rather than full cloud persistence.
+- Follow-ups: Add the Supabase-backed sync endpoint + database schema, then define conflict handling and session/logout UX.
+
+---
+
+### DEC-013 - 2026-04-26
+### Status
+Accepted
+
+### Decision (one line)
+Authenticated sync writes now flow through a Netlify gateway into Supabase Postgres RPC, with persistent tombstones and higher-version-wins stale-write protection on the server.
+
+### Context
+- Problem: The client could batch and authenticate sync events, but there was still no server-side persistence or authoritative ACK path.
+- Constraints: Preserve the existing client payload shape, avoid adding new frontend dependencies, keep service-role usage server-only, and stay compatible with Supabase Auth identity introduced in DEC-012.
+- Affected paths: `netlify/functions/sync.js`, `supabase/migrations/20260426_sync_backend.sql`, `docs/ARCHITECTURE.md`, `PROJECT_CONTEXT.md`.
+
+### Consequences
+- Benefits: The app now has a real authenticated backend write path; stale lower-version events are safely ACKed as no-ops instead of retrying forever; server-side tombstones prevent deleted entities from being resurrected by out-of-order writes.
+- Tradeoffs/risks: This is still a transport-safety conflict rule, not a full product-level merge policy; deployment requires Supabase SQL migration plus Netlify env setup; repo verification cannot execute the remote database path locally.
+- Follow-ups: Add read/download path from Supabase to clients, define user-facing conflict semantics, and add automated sync regression coverage once a test harness exists.

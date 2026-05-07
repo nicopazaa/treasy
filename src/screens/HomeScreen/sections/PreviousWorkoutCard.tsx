@@ -11,6 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { STAT_NUMBER_STYLE } from '../../../shared/theme/typography';
+import { ExerciseLabelText } from '../../../shared/ui/ExerciseLabelText';
 import { styles as homeScreenStyles } from '../../HomeScreen.styles';
 
 type PreviousWorkoutCardStyles = {
@@ -256,13 +257,11 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
     if (reduceMotionEnabled || expanded) {
       const content = (
         <View style={styles.lastWorkoutExampleBlock}>
-          <Text
-            style={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE, compactExerciseNameStyle]}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {display.exampleName}
-          </Text>
+          <ExerciseLabelText
+            label={display.exampleName}
+            mainStyle={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE, compactExerciseNameStyle]}
+            secondaryStyle={[styles.lastWorkoutExampleDetail, themeTextMutedStyle, STAT_NUMBER_STYLE]}
+          />
           {renderExampleDetail()}
         </View>
       );
@@ -283,13 +282,11 @@ export function PreviousWorkoutCard(props: PreviousWorkoutCardProps) {
           },
         ]}
       >
-        <Text
-          style={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE, compactExerciseNameStyle]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {display.exampleName}
-        </Text>
+        <ExerciseLabelText
+          label={display.exampleName}
+          mainStyle={[styles.lastWorkoutExampleName, themeTextMutedStyle, STAT_NUMBER_STYLE, compactExerciseNameStyle]}
+          secondaryStyle={[styles.lastWorkoutExampleDetail, themeTextMutedStyle, STAT_NUMBER_STYLE]}
+        />
         {renderExampleDetail()}
       </Animated.View>
     );

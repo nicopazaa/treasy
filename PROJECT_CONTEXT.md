@@ -38,6 +38,22 @@ Primary AsyncStorage keys (entity-oriented):
 - `treasy_app_sync_v1`
 via `src/features/workouts/data/storage.ts`.
 
+Optional sync runtime:
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `EXPO_PUBLIC_SYNC_ENDPOINT`
+- `EXPO_PUBLIC_SYNC_BATCH_SIZE`
+- `EXPO_PUBLIC_SYNC_TIMEOUT_MS`
+- `EXPO_PUBLIC_SYNC_RETRY_BASE_MS`
+- `EXPO_PUBLIC_SYNC_RETRY_MAX_MS`
+via `src/shared/config/env.ts`.
+
+Server-side sync runtime:
+- `SUPABASE_URL` (optional override; otherwise falls back to `EXPO_PUBLIC_SUPABASE_URL`)
+- `SUPABASE_PUBLISHABLE_KEY` (optional override; otherwise falls back to `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`)
+- `SUPABASE_SERVICE_ROLE_KEY`
+via `netlify/functions/sync.js`.
+
 Legacy migration fallback:
 - `treasy_app_state_v2` is read for backward compatibility when the entity-oriented keys are missing.
 
@@ -57,6 +73,7 @@ Entity readiness note:
 
 Note: notes are now persisted in a dedicated notes repository key. `AppState.notes` remains for legacy migration/compatibility handling.
 Theme note: Home persists `darkBlue` / `calmLight`; legacy `dark` / `light` values are normalized on load.
+Identity note: `userId` still boots as a local generated id for guest/local usage, but an authenticated Supabase session now upgrades it to the Supabase auth user id so sync can target a real cross-device account identity.
 
 ## Data flow
 Hydration + store:
@@ -65,6 +82,14 @@ Hydration + store:
 
 Action orchestration:
 - `useAppActions` handles domain mutations, persistence mode (`critical` vs `debounced`), auth callbacks, and notes migration (`src/app/actions/useAppActions.ts`).
+- `useSupabaseAuth` is an optional auth runtime that hydrates a Supabase browser/mobile session, upgrades local identity to the Supabase user id, and starts GitHub OAuth through Supabase when configured (`src/app/auth/useSupabaseAuth.ts`).
+
+Background sync:
+- `useSyncProcessor` watches app outbox changes plus notes-repository changes, batches sync events, POSTs them to an optional configured endpoint, and applies ACK / retry-backoff handling (`src/app/sync/useSyncProcessor.ts`).
+- When no sync endpoint is configured, the processor stays inert and local app behavior is unchanged.
+- When a Supabase auth session exists, the processor now also has access to the bearer token for authenticated backend calls.
+- Netlify server sync is now implemented in `netlify/functions/sync.js` and forwards authenticated batches into Supabase Postgres RPC `public.apply_sync_batch`.
+- Supabase server schema lives in `supabase/migrations/20260426_sync_backend.sql` and includes per-entity tables plus persistent tombstones.
 
 Derived cache:
 - `useDerivedCache` builds lookup maps for exercises and sets (`src/app/state/useDerivedCache.ts`).
@@ -99,9 +124,14 @@ Current wide-layout behavior in `src/screens/HomeScreen.tsx`:
 - No remote LLM/network call is used for answer generation.
 
 ## Auth/network behavior
-- Web-only GitHub OAuth starts in `useAppActions` and completes through Netlify function `netlify/functions/github-oauth.js`.
+- Preferred cloud-auth path is now Supabase Auth when `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are configured.
+- GitHub login on web is started through `supabase.auth.signInWithOAuth(...)` when Supabase is configured, and falls back to the existing Netlify GitHub OAuth flow otherwise.
+- Supabase session hydration is local-first and upgrades `AppState.userId` / `userEmail` / `authProvider` after boot without changing guest/local behavior when env vars are absent.
+- Legacy web-only GitHub OAuth still exists in `useAppActions` and completes through Netlify function `netlify/functions/github-oauth.js`.
+- Authenticated sync writes now go through Netlify function `netlify/functions/sync.js`, which verifies the Supabase bearer token against Auth before using the service-role key for database writes.
 - OAuth session state key: `treasy_github_oauth_state` in `sessionStorage`.
 - Outside OAuth, app data is local-first with AsyncStorage.
+- Optional remote sync is batch-based and endpoint-driven; no sync request is attempted unless `EXPO_PUBLIC_SYNC_ENDPOINT` is configured.
 
 ## Build and scripts
 From `package.json`:
@@ -118,7 +148,7 @@ No `lint` or `test` scripts currently exist.
 - `src/domain/parsing/applyParsedChunks.ts` exists but is currently unreferenced.
 - `src/screens/ExerciseScreen.tsx` exists but is currently not routed from `App.tsx`.
 - No formal migration framework; normalization/migration is handled ad hoc in storage/action layers.
-- No remote sync transport/ACK worker is implemented yet; outbox/tombstones are local-only foundations.
+- Full user-facing conflict-resolution policy is still not implemented; the backend currently uses a safety rule where higher entity `version` wins and stale/lower-version events are ACKed as no-ops.
 
 ## UNKNOWNs
 - External roadmap/issue tracker source of truth is UNKNOWN.

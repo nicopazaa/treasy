@@ -86,10 +86,14 @@ function resolveSetMeta(weight: number, meta?: SetMeta): SetMeta {
   };
 }
 
-export function addLogEntry(state: AppState, text: string, options?: { pinned?: boolean }): AppState {
+export function addLogEntry(
+  state: AppState,
+  text: string,
+  options?: { pinned?: boolean; createdAt?: string }
+): AppState {
   const trimmed = text.trim();
   if (!trimmed) return state;
-  const createdAt = nowIso();
+  const createdAt = options?.createdAt ?? nowIso();
 
   const entry: LogEntry = {
     id: generateId('log'),

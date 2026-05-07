@@ -16,6 +16,7 @@ import {
 import { fromKg, formatWeight, type MassUnit } from '../shared/utils/units';
 import { formatExerciseLabel } from '../shared/utils/exerciseLabel';
 import { formatRelativeDateTime } from '../shared/utils/dateLabels';
+import { ExerciseLabelText } from '../shared/ui/ExerciseLabelText';
 import {
   computeMuscleGroupStats,
   pickTopMuscleGroup,
@@ -23,6 +24,7 @@ import {
 } from '../shared/utils/analytics/computeMuscleGroupStats';
 import { computePRHits } from '../shared/utils/analytics/computePRs';
 import { computeWeeklyVolumeUtc } from '../shared/utils/analytics/computeWeeklyVolume';
+import { resolveThemeTokens, type TreasyThemeTokens } from '../shared/theme/themes';
 
 type Props = {
   appState: AppState;
@@ -136,6 +138,8 @@ function nextBestAction(language: Language, stats: MuscleGroupStat[], order: Tra
 export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack }) => {
   const language: Language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
+  const themeTokens = useMemo(() => resolveThemeTokens(appState.theme), [appState.theme]);
+  const styles = useMemo(() => createStyles(themeTokens), [themeTokens]);
 
   const [tab, setTab] = useState<TabKey>('quick');
 
@@ -333,9 +337,11 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
                   return (
                     <View key={`${hit.exerciseId}-${hit.createdAt}-${hit.weightKg}`} style={[styles.prRow, idx === 0 && styles.tableRowFirst]}>
                       <View style={styles.prLeft}>
-                        <Text style={styles.prName} numberOfLines={1}>
-                          {name}
-                        </Text>
+                        <ExerciseLabelText
+                          label={name}
+                          mainStyle={styles.prName}
+                          secondaryStyle={styles.prNameMeta}
+                        />
                         <Text style={[styles.prDate, STAT_NUMBER_STYLE]}>{dateLabel}</Text>
                       </View>
                       <Text style={[styles.prWeight, STAT_NUMBER_STYLE]}>{formatWeight(hit.weightKg, massUnit, language)}</Text>
@@ -382,233 +388,249 @@ export const AnalysisScreen: React.FC<Props> = ({ appState, derivedCache, onBack
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.treasyNavy,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: SCREEN_PADDING,
-    paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
-    paddingBottom: SPACING.xxl,
-    ...Platform.select({
-      web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-    }),
-  },
-  backButton: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    marginBottom: SPACING.md,
-  },
-  backLabel: {
-    color: COLORS.blue1,
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-  },
-  header: {
-    gap: SPACING.xs,
-    marginBottom: SPACING.md,
-  },
-  title: {
-    color: '#F9FAFB',
-    fontSize: TEXT.xxl,
-    fontWeight: '900',
-  },
-  subtitle: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: TEXT.sm,
-    fontWeight: '600',
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: 4,
-    gap: 4,
-    marginBottom: SPACING.md,
-  },
-  tabButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: RADIUS.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.sm,
-  },
-  tabButtonActive: {
-    backgroundColor: '#111827',
-  },
-  tabText: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: TEXT.xs,
-    fontWeight: '800',
-  },
-  tabTextActive: {
-    color: '#F9FAFB',
-  },
-  section: {
-    gap: SPACING.md,
-  },
-  card: {
-    backgroundColor: '#0B1220',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
-  },
-  cardTitle: {
-    color: '#F9FAFB',
-    fontSize: TEXT.md,
-    fontWeight: '900',
-  },
-  muted: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: TEXT.xs,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-  },
-  statLabel: {
-    color: 'rgba(255, 255, 255, 0.75)',
-    fontSize: TEXT.sm,
-    fontWeight: '700',
-  },
-  statValue: {
-    color: '#F9FAFB',
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-  actionText: {
-    color: '#F9FAFB',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-    lineHeight: 20,
-  },
-  badge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 6,
-    borderRadius: RADIUS.pill,
-    backgroundColor: 'rgba(245, 158, 11, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
-  },
-  badgeText: {
-    color: COLORS.warning,
-    fontSize: TEXT.xs,
-    fontWeight: '900',
-  },
-  trendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-  },
-  trendRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  trendArrow: {
-    fontSize: TEXT.md,
-    fontWeight: '900',
-  },
-  trendText: {
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  tableRowFirst: {
-    borderTopWidth: 0,
-  },
-  tableLeft: {
-    flex: 1,
-    color: '#E5E7EB',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-  },
-  tableRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  tableArrow: {
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-  tablePct: {
-    fontSize: TEXT.xs,
-    fontWeight: '900',
-    width: 52,
-    textAlign: 'right',
-  },
-  tableValue: {
-    color: '#F9FAFB',
-    fontSize: TEXT.xs,
-    fontWeight: '900',
-    width: 88,
-    textAlign: 'right',
-  },
-  tableMeta: {
-    color: 'rgba(255, 255, 255, 0.55)',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-    width: 64,
-    textAlign: 'right',
-  },
-  prRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  prLeft: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  prName: {
-    color: '#F9FAFB',
-    fontSize: TEXT.sm,
-    fontWeight: '800',
-  },
-  prDate: {
-    color: 'rgba(255, 255, 255, 0.55)',
-    fontSize: TEXT.xs,
-    fontWeight: '700',
-  },
-  prWeight: {
-    color: COLORS.success,
-    fontSize: TEXT.sm,
-    fontWeight: '900',
-  },
-});
+function createStyles(themeTokens: TreasyThemeTokens) {
+  const isLightTheme = themeTokens.id === 'calmLight';
+  const cardBg = isLightTheme ? '#F4F0EA' : '#0B1220';
+  const cardActiveBg = isLightTheme ? '#E8E0D2' : '#111827';
+  const cardBorder = isLightTheme ? '#D8D1C5' : '#1F2937';
+  const muted = isLightTheme ? themeTokens.textMuted : 'rgba(255, 255, 255, 0.65)';
+  const subtleText = isLightTheme ? '#516070' : 'rgba(255, 255, 255, 0.75)';
+  const rowBorder = isLightTheme ? 'rgba(31, 45, 61, 0.08)' : 'rgba(255, 255, 255, 0.06)';
+
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: themeTokens.bg,
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: SCREEN_PADDING,
+      paddingTop: Platform.OS === 'ios' ? SPACING.sm : SPACING.xxxl,
+      paddingBottom: SPACING.xxl,
+      ...Platform.select({
+        web: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+      }),
+    },
+    backButton: {
+      minWidth: 44,
+      minHeight: 44,
+      justifyContent: 'center',
+      marginBottom: SPACING.md,
+    },
+    backLabel: {
+      color: themeTokens.link,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+    },
+    header: {
+      gap: SPACING.xs,
+      marginBottom: SPACING.md,
+    },
+    title: {
+      color: themeTokens.text,
+      fontSize: TEXT.xxl,
+      fontWeight: '900',
+    },
+    subtitle: {
+      color: muted,
+      fontSize: TEXT.sm,
+      fontWeight: '600',
+    },
+    tabs: {
+      flexDirection: 'row',
+      backgroundColor: cardBg,
+      borderRadius: RADIUS.pill,
+      borderWidth: 1,
+      borderColor: cardBorder,
+      padding: 4,
+      gap: 4,
+      marginBottom: SPACING.md,
+    },
+    tabButton: {
+      flex: 1,
+      minHeight: 40,
+      borderRadius: RADIUS.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: SPACING.sm,
+    },
+    tabButtonActive: {
+      backgroundColor: cardActiveBg,
+    },
+    tabText: {
+      color: muted,
+      fontSize: TEXT.xs,
+      fontWeight: '800',
+    },
+    tabTextActive: {
+      color: themeTokens.text,
+    },
+    section: {
+      gap: SPACING.md,
+    },
+    card: {
+      backgroundColor: cardBg,
+      borderRadius: RADIUS.lg,
+      borderWidth: 1,
+      borderColor: cardBorder,
+      padding: SPACING.lg,
+      gap: SPACING.sm,
+    },
+    cardTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.sm,
+    },
+    cardTitle: {
+      color: themeTokens.text,
+      fontSize: TEXT.md,
+      fontWeight: '900',
+    },
+    muted: {
+      color: muted,
+      fontSize: TEXT.xs,
+      fontWeight: '600',
+      lineHeight: 18,
+    },
+    statRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.md,
+    },
+    statLabel: {
+      color: subtleText,
+      fontSize: TEXT.sm,
+      fontWeight: '700',
+    },
+    statValue: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '900',
+    },
+    actionText: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+      lineHeight: 20,
+    },
+    badge: {
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 6,
+      borderRadius: RADIUS.pill,
+      backgroundColor: 'rgba(245, 158, 11, 0.18)',
+      borderWidth: 1,
+      borderColor: 'rgba(245, 158, 11, 0.35)',
+    },
+    badgeText: {
+      color: COLORS.warning,
+      fontSize: TEXT.xs,
+      fontWeight: '900',
+    },
+    trendRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.md,
+    },
+    trendRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    trendArrow: {
+      fontSize: TEXT.md,
+      fontWeight: '900',
+    },
+    trendText: {
+      fontSize: TEXT.sm,
+      fontWeight: '900',
+    },
+    tableRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.md,
+      paddingVertical: SPACING.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: rowBorder,
+    },
+    tableRowFirst: {
+      borderTopWidth: 0,
+    },
+    tableLeft: {
+      flex: 1,
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+    },
+    tableRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 8,
+    },
+    tableArrow: {
+      fontSize: TEXT.sm,
+      fontWeight: '900',
+    },
+    tablePct: {
+      fontSize: TEXT.xs,
+      fontWeight: '900',
+      width: 52,
+      textAlign: 'right',
+    },
+    tableValue: {
+      color: themeTokens.text,
+      fontSize: TEXT.xs,
+      fontWeight: '900',
+      width: 88,
+      textAlign: 'right',
+    },
+    tableMeta: {
+      color: muted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+      width: 64,
+      textAlign: 'right',
+    },
+    prRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: SPACING.md,
+      paddingVertical: SPACING.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: rowBorder,
+    },
+    prLeft: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    prName: {
+      color: themeTokens.text,
+      fontSize: TEXT.sm,
+      fontWeight: '800',
+    },
+    prNameMeta: {
+      color: muted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+      marginTop: 2,
+    },
+    prDate: {
+      color: muted,
+      fontSize: TEXT.xs,
+      fontWeight: '700',
+    },
+    prWeight: {
+      color: themeTokens.success,
+      fontSize: TEXT.sm,
+      fontWeight: '900',
+    },
+  });
+}

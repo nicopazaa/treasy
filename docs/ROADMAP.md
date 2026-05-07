@@ -28,6 +28,13 @@ Source note: no external tracker reference is present in this repo, so this road
     - [ ] Duplicate-note and duplicate-log edge cases are covered by tests.
 
 ## Next
+- [x] Add Supabase-backed cloud identity + authenticated sync backend.
+  - Goal: Move from device-local user ids to real account identity and server persistence.
+  - Acceptance criteria:
+    - [x] Supabase Auth can upgrade local identity to a stable cloud user id when configured.
+    - [x] Sync endpoint accepts authenticated requests with a verified Supabase bearer token.
+    - [x] Server-side storage schema and write path are documented and implemented.
+
 - [ ] Decide whether to keep or remove currently unreferenced modules.
   - Goal: Reduce maintenance surface and dead paths.
   - Acceptance criteria:
@@ -53,10 +60,11 @@ Source note: no external tracker reference is present in this repo, so this road
     - [x] Legacy `treasy_app_state_v2` is supported as read fallback migration path.
 
 - [ ] Implement sync processor (transport + ACK + retry) on top of local outbox.
+- [x] Implement sync processor (transport + ACK + retry) on top of local outbox.
   - Goal: Move from local sync intent capture to actual remote sync execution.
   - Acceptance criteria:
-    - [ ] Outbox events are batched/sent and marked acknowledged on success.
-    - [ ] Retry/backoff and failure visibility are documented and implemented.
+    - [x] Outbox events are batched/sent and marked acknowledged on success.
+    - [x] Retry/backoff and failure visibility are documented and implemented.
 
 ## Later
 - [ ] Expand analytics to include cardio-specific metrics in Insights/Analysis.
@@ -69,6 +77,12 @@ Source note: no external tracker reference is present in this repo, so this road
   - Acceptance criteria:
     - [ ] Architecture decision documented (local-only vs sync).
     - [ ] Security/privacy constraints documented.
+
+- [ ] Define conflict-resolution rules for concurrent device edits.
+  - Goal: Make multi-device sync deterministic when two clients update the same entity independently.
+  - Acceptance criteria:
+    - [ ] Winner/merge policy is documented per operation type (`upsert`, `delete`, restore).
+    - [ ] Processor behavior for conflict responses is implemented and covered by tests.
 
 ## UNKNOWN
 - External product priority ordering is UNKNOWN.

@@ -26,6 +26,7 @@ type Props = {
   titleColor?: string;
   lineOpacity?: number;
   expandedRowBackgroundColor?: string;
+  includeRepCountInSummary?: boolean;
 };
 
 function localeForLanguage(language: AppLanguage): string {
@@ -46,7 +47,8 @@ function parseDateKey(dateKey: string): Date | null {
 
 type PreviousWorkoutsPluralBaseKey =
   | 'analysis.previousWorkouts.exercises'
-  | 'analysis.previousWorkouts.sets';
+  | 'analysis.previousWorkouts.sets'
+  | 'analysis.previousWorkouts.reps';
 
 type PreviousWorkoutsPluralKey = `${PreviousWorkoutsPluralBaseKey}.${'one' | 'other'}`;
 
@@ -81,6 +83,7 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
   titleColor,
   lineOpacity = 1,
   expandedRowBackgroundColor,
+  includeRepCountInSummary = false,
 }) => {
   const heroRows = scrollY ? Math.max(0, Math.floor(heroTopCount)) : 0;
   const safeLineOpacity = Number.isFinite(lineOpacity) ? Math.max(0, Math.min(1, lineOpacity)) : 1;
@@ -104,7 +107,13 @@ export const PreviousWorkoutsTimeline: React.FC<Props> = ({
     const sets = t(language, pluralKey('analysis.previousWorkouts.sets', item.setCount), {
       count: item.setCount,
     });
-    return `${exercises} - ${sets}`;
+    if (!includeRepCountInSummary) {
+      return `${exercises} - ${sets}`;
+    }
+    const reps = t(language, pluralKey('analysis.previousWorkouts.reps', item.repCount), {
+      count: item.repCount,
+    });
+    return `${exercises} - ${sets} - ${reps}`;
   };
 
   const formatVolumeValue = (item: WorkoutTimelineItem): string => {

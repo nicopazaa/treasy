@@ -47,6 +47,14 @@ Storage keys:
 - Notes repo: `treasy_notes_v1`.
 - AI chat cache: `treasy_ai_chat_v1`.
 - Backup snapshot: `treasy_backup_export`.
+- Optional sync runtime env:
+  - `EXPO_PUBLIC_SUPABASE_URL`
+  - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  - `EXPO_PUBLIC_SYNC_ENDPOINT`
+  - `EXPO_PUBLIC_SYNC_BATCH_SIZE`
+  - `EXPO_PUBLIC_SYNC_TIMEOUT_MS`
+  - `EXPO_PUBLIC_SYNC_RETRY_BASE_MS`
+  - `EXPO_PUBLIC_SYNC_RETRY_MAX_MS`
 
 Session lifecycle:
 - `AppState.activeWorkout` stores workout session start/finish timestamps for Home "Today workout" lifecycle (`startedAtISO`, optional `finishedAtISO`).
@@ -57,6 +65,35 @@ Session lifecycle:
 - Chooses persistence mode per action.
 - Handles auth flows (guest/email/GitHub web callback).
 - Runs one-time notes migration from legacy storage paths.
+
+### 4a) Optional Supabase auth runtime
+`src/app/auth/useSupabaseAuth.ts` is the cloud-identity runtime:
+- Creates a Supabase client only when env config is present.
+- Starts GitHub OAuth through Supabase Auth on web.
+- Hydrates/persists the Supabase session (browser storage on web, AsyncStorage-backed adapter on native).
+- Upgrades local `AppState.userId` to the authenticated Supabase user id so sync can target a shared account identity.
+- Falls back cleanly to the legacy Netlify GitHub OAuth path when Supabase is not configured.
+
+### 4b) Sync processor
+`src/app/sync/useSyncProcessor.ts` is the runtime sync worker:
+- Watches `AppState.sync.outbox` and the notes repository sync envelope.
+- Batches events in deterministic `changedAt` order.
+- Sends them to the configured endpoint with timeout handling.
+- Adds an `Authorization: Bearer ...` header when a Supabase session token exists.
+- Marks entities `pending` while in flight, `synced` on ACK, and `failed` on retryable failures.
+- Uses exponential backoff for retries and stays inert when no endpoint is configured.
+
+### 4c) Server sync backend
+`netlify/functions/sync.js` is the authenticated sync ingress:
+- Requires a Supabase bearer token and verifies it through Supabase Auth before accepting a batch.
+- Rejects payloads whose `userId` does not match the authenticated Supabase user id.
+- Calls Supabase Postgres RPC `public.apply_sync_batch` using the server-only service-role key.
+
+Supabase SQL lives in `supabase/migrations/20260426_sync_backend.sql`:
+- Per-entity tables: `app_exercises`, `app_sets`, `app_cardio_entries`, `app_logs`, `app_notes`.
+- Persistent tombstones: `app_sync_tombstones`.
+- RLS is enabled for authenticated user-scoped reads.
+- Writes happen through SQL functions, not direct client table access.
 
 ### 5) Domain logic
 Workouts:
@@ -98,11 +135,14 @@ Analytics:
 - Notes storage is an envelope (`notes` + `sync`) in the same key, with backward-compatible read from legacy array payloads.
 - `NotertScreen` reads from repository; home card writes via `handleAddNote`.
 - Startup migration (`buildNotesMigration`) lifts legacy note-like logs/notes into repository.
+- Notes repository now exposes sync snapshot, ACK/status helpers, and a lightweight change subscription so the app-level sync processor can react to note mutations without screen wiring.
 
 ## Auth and network boundary
-- GitHub OAuth web flow in `useAppActions` (client side).
-- Token exchange and user lookup in Netlify function `netlify/functions/github-oauth.js` with timeout + status-checked fetches.
-- No remote workout sync path in current repository.
+- Preferred auth path is optional Supabase Auth (`src/app/auth/supabaseClient.ts` + `src/app/auth/useSupabaseAuth.ts`).
+- GitHub OAuth web fallback remains in `useAppActions` (client side) plus token exchange/user lookup in Netlify function `netlify/functions/github-oauth.js`.
+- Optional remote sync uses a single app-level batch POST adapter in `src/app/sync/useSyncProcessor.ts`.
+- Authenticated sync ingestion now exists in `netlify/functions/sync.js` and uses Supabase REST/RPC as the database boundary.
+- No remote sync call is made unless `EXPO_PUBLIC_SYNC_ENDPOINT` is present.
 
 ## Cross-cutting concerns
 - i18n: `src/shared/i18n/i18n.ts` (`t`, `blockLabel`).
@@ -116,10 +156,12 @@ Analytics:
 - No lint script and no test script in `package.json`.
 - `src/domain/parsing/applyParsedChunks.ts` is currently unreferenced.
 - `src/screens/ExerciseScreen.tsx` is currently unreferenced by navigation.
+- The backend currently uses version-based stale-write protection, but richer conflict semantics (merge/winner rules surfaced to the user) are still not implemented.
 
 ## Data integrity rules
 - AppState is treated as immutable.
 - Domain/state update helpers return new objects/arrays.
 - Persistence normalization is defensive for missing/legacy fields.
 - Deletes are hard-removed from active collections but recorded as sync tombstones with deterministic outbox delete events.
+- Server sync keeps its own tombstone table so lower-version stale upserts cannot resurrect previously deleted rows.
 - Parsing path is deterministic and side-effect free in domain layer.

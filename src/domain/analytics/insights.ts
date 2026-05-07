@@ -10,6 +10,7 @@ export type WorkoutTimelineItem = {
   blockIds: string[];
   exerciseCount: number;
   setCount: number;
+  repCount: number;
   totalVolumeKg: number;
 };
 
@@ -145,6 +146,7 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
     {
       exerciseIds: Set<string>;
       setCount: number;
+      repCount: number;
       volumeByBlock: Map<string, number>;
       blockIds: Set<string>;
       totalVolumeKg: number;
@@ -158,12 +160,16 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
     const day = byDay.get(key) ?? {
       exerciseIds: new Set<string>(),
       setCount: 0,
+      repCount: 0,
       volumeByBlock: new Map(),
       blockIds: new Set<string>(),
       totalVolumeKg: 0,
     };
     day.setCount += 1;
     day.exerciseIds.add(s.exerciseId);
+    if (isFiniteNumber(s.reps) && s.reps > 0) {
+      day.repCount += Math.round(s.reps);
+    }
 
     const blockId = exerciseToBlock.get(s.exerciseId);
     if (blockId) day.blockIds.add(blockId);
@@ -198,6 +204,7 @@ export function buildWorkoutTimeline(appState: AppState, options?: { limit?: num
       blockIds,
       exerciseCount: day.exerciseIds.size,
       setCount: day.setCount,
+      repCount: day.repCount,
       totalVolumeKg: day.totalVolumeKg,
     };
   });

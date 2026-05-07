@@ -22,6 +22,8 @@ import { applyParsedWorkoutAction, parseInputToAction } from '../../domain/quick
 import { buildNotesMigration } from '../../features/notes/model/notesMigration';
 import { t } from '../../shared/i18n/i18n';
 import { formatExerciseLabel } from '../../shared/utils/exerciseLabel';
+import { formatWeight } from '../../shared/utils/units';
+import { formatDurationFromMinutes } from '../../shared/utils/setFormatting';
 import { normalizeExerciseName } from '../../domain/workouts/nameNormalize';
 import { now } from '../../shared/time';
 import { SYSTEM_EXERCISE_IDS } from '../../shared/systemEntities';
@@ -179,7 +181,7 @@ export function useAppActions(opts: {
     exerciseId: string,
     weight: number,
     reps: number,
-    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
+    options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null }
   ) => void;
   finishWorkoutSession: () => void;
 
@@ -504,29 +506,42 @@ export function useAppActions(opts: {
       exerciseId: string,
       weight: number,
       reps: number,
-      options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null }
+      options?: { bodyweight?: boolean; distanceKm?: number | null; durationMin?: number | null; pauseSec?: number | null }
     ) => {
       applyUpdate((prev) => {
         const exercise = prev.exercises.find((ex) => ex.id === exerciseId);
         const language = prev.language ?? 'en';
-        const weightText = language === 'nb' ? String(weight).replace('.', ',') : String(weight);
         const exerciseLabel = exercise ? formatExerciseLabel(exercise) : null;
+        const isCardioLog =
+          options?.distanceKm != null || options?.durationMin != null || options?.pauseSec != null;
 
         let logText: string;
-        if (options?.distanceKm != null || options?.durationMin != null) {
+        if (isCardioLog) {
           const parts: string[] = [];
           if (options.distanceKm != null) parts.push(`${options.distanceKm} km`);
-          if (options.durationMin != null) parts.push(`${options.durationMin} min`);
+          if (options.durationMin != null) parts.push(formatDurationFromMinutes(language, options.durationMin));
+          if (options.pauseSec != null) parts.push(`${t(language, 'pauseShort')} ${options.pauseSec} ${t(language, 'durationUnit.secondsShort')}`);
           logText = exerciseLabel ? `${exerciseLabel} ${parts.join(' / ')}` : parts.join(' / ');
         } else if (options?.bodyweight) {
-          logText = exerciseLabel ? `${exerciseLabel} BW x ${reps}` : `BW x ${reps}`;
+          const repsLabel = t(language, 'repmax.reps');
+          logText = exerciseLabel ? `${exerciseLabel} BW x ${reps} ${repsLabel}` : `BW x ${reps} ${repsLabel}`;
         } else {
-          logText = exerciseLabel ? `${exerciseLabel} ${weightText}x${reps}` : `${weightText}x${reps}`;
+          const repsLabel = t(language, 'repmax.reps');
+          const formattedWeight = formatWeight(weight, prev.massUnit ?? 'kg', language);
+          logText = exerciseLabel
+            ? `${exerciseLabel} ${formattedWeight} x ${reps} ${repsLabel}`
+            : `${formattedWeight} x ${reps} ${repsLabel}`;
         }
 
-        if (options?.distanceKm != null || options?.durationMin != null) {
-          const next = addCardioEntry(prev, exerciseId, options.distanceKm ?? null, options.durationMin ?? null);
-          return addLogEntry(next, logText);
+        if (isCardioLog) {
+          const next = addSet(prev, exerciseId, 0, 1, {
+            distanceKm: options?.distanceKm ?? null,
+            durationMin: options?.durationMin ?? null,
+            pauseSec: options?.pauseSec ?? null,
+          });
+          const startedAtISO = findAddedSetCreatedAtISO(prev, next);
+          const withSession = startedAtISO ? withStartedWorkoutSession(next, startedAtISO) : next;
+          return addLogEntry(withSession, logText, { createdAt: startedAtISO ?? undefined });
         }
 
         const next = addSet(prev, exerciseId, weight, reps, {
@@ -534,7 +549,7 @@ export function useAppActions(opts: {
         });
         const startedAtISO = findAddedSetCreatedAtISO(prev, next);
         const withSession = startedAtISO ? withStartedWorkoutSession(next, startedAtISO) : next;
-        return addLogEntry(withSession, logText);
+        return addLogEntry(withSession, logText, { createdAt: startedAtISO ?? undefined });
       }, 'critical');
     },
     [applyUpdate]

@@ -25,9 +25,11 @@ import { LegalScreen } from './src/screens/LegalScreen';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import { useAppActions } from './src/app/actions/useAppActions';
+import { useSupabaseAuth } from './src/app/auth/useSupabaseAuth';
 import { BackSwipeContext } from './src/app/navigation/BackSwipeContext';
 import type { NavState } from './src/app/navigation/types';
 import { useNavStack } from './src/app/navigation/useNavStack';
+import { useSyncProcessor } from './src/app/sync/useSyncProcessor';
 import { useAppStore } from './src/app/state/useAppStore';
 import { useDerivedCache } from './src/app/state/useDerivedCache';
 import { assertNever } from './src/shared/assert';
@@ -64,11 +66,27 @@ export default function App() {
     navigate,
   });
 
+  const supabaseAuth = useSupabaseAuth({
+    appState,
+    setAppState,
+    loading,
+    persister,
+    navigate,
+  });
+
+  useSyncProcessor({
+    appState,
+    authToken: supabaseAuth.accessToken,
+    setAppState,
+    loading,
+    persister,
+  });
+
   const {
-    authBusy,
-    loginError,
+    authBusy: actionAuthBusy,
+    loginError: actionLoginError,
     historyInitialDateKey,
-    clearLoginError,
+    clearLoginError: clearActionLoginError,
     openHistory,
     openHistoryForDate,
     handleContinueWithoutLogin,
@@ -88,10 +106,18 @@ export default function App() {
     deleteExerciseById,
     restoreExerciseEntry,
     addSetToExercise,
+    updateSetById,
     categorizeExercise,
     saveCardio,
     mergeExercisesById,
   } = actions;
+
+  const authBusy = actionAuthBusy || supabaseAuth.authBusy;
+  const loginError = supabaseAuth.loginError ?? actionLoginError;
+  const clearLoginError = useCallback(() => {
+    supabaseAuth.clearLoginError();
+    clearActionLoginError();
+  }, [clearActionLoginError, supabaseAuth]);
 
   const language = appState.language ?? 'en';
   const massUnit = appState.massUnit ?? 'kg';
@@ -117,6 +143,12 @@ export default function App() {
     clearLoginError();
     navigate('welcome');
   }, [clearLoginError, navigate]);
+
+  const handleLoginWithGithub = useCallback(async () => {
+    const handledBySupabase = await supabaseAuth.startGithubLogin();
+    if (handledBySupabase) return;
+    startGithubLogin();
+  }, [startGithubLogin, supabaseAuth]);
 
   const handleWelcomeBack = goToLogin;
 
@@ -195,7 +227,7 @@ export default function App() {
           <LoginScreen
             language={language}
             onBack={handleLoginBack}
-            onContinueWithGithub={startGithubLogin}
+            onContinueWithGithub={handleLoginWithGithub}
             onContinueWithEmail={handleLoginContinueWithEmail}
             error={loginError}
           />
@@ -280,6 +312,7 @@ export default function App() {
             onBack={goHome}
             onSave={handleQuickLogSave}
             onLogSet={handleQuickLogSet}
+            onUpdateSet={updateSetById}
             onCategorizeExercise={categorizeExercise}
             showLocalOnlyNotice={nav.showLocalOnlyNotice ?? false}
           />
